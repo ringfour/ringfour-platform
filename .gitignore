@@ -52,3 +52,6 @@ playwright-report/
 Thumbs.db
 .idea/
 .vscode/
+
+# Test-account credentials for live acceptance — NEVER commit
+tests/e2e/users.json
