@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/add-member-request.schema.json",
+  "title": "AddMemberRequest",
+  "description": "POST /v1/organizations/{org_id}/members request body. Owner-only. The target user must already exist (has completed a first login). Adding an existing member is a 409 conflict.",
+  "type": "object",
+  "required": ["user_id", "role"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "role": {
+      "enum": ["owner", "developer", "operator"]
+    }
+  }
+}

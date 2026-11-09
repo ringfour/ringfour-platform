@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/create-organization-request.schema.json",
+  "title": "CreateOrganizationRequest",
+  "description": "POST /v1/organizations request body. Creating an organization atomically creates the caller's owner membership.",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": ".*\\S.*"
+    }
+  }
+}

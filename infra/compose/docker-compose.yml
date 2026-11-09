@@ -24,6 +24,9 @@ services:
     build: ../../apps/api
     environment:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:-ringfour_dev}
+      # Auth0 tenant values come from .auth.env (symlinked as .env next to this file).
+      Auth0__Domain: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN; see .auth.env}
+      Auth0__Audience: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,6 +58,10 @@ services:
     environment:
       API_PROXY_TARGET: http://api:8080
       DAEMON_PROXY_TARGET: http://daemon:8081
+      # Auth0 SPA values come from .auth.env (symlinked as .env next to this file).
+      VITE_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN; see .auth.env}
+      VITE_AUTH0_CLIENT_ID: ${AUTH0_WEB_CLIENT_ID:?Set AUTH0_WEB_CLIENT_ID; see .auth.env}
+      VITE_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
     volumes:
       - ../../apps/console:/app
       - /app/node_modules

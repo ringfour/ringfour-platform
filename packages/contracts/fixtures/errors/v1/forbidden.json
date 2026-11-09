@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden",
+    "message": "This operation requires the owner role.",
+    "request_id": "7f3a2b1c-0000-4000-8000-example00004"
+  }
+}

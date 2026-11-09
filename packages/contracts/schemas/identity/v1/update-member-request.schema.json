@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/update-member-request.schema.json",
+  "title": "UpdateMemberRequest",
+  "description": "PATCH /v1/organizations/{org_id}/members/{user_id} request body. Owner-only. Demoting the last owner is a 409 conflict (code last_owner).",
+  "type": "object",
+  "required": ["role"],
+  "additionalProperties": false,
+  "properties": {
+    "role": {
+      "enum": ["owner", "developer", "operator"]
+    }
+  }
+}

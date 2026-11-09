@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/organization-list-response.schema.json",
+  "title": "OrganizationListResponse",
+  "description": "GET /v1/organizations response: the caller's organizations with the caller's role in each. Opaque cursor pagination; next_cursor is null when exhausted.",
+  "type": "object",
+  "required": ["items", "next_cursor"],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "role", "created_at"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": ".*\\S.*"
+          },
+          "role": {
+            "enum": ["owner", "developer", "operator"]
+          },
+          "created_at": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+          }
+        }
+      }
+    },
+    "next_cursor": {
+      "type": ["string", "null"],
+      "minLength": 1
+    }
+  }
+}

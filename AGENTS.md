@@ -7,7 +7,7 @@ Implement Ringfour v0.1 using README.md, docs/architecture.md and ordered docs/m
 3. Implement the smallest complete slice across only affected components. No speculative abstractions or mandatory Console parity.
 4. Run affected component tests independently. Then run actual components over the specified protocols for integrated acceptance; mocks do not count as E2E.
 5. Check authorization, restart recovery and negative paths required by the milestone. Resolve regressions before advancing.
-6. Record exact setup/test commands, dependency versions, outcomes and any external device evidence in docs/evidence/NN.md. Redact tokens and secrets.
+6. Record exact setup/test commands, dependency versions, outcomes and any external device evidence in docs/evidence/NN.md. Redact tokens and secrets. Write docs/human-testing/NN.md: a guide instructing a human how to use and verify every functionality shipped in that milestone.
 7. Review the diff, update contracts/docs, and commit the completed milestone. Never mark a skipped external gate as passing. If credentials, repositories or hardware are unavailable, identify the missing prerequisite and leave that gate incomplete.
 
 Keep applications independently packageable. Do not import their private implementation across boundaries. Keep SDK and Agent in their existing projects; inspect their real documentation/source and pin tested versions before integrating. Do not invent SDK calls, duplicate ROS logic or move robot profile ownership to Ringfour.

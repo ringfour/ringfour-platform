@@ -11,6 +11,7 @@
     <PackageReference Include="Npgsql" Version="10.0.0" />
     <!-- Overrides a vulnerable transitive 9.0.0 pulled by the test stack. -->
     <PackageReference Include="System.Security.Cryptography.Xml" Version="9.0.*" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.16.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />

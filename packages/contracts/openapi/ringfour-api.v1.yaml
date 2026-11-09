@@ -3,9 +3,10 @@ info:
   title: Ringfour API
   version: "0.1.0"
   description: |
-    Ringfour hosted API. Milestone 00 scope: health endpoints only.
-    Product endpoints under /v1 arrive in later milestones and use the
-    shared error envelope referenced below.
+    Ringfour hosted API. Current scope: health endpoints (milestone 00) and
+    identity/organization membership (milestone 01).
+    All /v1 endpoints require an Auth0 RS256 access token for audience
+    https://api.ringfour.eu and share the error envelope referenced below.
   license:
     name: Proprietary
 servers:
@@ -14,6 +15,8 @@ servers:
 tags:
   - name: health
     description: Infrastructure health; no authentication, no product data.
+  - name: identity
+    description: Human identity, organizations and membership (Auth0 JWT required).
 paths:
   /health/live:
     get:
@@ -21,6 +24,7 @@ paths:
       operationId: getLiveness
       summary: Process liveness
       description: Reports only that the process is alive. Never performs dependency checks.
+      security: []
       responses:
         "200":
           description: Process is alive.
@@ -40,6 +44,7 @@ paths:
         Checks the dependencies this service owns: API checks PostgreSQL.
         Responds 200 when every check passes, 503 otherwise. The body uses
         the same readiness schema in both cases.
+      security: []
       responses:
         "200":
           description: All dependency checks pass.
@@ -59,7 +64,291 @@ paths:
               examples:
                 fail:
                   $ref: "../fixtures/health/v1/readiness-fail.json"
+  /v1/me:
+    get:
+      tags: [identity]
+      operationId: getMe
+      summary: Resolve the caller
+      description: |
+        Resolves the Auth0 subject to a local user, creating the user on first
+        call (safe under concurrent first requests). Returns the user and all
+        of the caller's memberships.
+      responses:
+        "200":
+          description: The caller's user and memberships.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/me-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/identity/v1/me.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /v1/organizations:
+    post:
+      tags: [identity]
+      operationId: createOrganization
+      summary: Create an organization
+      description: |
+        Self-service organization creation for any authenticated user. The
+        organization and the caller's owner membership are created in one
+        transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/identity/v1/create-organization-request.schema.json"
+      responses:
+        "201":
+          description: Organization created; the caller is its owner.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/organization.schema.json"
+              examples:
+                created:
+                  $ref: "../fixtures/identity/v1/organization.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    get:
+      tags: [identity]
+      operationId: listOrganizations
+      summary: List the caller's organizations
+      description: Lists organizations the caller belongs to, with the caller's role in each.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Page of organizations.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/organization-list-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/identity/v1/organizations-list.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /v1/organizations/{org_id}/members:
+    get:
+      tags: [identity]
+      operationId: listMembers
+      summary: List organization members
+      description: Any member may list. Non-members receive 404, not 403.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Page of memberships.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/member-list-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/identity/v1/members-list.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [identity]
+      operationId: addMember
+      summary: Add a member
+      description: |
+        Owner-only. The target user must already exist (has completed a first
+        login). Adding an existing member is a 409 conflict.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/identity/v1/add-member-request.schema.json"
+      responses:
+        "201":
+          description: Membership created.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/membership.schema.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/organizations/{org_id}/members/{user_id}:
+    patch:
+      tags: [identity]
+      operationId: updateMemberRole
+      summary: Change a member's role
+      description: |
+        Owner-only. Demoting the last remaining owner is a 409 conflict with
+        error code last_owner.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/identity/v1/update-member-request.schema.json"
+      responses:
+        "200":
+          description: Membership updated.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/membership.schema.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Last-owner protection triggered.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/errors/v1/error.schema.json"
+              examples:
+                lastOwner:
+                  $ref: "../fixtures/errors/v1/last-owner.json"
+    delete:
+      tags: [identity]
+      operationId: removeMember
+      summary: Remove a member
+      description: |
+        Owner-only. Removing the last remaining owner is a 409 conflict with
+        error code last_owner.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "204":
+          description: Membership removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Last-owner protection triggered.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/errors/v1/error.schema.json"
+              examples:
+                lastOwner:
+                  $ref: "../fixtures/errors/v1/last-owner.json"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Auth0 RS256 access token. Issuer is the configured Ringfour tenant;
+        audience must be https://api.ringfour.eu. Obtained via OAuth Device
+        Authorization Flow (CLI) or Authorization Code + PKCE (Console).
+  parameters:
+    OrgId:
+      name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque continuation token from a previous response's next_cursor.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size; default 100, maximum 200.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 100
+  responses:
+    Unauthenticated:
+      description: Missing or invalid access token.
+      content:
+        application/json:
+          schema:
+            $ref: "../schemas/errors/v1/error.schema.json"
+          examples:
+            unauthenticated:
+              $ref: "../fixtures/errors/v1/unauthenticated.json"
+    Forbidden:
+      description: Authenticated member lacks the required role.
+      content:
+        application/json:
+          schema:
+            $ref: "../schemas/errors/v1/error.schema.json"
+          examples:
+            forbidden:
+              $ref: "../fixtures/errors/v1/forbidden.json"
+    NotFound:
+      description: The scoped object is missing or not accessible to the caller.
+      content:
+        application/json:
+          schema:
+            $ref: "../schemas/errors/v1/error.schema.json"
+          examples:
+            notFound:
+              $ref: "../fixtures/errors/v1/not-found.json"
+    InvalidInput:
+      description: Request failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "../schemas/errors/v1/error.schema.json"
+          examples:
+            invalidInput:
+              $ref: "../fixtures/errors/v1/invalid-input.json"
+    Conflict:
+      description: State conflict, e.g. duplicate membership.
+      content:
+        application/json:
+          schema:
+            $ref: "../schemas/errors/v1/error.schema.json"
+          examples:
+            conflict:
+              $ref: "../fixtures/errors/v1/conflict.json"
   schemas:
     Error:
       $ref: "../schemas/errors/v1/error.schema.json"
+security:
+  - bearerAuth: []

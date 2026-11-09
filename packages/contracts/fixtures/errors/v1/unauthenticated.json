@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "unauthenticated",
+    "message": "A valid access token is required.",
+    "request_id": "7f3a2b1c-0000-4000-8000-example00003"
+  }
+}

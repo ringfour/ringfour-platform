@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d",
+      "name": "Acme Robotics",
+      "role": "owner",
+      "created_at": "2026-11-09T08:16:02Z"
+    },
+    {
+      "id": "1a2b3c4d-5e6f-4a5b-9c8d-7e6f5a4b3c2d",
+      "name": "Field Trials",
+      "role": "operator",
+      "created_at": "2026-11-09T09:40:11.456Z"
+    }
+  ],
+  "next_cursor": null
+}

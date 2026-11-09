@@ -20,6 +20,7 @@ via `scripts/dotnet.sh`; no host .NET installation is required or supported.
 | `npm run typecheck` | Type checks (dotnet build, tsc) |
 | `npm test` | Component tests per app (xUnit+Testcontainers, pytest, vitest, contracts) |
 | `npm run test:e2e` | Milestone 00 integrated acceptance against the real Compose stack |
+| `npm run test:e2e:01` | Milestone 01 identity acceptance (requires a completed `ringfour login`) |
 | `npm run compose:up` | Build and start the full stack (postgres, api, daemon, runner, console) |
 | `npm run compose:down` | Stop the stack (volumes kept) |
 | `npm run compose:clean` | Stop and delete all volumes (fresh start) |
@@ -36,6 +37,20 @@ via `scripts/dotnet.sh`; no host .NET installation is required or supported.
 
 Copy `.env.example` to `.env` to override defaults (all values are dev-only, no secrets).
 CLI configuration: `RINGFOUR_API_URL`, `RINGFOUR_DAEMON_URL`.
+
+## Auth0 (milestone 01)
+
+`.auth.env` (gitignored, holds tenant identifiers) provides `AUTH0_DOMAIN`,
+`AUTH0_AUDIENCE`, `AUTH0_CLI_CLIENT_ID`, `AUTH0_WEB_CLIENT_ID`. Compose reads it via the
+gitignored symlink `infra/compose/.env`; the API gets `Auth0__Domain`/`Auth0__Audience`
+and the console `VITE_AUTH0_*` from it.
+
+The CLI reads `RINGFOUR_AUTH0_DOMAIN`, `RINGFOUR_AUTH0_CLIENT_ID`,
+`RINGFOUR_AUTH0_AUDIENCE` (plus `RINGFOUR_API_URL`) from the environment or
+`~/.config/ringfour/config.json`; tokens live in the OS credential store (keyring),
+the selected org in the config file. See `docs/human-testing/01.md` for the full
+manual flow and `docs/evidence/01.md` for the required tenant settings.
+
 
 ## Layout
 

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/me-response.schema.json",
+  "title": "MeResponse",
+  "description": "GET /v1/me response. Resolving an unknown Auth0 subject creates the user; repeated calls return the same user.",
+  "type": "object",
+  "required": ["user", "memberships"],
+  "additionalProperties": false,
+  "properties": {
+    "user": {
+      "type": "object",
+      "required": ["id", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "created_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+        }
+      }
+    },
+    "memberships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["organization_id", "user_id", "role", "created_at"],
+        "additionalProperties": false,
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "role": {
+            "enum": ["owner", "developer", "operator"]
+          },
+          "created_at": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+          }
+        }
+      }
+    }
+  }
+}
