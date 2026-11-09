@@ -8,6 +8,8 @@ PostgreSQL owns accounts, organization membership, robots, enrollment, immutable
 
 ## Platform implementation
 
+The [starter database schema](database-schema.md) defines the first PostgreSQL and SQLite tables, their ownership and transaction boundaries.
+
 Use a C# ASP.NET Core modular monolith on a supported .NET LTS, pinned in milestone 00. Keep identity, organization access, enrollment, deployments, mission coordination, Logbook and HITL as modules within the API application. Use ordinary services, built-in dependency injection and Minimal APIs or controllers. Use PostgreSQL through EF Core and Npgsql, with checked-in EF Core migrations. Avoid microservices, CQRS frameworks, MediatR and event sourcing. OpenAPI and JSON Schema remain the language-independent contracts shared by the CLI, Console and daemon.
 
 Use ASP.NET Core hosted services initially for background processing. Persist critical workflow state, including pending work and retry/reconciliation state as introduced by each milestone, in PostgreSQL. Background services process that durable state; process memory is not a durable queue. Test restart recovery for workflows that rely on background processing.

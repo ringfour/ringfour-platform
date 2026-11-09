@@ -8,6 +8,8 @@ Complete prerequisite milestone 02 before beginning. Shared schemas, authorizati
 
 ## Contracts
 
+Apply the [starter database schema](../database-schema.md) for milestone 03.
+
 Implement architecture WebSocket protocol with hello, heartbeat, command, ack and operation_status messages. Hello includes supported protocol and daemon version; API returns server time and negotiated heartbeat. GET /v1/robots/{id}/status returns last_seen, online/offline and observed version. Add authenticated protocol diagnostic no-op operation for tests.
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.

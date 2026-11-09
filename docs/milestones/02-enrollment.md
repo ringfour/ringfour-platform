@@ -8,6 +8,8 @@ Complete prerequisite milestone 01 before beginning. Shared schemas, authorizati
 
 ## Contracts
 
+Apply the [starter database schema](../database-schema.md) for milestone 02.
+
 POST /v1/organizations/{org_id}/robots; GET list/detail; POST /v1/robots/{id}/enrollment-tokens (owner only); POST /v1/device/enroll consumes one short-lived single-use token and returns robot-bound credential once. POST credential rotation/revocation under /v1/robots/{id}/credentials. Bind token to robot/org; persist expiration and consumption atomically.
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.

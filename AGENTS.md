@@ -16,6 +16,8 @@ Console (and any future Ringfour web UI) follows the Ringfour interface system i
 
 Build the Platform API in C# on supported .NET LTS using ASP.NET Core, EF Core/Npgsql and PostgreSQL. Keep a modular monolith with ordinary services and built-in dependency injection. Use EF Core migrations and xUnit with PostgreSQL Testcontainers. Avoid CQRS frameworks, MediatR and event sourcing. Hosted services may process durable workflow state; persist critical state and retries in PostgreSQL. Keep OpenAPI/JSON Schema and consumers independent of backend implementation.
 
+Follow the [starter database schema](docs/database-schema.md). Add tables in their assigned milestone. Document schema deviations and test the preserved invariants in the same milestone. For later slices, specify persistence alongside the public contract before implementation.
+
 Use Auth0 JWT Bearer with RS256 and audience `https://api.ringfour.eu`; CLI uses OAuth Device Authorization Flow, and Console uses the Ringfour Web SPA with Authorization Code + PKCE. Map `sub` to local users and enforce organization roles in Ringfour. No Auth0 Organizations or human tokens for daemon/Runner.
 
 Preserve mandatory Auth0, hosted-first architecture, fixed separate Runner and uv environments. Never mount the Docker socket. Infrastructure manages containers. Do not add authentication bypasses for the internal Console. Local test signing keys are test-only and must be rejected by hosted configuration.

@@ -42,6 +42,8 @@ Applications communicate through versioned contracts, never imports of another a
 
 ## Reading and execution order
 
+Use the [starter database schema](docs/database-schema.md) for milestones 00–03 and its change rules for later persistence work.
+
 Read [AGENTS.md](AGENTS.md), then [architecture](docs/architecture.md). Complete these milestones in order:
 
 - [00-foundation.md](docs/milestones/00-foundation.md)

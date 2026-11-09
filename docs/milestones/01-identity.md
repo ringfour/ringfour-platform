@@ -8,6 +8,8 @@ Complete prerequisite milestone 00 before beginning. Shared schemas, authorizati
 
 ## Contracts
 
+Apply the [starter database schema](../database-schema.md) for milestone 01.
+
 GET /v1/me; POST/GET /v1/organizations; GET/POST/PATCH/DELETE /v1/organizations/{org_id}/members with target member IDs for item routes. Define user, organization and membership schemas and role matrix from architecture. Set up Ringfour API (audience `https://api.ringfour.eu`, RS256), Ringfour CLI (Native, OAuth Device Authorization Flow), and Ringfour Web (SPA, Authorization Code + PKCE). No Auth0 Organizations. Creating an organization atomically creates its owner membership.
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.

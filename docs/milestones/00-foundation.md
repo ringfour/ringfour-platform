@@ -8,6 +8,8 @@ Complete prerequisite milestone none before beginning. Shared schemas, authoriza
 
 ## Contracts
 
+Apply the [starter database schema](../database-schema.md) for milestone 00.
+
 Define GET /health/live and /health/ready for API, daemon and Runner. Liveness checks process health; readiness checks owned dependencies (API PostgreSQL, daemon SQLite/Runner, Runner writable volume/uv). Health responses expose status/version only; no product data. Define a versioned health schema.
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.
