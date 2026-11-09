@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "conflict",
+    "message": "The requested operation conflicts with the current state of the resource.",
+    "request_id": "7f3a2b1c-0000-4000-8000-example00003"
+  }
+}

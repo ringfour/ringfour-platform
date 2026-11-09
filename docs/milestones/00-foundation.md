@@ -14,11 +14,11 @@ Freeze request/response/message schemas, state transitions and error examples in
 
 ## Implementation
 
-Create independent app packages and lockfiles, initial Drizzle/SQLite migrations, local Compose networking/volumes and private Runner service. CLI `ringfour health` checks configured services. Console shows health only in development. Establish documented commands for install, lint, type checks, component tests, integration, migration and clean startup. No Docker socket mounts.
+Create independent app packages and dependency definitions. Scaffold `apps/api/` as a C# ASP.NET Core modular monolith on a pinned supported .NET LTS, with an API project, xUnit test project and EF Core/Npgsql PostgreSQL configuration. Check in initial EF Core and daemon SQLite migrations. Configure local Compose networking/volumes and a private Runner service. No workflow processing or product authentication in this milestone. CLI `ringfour health` checks configured services. Console shows health only in development. Establish documented commands for install, lint, type checks, component tests, integration, migration and clean startup. No Docker socket mounts.
 
 ## Independent component tests
 
-API readiness fails with unavailable PostgreSQL; daemon migrations are repeatable; Runner detects unwritable storage; CLI returns nonzero on failed readiness; Console handles unreachable services.
+Use xUnit and PostgreSQL Testcontainers to apply the EF Core migrations from an empty database and exercise API readiness. API readiness fails with unavailable PostgreSQL; daemon migrations are repeatable; Runner detects unwritable storage; CLI returns nonzero on failed readiness; Console handles unreachable services.
 
 Run each affected application's tests independently; use fixtures for external dependencies only at this tier. Unchanged applications need regression coverage, not invented feature work.
 

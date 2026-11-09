@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/*
+ * Ringfour interface system tokens (source of truth: ringfour/design/design_system).
+ * Dark theme by default, per the design system; token values from tokens.css [data-theme="dark"].
+ * Panels are square with elevation-1; rounding is reserved for actions (6px) and fields (4px).
+ */
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/SpaceGrotesk-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/SpaceGrotesk-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/SpaceGrotesk-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@theme {
+  --color-background: #080808;
+  --color-surface: #111111;
+  --color-inset: #191919;
+  --color-foreground: #f5f5f5;
+  --color-muted-foreground: #b8b8b8;
+  --color-border: #2b2b2b;
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-foreground);
+
+  /* Functional accents: orange = brand/actions, teal = ready/success, red = error. */
+  --color-accent: #e47a00;
+  --color-accent-text: #ffb15a;
+  --color-ready: #36b5a0;
+  --color-ready-text: #66d6c0;
+  --color-warning: #ffb15a;
+  --color-danger: #f39788;
+
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-accent: "Space Grotesk", var(--font-sans);
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --radius-action: 6px;
+  --radius-field: 4px;
+
+  --shadow-elevation-1: 0 1px 4px #00000040;
+  --shadow-elevation-2: 0 4px 14px #0000004d;
+  --shadow-elevation-3: 0 14px 40px #00000080;
+}
+
+body {
+  color-scheme: dark;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}

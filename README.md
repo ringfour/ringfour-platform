@@ -7,11 +7,16 @@ Build a hosted robotics application platform in small, sequential vertical slice
 | Boundary | Decision |
 |---|---|
 | Account | Mandatory Auth0 account; no anonymous product use or local password system |
-| Platform | Hosted-first Fastify + TypeScript, Drizzle, PostgreSQL |
+| Platform | Hosted-first C# / ASP.NET Core on a supported .NET LTS; modular monolith |
+| Platform persistence | PostgreSQL + EF Core / Npgsql; EF Core migrations |
+| Platform authentication | Auth0 access tokens validated by ASP.NET Core JWT Bearer |
+| Platform background work | ASP.NET Core hosted services backed by durable PostgreSQL workflow state |
+| Platform tests | xUnit + Testcontainers with real PostgreSQL |
+| Shared contracts | OpenAPI + JSON Schema |
 | Device coordinator | Python FastAPI daemon, durable SQLite state |
 | Execution | Fixed, separate Python Runner container; `uv`; cached per-revision virtual environments; no Docker socket |
 | Developer tool | Python Typer + Rich CLI |
-| Console | Internal development-only React/Vite + shadcn/ui; authenticated, deliberate privileges |
+| Console | Internal development-only React + TypeScript + Vite + shadcn/ui; authenticated, deliberate privileges |
 | Repository | Monorepo now; independent application dependencies, packaging and release boundaries for later extraction |
 | Robotics | Existing SDK and Agent stay separate projects; Agent owns ROS, capabilities and safety |
 | Robot profile | Owned by Agent/robot repository; Ringfour references its identity/version, never becomes its authoring authority |
@@ -21,7 +26,10 @@ Infrastructure such as Balena owns service containers. Ringfour provisions Pytho
 ## Repository
 
 ```text
-apps/{api,daemon,runner,cli,console}/
+apps/api/                            # .NET solution, API project and xUnit tests
+  src/Ringfour.Api/                  # business modules and EF Core migrations
+  tests/Ringfour.Api.Tests/          # unit and Testcontainers coverage
+apps/{daemon,runner,cli,console}/     # independently packaged applications
 packages/contracts/                  # OpenAPI + JSON Schema and fixtures
 infra/{compose,balena}/
 tests/e2e/
@@ -30,7 +38,7 @@ docs/milestones/
 AGENTS.md
 ```
 
-Applications communicate through versioned contracts, never imports of another application's implementation. The SDK and Agent are external version-pinned dependencies, not copied into this tree.
+Applications communicate through versioned contracts, never imports of another application's implementation. The RoboCore SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts.
 
 ## Reading and execution order
 
@@ -53,3 +61,7 @@ Read [AGENTS.md](AGENTS.md), then [architecture](docs/architecture.md). Complete
 For every milestone: contract → implementation → independent component tests → real-process integrated acceptance → review → commit. Stop on failures. Each milestone records exact reproducible commands and results in its implementation evidence; command names are established in 00, not assumed to exist today. Local integration must use real PostgreSQL, API, daemon, Runner and CLI where applicable. Auth0 and physical-device checks are separate explicit external acceptance gates, never silently replaced by mocks.
 
 The architecture document defines cross-cutting behavior; milestone contracts add only the current slice. Any implementation-driven change must update schemas, consumers and tests together.
+
+## Business context
+
+Read the appended [business overview and source reconciliation](../Product%20Definition.md#business-overview--current-direction-8-november-2026) for customer responsibilities, interactions and the distinction between v0.1 and the broader Studio vision. The original product definition contains superseded decisions; its reconciliation table makes those differences explicit.

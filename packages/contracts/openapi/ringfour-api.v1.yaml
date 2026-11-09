@@ -1,0 +1,65 @@
+openapi: 3.1.0
+info:
+  title: Ringfour API
+  version: "0.1.0"
+  description: |
+    Ringfour hosted API. Milestone 00 scope: health endpoints only.
+    Product endpoints under /v1 arrive in later milestones and use the
+    shared error envelope referenced below.
+  license:
+    name: Proprietary
+servers:
+  - url: http://localhost:8080
+    description: Local Compose stack
+tags:
+  - name: health
+    description: Infrastructure health; no authentication, no product data.
+paths:
+  /health/live:
+    get:
+      tags: [health]
+      operationId: getLiveness
+      summary: Process liveness
+      description: Reports only that the process is alive. Never performs dependency checks.
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/health/v1/liveness-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/health/v1/liveness-ok.json"
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: getReadiness
+      summary: Readiness including owned dependencies
+      description: |
+        Checks the dependencies this service owns: API checks PostgreSQL.
+        Responds 200 when every check passes, 503 otherwise. The body uses
+        the same readiness schema in both cases.
+      responses:
+        "200":
+          description: All dependency checks pass.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/health/v1/readiness-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/health/v1/readiness-ok.json"
+        "503":
+          description: At least one dependency check fails.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/health/v1/readiness-response.schema.json"
+              examples:
+                fail:
+                  $ref: "../fixtures/health/v1/readiness-fail.json"
+components:
+  schemas:
+    Error:
+      $ref: "../schemas/errors/v1/error.schema.json"

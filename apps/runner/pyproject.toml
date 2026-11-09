@@ -1,0 +1,29 @@
+[project]
+name = "ringfour-runner"
+dynamic = ["version"]
+description = "Ringfour execution Runner: fixed private container preparing uv environments and OS processes."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.128.0",
+    "uvicorn>=0.38.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.0",
+    "ruff>=0.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ringfour_runner/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ringfour_runner"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

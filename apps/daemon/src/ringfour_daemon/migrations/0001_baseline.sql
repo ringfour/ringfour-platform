@@ -1,0 +1,2 @@
+-- Baseline for milestone 00: no product tables yet. Applying this migration
+-- records version 1 in schema_migrations, which the daemon creates itself.

@@ -1,0 +1,13 @@
+{
+  "name": "@ringfour/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ringfour versioned contracts: JSON Schemas, OpenAPI documents and representative fixtures. Applications consume these files; they never import each other's implementations.",
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}

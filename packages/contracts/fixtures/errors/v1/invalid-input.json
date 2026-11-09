@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "Request body failed schema validation.",
+    "request_id": "7f3a2b1c-0000-4000-8000-example00001",
+    "details": {
+      "field": "name",
+      "reason": "must be a non-empty string"
+    }
+  }
+}

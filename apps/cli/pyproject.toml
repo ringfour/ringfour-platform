@@ -1,0 +1,32 @@
+[project]
+name = "ringfour-cli"
+dynamic = ["version"]
+description = "Ringfour developer CLI."
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "rich>=14.0.0",
+    "typer>=0.20.0",
+]
+
+[project.scripts]
+ringfour = "ringfour_cli.main:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+    "ruff>=0.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ringfour_cli/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ringfour_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

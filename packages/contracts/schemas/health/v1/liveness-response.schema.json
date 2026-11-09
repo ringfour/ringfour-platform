@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/health/v1/liveness-response.schema.json",
+  "title": "LivenessResponse",
+  "description": "GET /health/live response. Process health only; dependency checks belong to readiness. Exposes status and service version, no product data.",
+  "type": "object",
+  "required": ["status", "version"],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "const": "ok"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Service version, e.g. the application package version."
+    }
+  }
+}

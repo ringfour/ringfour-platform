@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="JsonSchema.Net" Version="9.6.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="Npgsql" Version="10.0.0" />
+    <!-- Overrides a vulnerable transitive 9.0.0 pulled by the test stack. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="9.0.*" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.16.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ringfour.Api/Ringfour.Api.csproj" />
+  </ItemGroup>
+
+  <!-- Contracts are the shared boundary: tests validate live responses against
+       the same schema files every other consumer uses. -->
+  <ItemGroup>
+    <Content Include="../../../../packages/contracts/schemas/**/*.json"
+             Link="contracts/schemas/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

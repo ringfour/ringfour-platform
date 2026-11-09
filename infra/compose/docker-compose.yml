@@ -1,0 +1,70 @@
+name: ringfour
+
+# Local development stack. All services run here; only the CLI runs on the host.
+# No Docker socket is mounted anywhere — infrastructure owns containers.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ringfour
+      POSTGRES_USER: ringfour
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ringfour_dev}
+    # postgres:18 stores data under /var/lib/postgresql (not .../data).
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ringfour -d ringfour"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: ../../apps/api
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:-ringfour_dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  runner:
+    build: ../../apps/runner
+    volumes:
+      - runner-data:/data
+    # Private: reachable only on the internal network, never published.
+    expose:
+      - "8082"
+
+  daemon:
+    build: ../../apps/daemon
+    environment:
+      DAEMON_DB_PATH: /data/ringfour.db
+      RUNNER_URL: http://runner:8082
+    volumes:
+      - daemon-data:/data
+    depends_on:
+      - runner
+    ports:
+      - "8081:8081"
+
+  console:
+    build: ../../apps/console
+    environment:
+      API_PROXY_TARGET: http://api:8080
+      DAEMON_PROXY_TARGET: http://daemon:8081
+    volumes:
+      - ../../apps/console:/app
+      - /app/node_modules
+    depends_on:
+      - api
+      - daemon
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:
+  runner-data:
+  daemon-data:

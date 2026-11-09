@@ -6,6 +6,12 @@ CLI/Console → hosted API → outbound device connection → daemon → private
 
 PostgreSQL owns accounts, organization membership, robots, enrollment, immutable uploaded revisions, requested operations and replicated history. SQLite owns device operation deduplication, execution reconciliation, local events and an upload outbox. Runner persists execution metadata and process output on a dedicated volume. The daemon owns lifecycle coordination; Runner owns environment preparation and OS processes. An API outage does not kill an already running mission, but prevents new hosted requests and human responses until reconnection.
 
+## Platform implementation
+
+Use a C# ASP.NET Core modular monolith on a supported .NET LTS, pinned in milestone 00. Keep identity, organization access, enrollment, deployments, mission coordination, Logbook and HITL as modules within the API application. Use ordinary services, built-in dependency injection and Minimal APIs or controllers. Use PostgreSQL through EF Core and Npgsql, with checked-in EF Core migrations. Avoid microservices, CQRS frameworks, MediatR and event sourcing. OpenAPI and JSON Schema remain the language-independent contracts shared by the CLI, Console and daemon.
+
+Use ASP.NET Core hosted services initially for background processing. Persist critical workflow state, including pending work and retry/reconciliation state as introduced by each milestone, in PostgreSQL. Background services process that durable state; process memory is not a durable queue. Test restart recovery for workflows that rely on background processing.
+
 ## HTTP and identifiers
 
 All proposed product endpoints use `/v1`. UUID identifiers, UTC RFC3339 timestamps, explicit schema versions and organization-scoped authorization are required. Errors: `{error:{code,message,request_id,details?}}`; no secrets in messages. Use 400 invalid input, 401 invalid authentication, 403 insufficient membership, 404 inaccessible/missing scoped object, 409 state conflict, 413 size limit, 429 rate limit and 503 unavailable dependency. Never treat request acceptance as execution success.
@@ -14,7 +20,17 @@ Mutation endpoints accepting retries use `Idempotency-Key`, scoped to principal,
 
 ## Identity and authorization
 
-Validate Auth0 issuer, audience, signature, expiry and supported algorithm. Use Auth0 subject as external identity, never email as a primary key. CLI uses an Auth0-supported native login flow with PKCE or device authorization as enabled for the tenant; no embedded client secret. Store refresh credentials in the OS credential store and redact tokens. API owns users, organizations and memberships: owner (membership/device administration), developer (deploy/run/dev), operator (inspect, stop, respond to HITL). Scope every resource lookup by organization. Owners include developer/operator rights; developers include operator rights. Self-service organization creation is allowed for authenticated users; membership mutation is owner-only. Prevent removal of the last owner.
+Configure these Auth0 resources:
+
+| Resource | Configuration |
+|---|---|
+| Ringfour API | OAuth resource server; audience `https://api.ringfour.eu`; RS256 |
+| Ringfour CLI | Native application; OAuth Device Authorization Flow; no embedded client secret |
+| Ringfour Web | Single Page Application; Authorization Code + PKCE; used by the internal Console initially and Studio later |
+
+ASP.NET Core JWT Bearer validates access-token signature (RS256), issuer, audience and expiry. Use the Auth0 `sub` claim as external identity, never email as a primary key. Store CLI refresh credentials, when issued, in the OS credential store; redact tokens. Auth0 handles human authentication only. Do not use Auth0 Organizations or model business permissions in Auth0. The daemon and Runner do not use human Auth0 tokens; the Platform API owns robot enrollment and machine credentials, and Runner uses its private daemon authentication.
+
+API owns users, organizations and memberships: owner (membership/device administration), developer (deploy/run/dev), operator (inspect, stop, respond to HITL). Scope every resource lookup by organization. Owners include developer/operator rights; developers include operator rights. Self-service organization creation is allowed for authenticated users; membership mutation is owner-only. Prevent removal of the last owner.
 
 Machine credentials are separate from human tokens, scoped to one enrolled robot; store only hashes where verification permits. Provide revocation, rotation and secret-safe logs. Runner accepts only authenticated private daemon traffic and is never publicly exposed.
 
@@ -36,4 +52,4 @@ Create local durable events from the first execution feature; milestone 08 adds 
 
 ## Test environments
 
-Component tests use isolated databases/fakes at external boundaries. Local integration uses real service processes and PostgreSQL/SQLite, migrated from empty volumes; test-only Auth0-compatible fixtures cannot substitute for live Auth0 login acceptance. Balena smoke at 04 verifies container/network assumptions; 10 verifies actual SDK/Agent/ROS. Pin and record external versions. Do not publish the internal Console in production deployment manifests.
+Platform tests use xUnit; persistence, migrations and database-backed API tests use real PostgreSQL through Testcontainers. Component tests isolate other external boundaries. Local integration uses real service processes and PostgreSQL/SQLite, migrated from empty volumes; test-only Auth0-compatible fixtures cannot substitute for live Auth0 login acceptance. Balena smoke at 04 verifies container/network assumptions; 10 verifies actual SDK/Agent/ROS. Pin and record external versions. Do not publish the internal Console in production deployment manifests.

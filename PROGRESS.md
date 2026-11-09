@@ -1,0 +1,74 @@
+# Ringfour — progress log
+
+Running log of work performed on this repository. Updated continuously as tasks are
+completed; see `docs/evidence/NN.md` for per-milestone acceptance records. No secrets
+or tokens in this file.
+
+## 2026-11-09 — session: setup assessment + logging rule
+
+- Read `README.md`, `docs/architecture.md`, `docs/milestones/00-foundation.md`,
+  `docs/milestones/01-identity.md` (remaining milestones 02–10 listed, not yet read).
+- Assessed local toolchain against milestone 00 requirements:
+  - Present: Docker 29.9.2, Docker Compose v5.5.1, uv 0.12.1, git 2.54.0, Python 3.9.6 (system).
+  - Missing: Node.js (required for API — Fastify/TypeScript/Drizzle — and Console — React/Vite). Node LTS must be installed before milestone 00 scaffolding.
+- Open decision recorded: Node package manager for the monorepo (npm workspaces vs pnpm) — pick at 00 scaffolding; docs do not specify.
+- Auth0 identified as the external gate for milestone 01 (not 00): needs a real tenant with an API (audience), a Native app for the CLI (PKCE or Device Authorization), a SPA app for the Console (Auth Code + PKCE), RS256/issuer/expiry validation config, and two test user accounts for the cross-org isolation acceptance. Local test signing keys are test-only and must be rejected by hosted config.
+- Later external gates noted: Balena smoke at 04; real robot + version-pinned SDK/Agent/ROS at 10.
+- Added mandatory progress-logging rule to `AGENTS.md` (every task logged here; no batching) and created this `PROGRESS.md`.
+- Next: install Node.js LTS, then begin milestone 00 (foundation scaffolding).
+
+## 2026-11-09 — task: .gitignore + secret protection
+
+- Created `.gitignore` covering secrets (`.auth.env` / `*.auth.env` first-class, plus `.env*` with `.example` negations), Node, Python, local runtime state, test artifacts, OS/editor noise.
+- Verified pre-existing `.auth.env` on disk was untracked before the ignore rule landed — it now resolves via `git check-ignore` and no longer appears in `git status`. No secret file was ever staged or committed.
+- Noted for later: two `.DS_Store` files were already tracked in git (now shown as deleted in status); unrelated to this task, left as-is.
+
+## 2026-11-09 — milestone 00 start: toolchain resolved + key decisions
+
+- Node.js found at `/opt/homebrew/bin/node` (Homebrew `node@26`, v26.13.0, npm 11.20.0); earlier "missing" was a non-interactive-shell PATH issue. No install needed. Commands must prefix `PATH=/opt/homebrew/bin:$PATH`.
+- Decisions (recorded per AGENTS.md step 1, no suitable existing API to reuse):
+  - **No JS workspace manager**: each app/packages dir gets its own `package.json` + `package-lock.json`, satisfying the milestone's "independent app packages and lockfiles" and later extraction. Root `package.json` is scripts-only orchestration.
+  - **Python apps via uv** (0.12.1), Python 3.13, hatchling src-layout, version read from `__init__.py` via importlib.metadata.
+  - **API component tests use PGlite** (isolated real PostgreSQL, WASM) for ready-ok; ready-fail uses the real `pg` driver against a closed port. Live PG only at integration tier.
+  - **Health contract**: live → `{status:"ok",version}`; ready → `{status,version,checks{name:"ok"|"fail"}}`, HTTP 503 when any check fails. Versioned as `contracts/health/v1`.
+  - **Console talks to API/daemon through the Vite dev proxy** — no CORS needed; health page gated on `import.meta.env.DEV`.
+  - **Runner has no published compose port** (private); daemon readiness checks Runner, CLI checks API+daemon.
+- Starting milestone 00 (Foundation): contracts first, then apps, compose, acceptance.
+- User directive: **Docker-first** — API, PostgreSQL, daemon, Runner and Console all run in Docker Compose from the start (daemon was already specced as a container). Only the CLI runs on the host. Host-side tooling (node/uv) is for lint/typecheck/component tests; integrated runtime is always Compose.
+
+## 2026-11-09 — task: Platform API re-scaffolded in C# (.NET 10, all tooling in Docker)
+
+- Context: stack decision changed from Fastify/TypeScript/Drizzle to C#/ASP.NET Core/EF Core (README/architecture/AGENTS updated in the same working tree); the old `apps/api` was deleted. This task rebuilt the milestone-00 API slice in C#.
+- **No host .NET SDK**: everything runs in Docker. Pinned images `mcr.microsoft.com/dotnet/sdk:10.0` (SDK 10.0.403) and `mcr.microsoft.com/dotnet/aspnet:10.0` (runtime 10.0.14). `scripts/dotnet.sh` wraps the SDK container; NuGet packages, dotnet tools and per-project `obj`/`bin` live in named volumes (`ringfour-dotnet-*`, `ringfour-api-*`) because container-written files on the macOS bind mount produced bogus mtimes (MSBuild `DateTimeOffset` overflow) and stale file handles.
+- Scaffolded `apps/api/`: `Ringfour.slnx`, `src/Ringfour.Api` (Minimal API), `tests/Ringfour.Api.Tests` (xUnit). Structure follows README repo layout. Shared settings (net10.0, nullable, warnings-as-errors, Version 0.1.0, no source revision in InformationalVersion) in `apps/api/Directory.Build.props`.
+- Implemented `GET /health/live` and `GET /health/ready` per `contracts/health/v1` (ready checks PostgreSQL via EF `CanConnectAsync`, 503 with `checks.postgresql=fail` when down). EF Core 10.0.0 + Npgsql 10.0.0; checked-in initial migration `Persistence/Migrations/*_InitialCreate.cs` (empty baseline); API applies migrations at startup (`Database:MigrateOnStartup`, default true); `DesignTimeDbContextFactory` keeps `dotnet ef` off `Program.cs`.
+- NuGet audit (warnings-as-errors) caught vulnerable transitives; pinned overrides: `System.Security.Cryptography.Pkcs` 9.0.* (via Npgsql) and `System.Security.Cryptography.Xml` 9.0.* (test stack); Testcontainers.PostgreSql pinned 4.16.0 (4.1.0 pulled vulnerable SSH.NET 2024.1.0).
+- Component tests (xUnit + Testcontainers.PostgreSql, postgres:18): liveness shape/version, readiness ok + exact payload shape, migrations applied from empty DB (`__EFMigrationsHistory` contains InitialCreate), readiness 503/fail with PostgreSQL down. Result: 4/4 pass via `scripts/test-component.sh`. The test SDK container mounts the host Docker socket (dev tooling only; the runtime stack never does) and uses `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` to reach sibling containers.
+- `apps/api/Dockerfile`: multi-stage sdk→aspnet, non-root `app` user, port 8080; image `ringfour-api:dev` builds clean.
+- Real-container smoke (manual, pre-Compose): postgres:18 + `ringfour-api:dev` on a Docker network — live/ready 200, migration applied; stopping postgres → ready 503 `{postgresql: fail}`, live stays 200; restarting postgres with the same volume → ready recovers 200. Noted: postgres:18 images expect the data volume at `/var/lib/postgresql` (not `/var/lib/postgresql/data`) — relevant for Compose.
+- Rewired `scripts/setup.sh`/`lint.sh`/`typecheck.sh`/`test-component.sh` for dockerized dotnet (`dotnet format --verify-no-changes` = lint, `dotnet build` = typecheck, `dotnet test` = component); Python/Node apps guarded until they exist. `.env.example`: `DATABASE_URL` replaced with `ConnectionStrings__Postgres`. `.gitignore`: added .NET `bin/`/`obj/`.
+- Verified: `scripts/lint.sh`, `scripts/typecheck.sh`, `scripts/test-component.sh` all green.
+- Milestone 00 remaining: daemon, runner, cli, console apps; `infra/compose` stack (with pg healthcheck gating the API — the bare API crashes if postgres is not up at startup, by design); real-process integrated acceptance; `docs/evidence/00.md`.
+
+## 2026-11-09 — task: live contract-schema validation wired into API tests
+
+- API xUnit tests now validate real HTTP response bodies against the actual `packages/contracts/schemas/**` files (JsonSchema.Net 9.6.0, draft 2020-12), not just hand-written shape assertions. `ContractSchema.AssertValid(schemaPath, json)` helper; schemas compiled once per path (JsonSchema.Net registers `$id` globally — duplicate `FromText` throws "Overwriting registered schemas is not permitted").
+- Test project links `packages/contracts/schemas/**/*.json` as content copied to test output. Consequence: the SDK container now mounts the **repo root** at `/repo` (workdir `/repo/apps/api`) instead of only `apps/api`, so the repo-relative path resolves identically on host and in-container. `scripts/dotnet.sh` and `scripts/test-component.sh` updated; artifact volume targets moved to match.
+- Verified: `scripts/test-component.sh` 4/4 pass, `scripts/lint.sh` (dotnet format) clean, `scripts/typecheck.sh` clean.
+
+## 2026-11-09 — milestone 00 continued: daemon, runner, cli apps + component tests
+
+- `apps/daemon`: FastAPI + uvicorn, Python 3.13 via uv (hatchling src-layout, version from `__init__.py`). Durable SQLite with a minimal ordered-migration runner (`db.py`, `schema_migrations` table, `migrations/0001_baseline.sql` baseline). Health per `contracts/health/v1`: readiness checks `sqlite` (connect + BEGIN IMMEDIATE write probe) and `runner` (GET runner `/health/ready`, 2s timeout). Migrations run at startup; unusable DB dir fails fast. Runner HTTP client injectable for tests. 6/6 pytest + ruff clean.
+- `apps/runner`: FastAPI, private service. Readiness checks `volume` (write probe in `RUNNER_DATA_DIR`) and `uv` (binary on PATH + `uv --version`). 3/3 pytest + ruff clean (uv-gated test skips if uv absent on host).
+- `apps/cli`: Typer + Rich + httpx. `ringfour health` probes API + daemon `/health/ready` (env `RINGFOUR_API_URL`/`RINGFOUR_DAEMON_URL`, defaults localhost:8080/8081), Rich table, exit 1 on any fail/unreachable. Typer group callback added so subcommand form survives future commands. 5/5 pytest + ruff clean.
+- `apps/console`: Vite 7 + React 19 + TS + Tailwind v4 with shadcn/ui structure (components.json, `cn`, `ui/card`). Dev-gated health page (`import.meta.env.DEV`) polling `/api/health/ready` and `/daemon/health/ready` through the Vite proxy (targets from `API_PROXY_TARGET`/`DAEMON_PROXY_TARGET`, default localhost) — no CORS. Lint via Biome (not ESLint — single dep, covers format+imports; `css.parser.tailwindDirectives` needed for Tailwind v4 syntax). vitest + Testing Library: 3/3 (ok / fail / unreachable rendering).
+
+## 2026-11-09 — milestone 00 complete: compose stack, integrated acceptance, evidence
+
+- Dockerfiles: daemon/runner on `python:3.13-slim` with `uv` 0.12.1 copied from `ghcr.io/astral-sh/uv:0.12.1`, non-root `app` user, `/data` volumes; console on `node:24-alpine` running the Vite dev server (dev-only). API image from earlier task.
+- `infra/compose/docker-compose.yml`: postgres:18 (healthcheck, volume at `/var/lib/postgresql`), api (waits on healthy postgres, applies EF migrations at startup), runner (private, `expose` only — no published port), daemon (SQLite volume, `RUNNER_URL=http://runner:8082`), console (Vite proxy targets via env). No Docker socket mounts; no secrets (defaults inline, overridable via `.env`).
+- `tests/e2e/00-health.sh` (`npm run test:e2e`): clean start from empty volumes → runner-privacy check → `ringfour health` exit 0 → stop postgres (api 503, CLI exit 1) → restore (recover, no volume deletion) → stop runner (daemon 503, CLI exit 1) → restore → console serves + proxies → final all-ok. **PASSED** on first full run.
+- Console aligned to the Ringfour interface system (`ringfour/design/design_system`): dark theme default, token palette (orange #E47A00 accent, teal #36B5A0 ready, red danger) mapped into Tailwind v4 `@theme`, square elevation-1 panels, Space Grotesk titles (fonts vendored with OFL into `apps/console/public/fonts`), Inter via `@fontsource/inter`, status badges per `components.css` pattern. Rule recorded in `AGENTS.md`. Console suites re-verified after the change (3/3 vitest, typecheck, biome).
+- Evidence recorded in `docs/evidence/00.md` with pinned versions, commands and observed results. Commands documented in `docs/development.md`.
+- Full component suite green: contracts 3/3, api 4/4, console 3/3, daemon 6/6, runner 3/3, cli 5/5; lint + typecheck clean.
+- Milestone 00 gates: no external prerequisites required (Auth0 is 01). Next: milestone 01 (identity) — needs a real Auth0 tenant for its external acceptance gate.

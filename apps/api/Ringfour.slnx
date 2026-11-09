@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ringfour.Api/Ringfour.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ringfour.Api.Tests/Ringfour.Api.Tests.csproj" />
+  </Folder>
+</Solution>

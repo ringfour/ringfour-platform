@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/health/v1/readiness-response.schema.json",
+  "title": "ReadinessResponse",
+  "description": "GET /health/ready response. Reports owned dependency checks. HTTP 200 when status is ok, HTTP 503 when status is fail. Check names are stable per service; values expose only ok/fail, never product data or secrets.",
+  "type": "object",
+  "required": ["status", "version", "checks"],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "enum": ["ok", "fail"]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checks": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "enum": ["ok", "fail"]
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+# --- Secrets (highest priority) ---
+# Auth0 / auth credentials — NEVER commit these
+.auth.env
+*.auth.env
+
+# Generic environment files; examples stay tracked
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# --- Node.js (apps/console, packages/contracts) ---
+node_modules/
+dist/
+build/
+out/
+*.tsbuildinfo
+coverage/
+.turbo/
+.vite/
+*.log
+
+# --- .NET (apps/api) ---
+# obj/bin live in named Docker volumes (scripts/dotnet.sh); ignore them everywhere.
+bin/
+obj/
+
+# --- Python (apps/daemon, apps/runner, apps/cli) ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Local runtime state (compose volumes, SQLite, runner data) ---
+*.sqlite
+*.sqlite3
+*.db
+/data/
+
+# --- Test artifacts ---
+test-results/
+playwright-report/
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -12,6 +12,12 @@ Implement Ringfour v0.1 using README.md, docs/architecture.md and ordered docs/m
 
 Keep applications independently packageable. Do not import their private implementation across boundaries. Keep SDK and Agent in their existing projects; inspect their real documentation/source and pin tested versions before integrating. Do not invent SDK calls, duplicate ROS logic or move robot profile ownership to Ringfour.
 
+Console (and any future Ringfour web UI) follows the Ringfour interface system in the sibling repository `ringfour/design/design_system` (tokens.css/base.css/components.css): its color roles (orange = brand/actions, teal = ready/success, red = error, neutral surfaces), square panels with restrained elevation, 6px action / 4px field radii, Space Grotesk titles and Inter body text. Vendor required assets (fonts) into the consuming app; do not cross-import the design project's implementation.
+
+Build the Platform API in C# on supported .NET LTS using ASP.NET Core, EF Core/Npgsql and PostgreSQL. Keep a modular monolith with ordinary services and built-in dependency injection. Use EF Core migrations and xUnit with PostgreSQL Testcontainers. Avoid CQRS frameworks, MediatR and event sourcing. Hosted services may process durable workflow state; persist critical state and retries in PostgreSQL. Keep OpenAPI/JSON Schema and consumers independent of backend implementation.
+
+Use Auth0 JWT Bearer with RS256 and audience `https://api.ringfour.eu`; CLI uses OAuth Device Authorization Flow, and Console uses the Ringfour Web SPA with Authorization Code + PKCE. Map `sub` to local users and enforce organization roles in Ringfour. No Auth0 Organizations or human tokens for daemon/Runner.
+
 Preserve mandatory Auth0, hosted-first architecture, fixed separate Runner and uv environments. Never mount the Docker socket. Infrastructure manages containers. Do not add authentication bypasses for the internal Console. Local test signing keys are test-only and must be rejected by hosted configuration.
 
 Do not start the next milestone with failing acceptance. Contract changes require all affected consumers and tests to change in the same milestone. Avoid unrelated refactors. Trusted-code execution is the v0.1 assumption; do not describe virtual environments as a security sandbox.
