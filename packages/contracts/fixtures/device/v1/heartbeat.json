@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "message_id": "msg-heartbeat-0042",
+  "type": "heartbeat",
+  "robot_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "sequence": 42,
+  "payload": {}
+}

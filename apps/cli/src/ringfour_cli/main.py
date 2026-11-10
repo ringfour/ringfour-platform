@@ -332,6 +332,21 @@ def robot_show(robot_id: str) -> None:
     console.print(f"  Profile ref:   {body['profile_ref'] or '-'}")
 
 
+@robot_app.command("status")
+def robot_status(robot_id: str) -> None:
+    """Show the robot's observed device status (online/offline, last seen, versions)."""
+    settings = _settings()
+    store = auth.TokenStore()
+    body = _api_request("GET", f"/v1/robots/{robot_id}/status", settings, store).json()
+    state = "online" if body["online"] else "offline"
+    style = "[green]" if body["online"] else "[red]"
+    console.print(f"Robot:            {body['robot_id']}")
+    console.print(f"  Status:           {style}{state}[/]")
+    console.print(f"  Last seen:        {body['last_seen_at'] or 'never'}")
+    console.print(f"  Daemon version:   {body['daemon_version'] or '-'}")
+    console.print(f"  Protocol version: {body['protocol_version'] or '-'}")
+
+
 @robot_app.command("enrollment-token")
 def robot_enrollment_token(robot_id: str) -> None:
     """Issue a single-use enrollment token (owner-only; shown exactly once)."""

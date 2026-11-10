@@ -48,6 +48,7 @@ function stubApi(overrides?: {
   role?: string;
   robots?: unknown[];
   credentials?: unknown[];
+  status?: unknown;
   onPost?: (url: string, body: unknown) => Response | undefined;
 }) {
   const posts: { url: string; body: unknown }[] = [];
@@ -77,6 +78,17 @@ function stubApi(overrides?: {
       }
       if (url.endsWith("/credentials")) {
         return jsonResponse({ items: overrides?.credentials ?? [CREDENTIAL] });
+      }
+      if (url.endsWith("/status")) {
+        return jsonResponse(
+          overrides?.status ?? {
+            robot_id: ROBOT.id,
+            online: true,
+            last_seen_at: "2026-11-10T09:00:14Z",
+            daemon_version: "0.1.0",
+            protocol_version: 1,
+          },
+        );
       }
       if (url.includes("/robots/")) {
         return jsonResponse(ROBOT);
@@ -203,6 +215,38 @@ test("owner rotates and revokes credentials", async () => {
     url: `/api/v1/robots/${ROBOT.id}/credentials/${CREDENTIAL.id}/revoke`,
     body: null,
   });
+});
+
+test("device status inspector shows observed presence", async () => {
+  stubApi();
+  render(<RobotsPage />);
+
+  await userEvent.click(await screen.findByText("warehouse-01"));
+  const panel = await screen.findByTestId("device-status");
+
+  expect(panel.textContent).toContain("online");
+  expect(panel.textContent).toContain("2026-11-10T09:00:14Z");
+  expect(panel.textContent).toContain("0.1.0");
+  expect(panel.textContent).toContain("v1");
+});
+
+test("device status inspector shows never-connected robots as offline", async () => {
+  stubApi({
+    status: {
+      robot_id: ROBOT.id,
+      online: false,
+      last_seen_at: null,
+      daemon_version: null,
+      protocol_version: null,
+    },
+  });
+  render(<RobotsPage />);
+
+  await userEvent.click(await screen.findByText("warehouse-01"));
+  const panel = await screen.findByTestId("device-status");
+
+  expect(panel.textContent).toContain("offline");
+  expect(panel.textContent).toContain("never");
 });
 
 test("non-owner members see a read-only view", async () => {

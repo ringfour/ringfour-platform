@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "message_id": "msg-command-0007",
+  "type": "command",
+  "robot_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "sequence": 7,
+  "payload": {
+    "operation_id": "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
+    "kind": "diagnostic.noop",
+    "payload_version": 1,
+    "payload": {},
+    "deadline_at": "2026-11-10T09:01:00Z"
+  }
+}

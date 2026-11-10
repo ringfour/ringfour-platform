@@ -28,6 +28,14 @@ type Credential = {
   revoked_at: string | null;
 };
 
+type RobotStatus = {
+  robot_id: string;
+  online: boolean;
+  last_seen_at: string | null;
+  daemon_version: string | null;
+  protocol_version: number | null;
+};
+
 // A secret shown exactly once (enrollment token or rotated credential
 // secret). It lives only in this component's state until dismissed.
 type ShownSecret = { kind: string; value: string; expires_at?: string };
@@ -51,6 +59,7 @@ export function RobotsPage() {
   const [robots, setRobots] = useState<Robot[] | null>(null);
   const [selectedRobot, setSelectedRobot] = useState<Robot | null>(null);
   const [credentials, setCredentials] = useState<Credential[] | null>(null);
+  const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
   const [newRobotName, setNewRobotName] = useState("");
   const [shownSecret, setShownSecret] = useState<ShownSecret | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +106,37 @@ export function RobotsPage() {
       void loadRobots(selectedOrg.id);
     }
   }, [selectedOrg, loadRobots]);
+
+  // Observed device status: poll while a robot is selected. Read-only; any
+  // member may view it. The server derives online/offline from its own
+  // receive-time freshness window, so this reflects reality even when the
+  // device never says goodbye.
+  useEffect(() => {
+    if (selectedRobot === null) {
+      setRobotStatus(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const body = await apiFetch(
+          getToken,
+          `/v1/robots/${selectedRobot.id}/status`,
+        ).then((response) => response.json());
+        if (!cancelled) {
+          setRobotStatus(body as RobotStatus);
+        }
+      } catch {
+        // Keep the last known status; the next poll retries.
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [selectedRobot, getToken]);
 
   const inspectRobot = async (robot: Robot) => {
     setSelectedRobot(robot);
@@ -341,6 +381,40 @@ export function RobotsPage() {
                 <dd>{selectedRobot.profile_ref ?? "-"}</dd>
               </div>
             </dl>
+
+            <h3 className="mt-6 mb-2 text-sm font-medium">Device status</h3>
+            {robotStatus === null ? (
+              <p className="text-muted-foreground">Loading…</p>
+            ) : (
+              <dl className="space-y-1 text-sm" data-testid="device-status">
+                <div className="flex gap-2">
+                  <dt className="w-28 text-muted-foreground">Presence</dt>
+                  <dd>
+                    {robotStatus.online ? (
+                      <StatusBadge variant="success" label="online" />
+                    ) : (
+                      <StatusBadge variant="neutral" label="offline" />
+                    )}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="w-28 text-muted-foreground">Last seen</dt>
+                  <dd>{robotStatus.last_seen_at ?? "never"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="w-28 text-muted-foreground">Daemon version</dt>
+                  <dd>{robotStatus.daemon_version ?? "-"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="w-28 text-muted-foreground">Protocol</dt>
+                  <dd>
+                    {robotStatus.protocol_version === null
+                      ? "-"
+                      : `v${robotStatus.protocol_version}`}
+                  </dd>
+                </div>
+              </dl>
+            )}
             {isOwner && (
               <div className="mt-4 flex gap-2">
                 <button

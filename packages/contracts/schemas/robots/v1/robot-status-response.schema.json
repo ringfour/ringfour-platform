@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/robots/v1/robot-status-response.schema.json",
+  "title": "Robot status",
+  "description": "Observed device status for a robot. online is derived on the server from the freshness window over last_seen_at (server receive time): the robot is online when the most recent message arrived within the offline threshold (45 seconds by default). daemon_version and protocol_version reflect the newest accepted connection; all nullable fields are null before the first connection.",
+  "type": "object",
+  "required": ["robot_id", "online", "last_seen_at", "daemon_version", "protocol_version"],
+  "additionalProperties": false,
+  "properties": {
+    "robot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "online": {
+      "type": "boolean"
+    },
+    "last_seen_at": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "daemon_version": {
+      "type": ["string", "null"],
+      "maxLength": 100
+    },
+    "protocol_version": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    }
+  }
+}

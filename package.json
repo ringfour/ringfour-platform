@@ -11,6 +11,7 @@
     "test:e2e": "bash tests/e2e/00-health.sh",
     "test:e2e:01": "bash tests/e2e/01-identity.sh",
     "test:e2e:02": "bash tests/e2e/02-enrollment.sh",
+    "test:e2e:03": "bash tests/e2e/03-connectivity.sh",
     "compose:up": "docker compose -f infra/compose/docker-compose.yml up -d --build",
     "compose:down": "docker compose -f infra/compose/docker-compose.yml down",
     "compose:clean": "docker compose -f infra/compose/docker-compose.yml down -v --remove-orphans",

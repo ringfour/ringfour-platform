@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/v1/operation-status.schema.json",
+  "title": "operation_status payload",
+  "description": "Sent by the daemon to report progress and terminal outcomes. Terminal states (succeeded, failed, cancelled) are immutable on the platform: a conflicting terminal report receives an error message, a repeat of the same terminal state is a no-op. Failed results carry {\"error\": {\"code\", \"message\"}}; diagnostic.noop successes carry {\"noop\": true}.",
+  "type": "object",
+  "required": ["operation_id", "state"],
+  "additionalProperties": false,
+  "properties": {
+    "operation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["accepted", "running", "succeeded", "failed", "cancelled"]
+    },
+    "result": {
+      "type": "object"
+    }
+  }
+}

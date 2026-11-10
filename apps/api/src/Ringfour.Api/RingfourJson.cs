@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -16,4 +17,10 @@ public static class RingfourJson
             new UtcDateTimeOffsetConverter(),
         },
     };
+
+    // Contracts require RFC3339 UTC instants with a Z suffix. DOM payloads
+    // (JsonObject/JsonNode) ignore serializer converters, so timestamps built
+    // into envelopes must be pre-formatted with this helper.
+    public static string UtcTimestamp(DateTimeOffset value) =>
+        value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
 }

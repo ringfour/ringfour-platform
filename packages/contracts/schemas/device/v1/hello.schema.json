@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/v1/hello.schema.json",
+  "title": "hello payload",
+  "description": "First message of a connection (sequence 1). The daemon announces its version and the device protocol versions it supports. The platform answers with welcome (server time, negotiated heartbeat, session id) or rejects the connection with an error message when no supported protocol version exists.",
+  "type": "object",
+  "required": ["daemon_version", "supported_protocol_versions"],
+  "additionalProperties": false,
+  "properties": {
+    "daemon_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "supported_protocol_versions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  }
+}

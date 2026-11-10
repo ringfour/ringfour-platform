@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "message_id": "msg-hello-0001",
+  "type": "hello",
+  "robot_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "sequence": 1,
+  "payload": {
+    "daemon_version": "0.1.0",
+    "supported_protocol_versions": [1]
+  }
+}

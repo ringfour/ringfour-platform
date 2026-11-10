@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/v1/heartbeat.schema.json",
+  "title": "heartbeat payload",
+  "description": "Sent by the daemon every negotiated heartbeat interval while connected. The platform updates last_seen_at from its own receive time on every incoming message; heartbeats carry no payload and receive no reply.",
+  "type": "object",
+  "required": [],
+  "additionalProperties": false
+}

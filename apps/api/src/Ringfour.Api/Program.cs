@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api;
 using Ringfour.Api.Auth;
+using Ringfour.Api.Connectivity;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Health;
 using Ringfour.Api.Identity;
@@ -21,6 +22,9 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddDbContext<RingfourDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
+builder.Services.AddSingleton<DeviceConnectionManager>();
+builder.Services.AddHostedService<OperationSweeper>();
+
 builder.AddRingfourAuth();
 
 var app = builder.Build();
@@ -37,10 +41,13 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 app.UseMiddleware<ErrorEnvelopeMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseWebSockets();
 
 app.MapHealthEndpoints();
 app.MapIdentityEndpoints();
 app.MapRobotEndpoints();
+app.MapOperationEndpoints();
+app.MapDeviceSocketEndpoint();
 app.MapFallback(() =>
 {
     throw ApiException.NotFound("The requested resource does not exist in this organization.");

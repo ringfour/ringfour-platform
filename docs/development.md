@@ -22,6 +22,7 @@ via `scripts/dotnet.sh`; no host .NET installation is required or supported.
 | `npm run test:e2e` | Milestone 00 integrated acceptance against the real Compose stack |
 | `npm run test:e2e:01` | Milestone 01 identity acceptance (requires a completed `ringfour login`) |
 | `npm run test:e2e:02` | Milestone 02 robot enrollment acceptance (requires `ringfour login`; resets the daemon volume) |
+| `npm run test:e2e:03` | Milestone 03 connectivity acceptance (requires `ringfour login`; resets the daemon volume; ~4 min, includes two 45 s offline-threshold waits) |
 | `npm run compose:up` | Build and start the full stack (postgres, api, daemon, runner, console) |
 | `npm run compose:down` | Stop the stack (volumes kept) |
 | `npm run compose:clean` | Stop and delete all volumes (fresh start) |
@@ -60,10 +61,29 @@ API configuration: `Enrollment__TokenTtlMinutes` (default 15) and
 secret at `DAEMON_CREDENTIAL_PATH` (default `/data/robot-credential`, mode 0600);
 the durable binding lives in SQLite table `device_identity` (migration 0002).
 
-CLI commands: `ringfour robot create|list|show|enrollment-token|credentials|rotate|revoke`
+CLI commands: `ringfour robot create|list|show|status|enrollment-token|credentials|rotate|revoke`
 (owner-only administration; members can read) and `ringfour daemon enroll|identity`
 (local daemon, no login needed). See `docs/human-testing/02.md` for the manual
 flow and `docs/evidence/02.md` for acceptance results.
+
+## Device connectivity and operations (milestone 03)
+
+The daemon opens an authenticated WebSocket to `GET /v1/device/connect`
+(credential in `x-ringfour-credential-id` / `x-ringfour-credential-secret`
+headers) right after enrollment and reconnects with exponential backoff +
+jitter. API configuration: `Connectivity__HeartbeatIntervalSeconds` (15),
+`Connectivity__OfflineThresholdSeconds` (45), `Connectivity__OperationDeadlineSeconds`
+(60), `Connectivity__SweepIntervalSeconds` (2), `Idempotency__TtlHours` (24).
+Daemon configuration: `DAEMON_BACKOFF_INITIAL_SECONDS` (1),
+`DAEMON_BACKOFF_MAX_SECONDS` (30), `DAEMON_RECONCILE_DELAY_SECONDS` (20),
+`DAEMON_OUTBOUND_QUEUE_LIMIT` (128).
+
+Human endpoints: `GET /v1/robots/{id}/status` (member read),
+`POST /v1/robots/{id}/operations` (developer+; v1 kind `diagnostic.noop`
+only; optional `Idempotency-Key` header replays identical retries and
+conflicts on divergence), `GET /v1/robots/{id}/operations/{op_id}`.
+CLI: `ringfour robot status <robot-id>`. See `docs/human-testing/03.md` for
+the manual flow and `docs/evidence/03.md` for acceptance results.
 
 
 ## Layout

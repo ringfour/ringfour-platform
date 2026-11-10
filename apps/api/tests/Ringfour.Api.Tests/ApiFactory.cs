@@ -24,6 +24,9 @@ public sealed class ApiFactory(
             {
                 ["ConnectionStrings:Postgres"] = connectionString,
                 ["Database:MigrateOnStartup"] = migrateOnStartup ? "true" : "false",
+                // The sweeper is driven manually in connectivity tests; the
+                // hosted loop staying quiet keeps dispatch assertions exact.
+                ["Connectivity:SweepIntervalSeconds"] = "3600",
             };
             if (includeTestAuth)
             {

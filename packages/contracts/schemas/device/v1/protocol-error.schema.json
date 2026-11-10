@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/v1/protocol-error.schema.json",
+  "title": "protocol error payload",
+  "description": "Sent by the platform when a message violates the protocol. Per-operation errors (unknown_operation, state_conflict) leave the connection open; connection-level errors (unsupported_protocol_version, session_replaced, stale_sequence, sequence_gap, robot_mismatch, conflicting_operation, malformed_message) are followed by a close with status 4402 (unsupported_protocol_version) or 4409 (all other connection-level errors) or 4401 when the credential is rejected at connection time.",
+  "type": "object",
+  "required": ["code", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": [
+        "unsupported_protocol_version",
+        "session_replaced",
+        "stale_sequence",
+        "sequence_gap",
+        "robot_mismatch",
+        "conflicting_operation",
+        "unknown_operation",
+        "state_conflict",
+        "malformed_message"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "message_id": "msg-welcome-0001",
+  "type": "welcome",
+  "robot_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "sequence": 1,
+  "payload": {
+    "server_time": "2026-11-10T09:00:00Z",
+    "heartbeat_interval_seconds": 15,
+    "session_id": "8d3e1f2a-9b4c-4d5e-8f6a-7b8c9d0e1f2a"
+  }
+}

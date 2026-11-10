@@ -12,6 +12,9 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
     public DbSet<RobotCredential> RobotCredentials => Set<RobotCredential>();
     public DbSet<RobotAuditEvent> RobotAuditEvents => Set<RobotAuditEvent>();
+    public DbSet<RobotPresence> RobotPresences => Set<RobotPresence>();
+    public DbSet<Operation> Operations => Set<Operation>();
+    public DbSet<OperationIdempotencyRecord> OperationIdempotencyRecords => Set<OperationIdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -136,6 +139,83 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasOne(audit => audit.Actor)
                 .WithMany()
                 .HasForeignKey(audit => audit.ActorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RobotPresence>(entity =>
+        {
+            entity.ToTable("robot_presence");
+            entity.HasKey(presence => presence.RobotId);
+            entity.Property(presence => presence.RobotId).HasColumnName("robot_id");
+            entity.Property(presence => presence.SessionId).HasColumnName("session_id");
+            entity.Property(presence => presence.LastSeenAt).HasColumnName("last_seen_at");
+            entity.Property(presence => presence.DaemonVersion).HasColumnName("daemon_version");
+            entity.Property(presence => presence.ProtocolVersion).HasColumnName("protocol_version");
+            entity.HasOne(presence => presence.Robot)
+                .WithMany()
+                .HasForeignKey(presence => presence.RobotId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Operation>(entity =>
+        {
+            entity.ToTable("operations");
+            entity.HasKey(operation => operation.Id);
+            entity.Property(operation => operation.Id).HasColumnName("id");
+            entity.Property(operation => operation.RobotId).HasColumnName("robot_id");
+            entity.Property(operation => operation.Kind).HasColumnName("kind");
+            entity.Property(operation => operation.PayloadVersion).HasColumnName("payload_version");
+            entity.Property(operation => operation.Payload)
+                .HasColumnName("payload")
+                .HasColumnType("jsonb");
+            entity.Property(operation => operation.State)
+                .HasColumnName("state")
+                .HasConversion<string>();
+            entity.Property(operation => operation.CreatedAt).HasColumnName("created_at");
+            entity.Property(operation => operation.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(operation => operation.DeadlineAt).HasColumnName("deadline_at");
+            entity.Property(operation => operation.RequestedByUserId).HasColumnName("requested_by_user_id");
+            entity.Property(operation => operation.AcknowledgedAt).HasColumnName("acknowledged_at");
+            entity.Property(operation => operation.Result)
+                .HasColumnName("result")
+                .HasColumnType("jsonb");
+            entity.ToTable(table => table.HasCheckConstraint(
+                "ck_operations_state",
+                "state IN ('Queued', 'Accepted', 'Running', 'Succeeded', 'Failed', 'Cancelled')"));
+            entity.HasIndex(operation => new { operation.RobotId, operation.State, operation.CreatedAt, operation.Id });
+            entity.HasOne(operation => operation.Robot)
+                .WithMany()
+                .HasForeignKey(operation => operation.RobotId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(operation => operation.RequestedBy)
+                .WithMany()
+                .HasForeignKey(operation => operation.RequestedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OperationIdempotencyRecord>(entity =>
+        {
+            entity.ToTable("operation_idempotency_records");
+            entity.HasKey(record => record.Id);
+            entity.Property(record => record.Id).HasColumnName("id");
+            entity.Property(record => record.PrincipalUserId).HasColumnName("principal_user_id");
+            entity.Property(record => record.Route).HasColumnName("route");
+            entity.Property(record => record.Target).HasColumnName("target");
+            entity.Property(record => record.Key).HasColumnName("key");
+            entity.Property(record => record.RequestFingerprint).HasColumnName("request_fingerprint");
+            entity.Property(record => record.OutcomeOperationId).HasColumnName("outcome_operation_id");
+            entity.Property(record => record.CreatedAt).HasColumnName("created_at");
+            entity.Property(record => record.ExpiresAt).HasColumnName("expires_at");
+            entity.HasIndex(record =>
+                    new { record.PrincipalUserId, record.Route, record.Target, record.Key })
+                .IsUnique();
+            entity.HasOne(record => record.Principal)
+                .WithMany()
+                .HasForeignKey(record => record.PrincipalUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(record => record.Outcome)
+                .WithMany()
+                .HasForeignKey(record => record.OutcomeOperationId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/v1/command.schema.json",
+  "title": "command payload",
+  "description": "Sent by the platform to dispatch an operation. Commands are persisted on the platform before dispatch and replayed to reconnecting daemons until a terminal state is reached. The daemon commits its local deduplication record before acknowledging; a command whose operation_id is already known with identical content (kind, payload_version, payload, deadline) replays the stored status instead of executing again, while conflicting reuse of an operation_id is a protocol error.",
+  "type": "object",
+  "required": ["operation_id", "kind", "payload_version", "payload", "deadline_at"],
+  "additionalProperties": false,
+  "properties": {
+    "operation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]{1,100}$"
+    },
+    "payload_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "payload": {
+      "type": "object"
+    },
+    "deadline_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    }
+  }
+}

@@ -8,6 +8,10 @@ class Settings:
     runner_url: str
     platform_url: str = "http://localhost:8080"
     credential_path: str = "/data/robot-credential"
+    backoff_initial_seconds: float = 1.0
+    backoff_max_seconds: float = 30.0
+    reconcile_delay_seconds: float = 20.0
+    outbound_queue_limit: int = 128
 
     @staticmethod
     def from_env() -> "Settings":
@@ -16,4 +20,12 @@ class Settings:
             runner_url=os.environ.get("RUNNER_URL", "http://localhost:8082"),
             platform_url=os.environ.get("PLATFORM_API_URL", "http://localhost:8080"),
             credential_path=os.environ.get("DAEMON_CREDENTIAL_PATH", "/data/robot-credential"),
+            backoff_initial_seconds=float(
+                os.environ.get("DAEMON_BACKOFF_INITIAL_SECONDS", "1.0")
+            ),
+            backoff_max_seconds=float(os.environ.get("DAEMON_BACKOFF_MAX_SECONDS", "30.0")),
+            reconcile_delay_seconds=float(
+                os.environ.get("DAEMON_RECONCILE_DELAY_SECONDS", "20.0")
+            ),
+            outbound_queue_limit=int(os.environ.get("DAEMON_OUTBOUND_QUEUE_LIMIT", "128")),
         )

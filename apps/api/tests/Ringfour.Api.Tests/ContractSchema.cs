@@ -26,6 +26,8 @@ internal static class ContractSchema
 
         Assert.True(
             results.IsValid,
-            $"{schemaPath} rejected the response: {JsonSerializer.Serialize(results.Errors)}");
+            $"{schemaPath} rejected the response: {json} " +
+            $"(errors: {JsonSerializer.Serialize(results.Errors)}, " +
+            $"details: {JsonSerializer.Serialize(results.Details)})");
     }
 }

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Ringfour.Api.Connectivity;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Identity;
 using Ringfour.Api.Persistence;
@@ -31,10 +32,6 @@ public static class RobotEndpoints
         prefix + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private static string HashSecret(string secret) =>
-        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret)))
-            .ToLowerInvariant();
-
     private static void Audit(
         RingfourDbContext db, Guid robotId, string type, Guid? actorUserId, DateTimeOffset now) =>
         db.RobotAuditEvents.Add(new RobotAuditEvent
@@ -45,27 +42,6 @@ public static class RobotEndpoints
             Type = type,
             ActorUserId = actorUserId,
         });
-
-    private static async Task<(User User, Robot Robot)> RequireRobotAccess(
-        HttpContext httpContext,
-        RingfourDbContext db,
-        Guid robotId,
-        OrgRole minimumRole,
-        CancellationToken cancellationToken)
-    {
-        var user = await IdentityAccess.ResolveOrCreateUser(
-            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
-        var robot = await db.Robots.SingleOrDefaultAsync(
-            candidate => candidate.Id == robotId, cancellationToken);
-        if (robot is null)
-        {
-            throw ApiException.NotFound(
-                "The requested resource does not exist in this organization.");
-        }
-        await IdentityAccess.RequireMembership(
-            db, robot.OrganizationId, user.Id, minimumRole, cancellationToken);
-        return (user, robot);
-    }
 
     private static async Task<IResult> CreateRobot(
         HttpContext httpContext,
@@ -151,7 +127,7 @@ public static class RobotEndpoints
         Guid robotId,
         CancellationToken cancellationToken)
     {
-        var (_, robot) = await RequireRobotAccess(
+        var (_, robot) = await RobotAccess.RequireRobotAccess(
             httpContext, db, robotId, OrgRole.Operator, cancellationToken);
         return RobotResponse.FromEntity(robot);
     }
@@ -163,7 +139,7 @@ public static class RobotEndpoints
         Guid robotId,
         CancellationToken cancellationToken)
     {
-        var (user, robot) = await RequireRobotAccess(
+        var (user, robot) = await RobotAccess.RequireRobotAccess(
             httpContext, db, robotId, OrgRole.Owner, cancellationToken);
 
         var ttlMinutes = configuration.GetValue("Enrollment:TokenTtlMinutes", 15);
@@ -173,7 +149,7 @@ public static class RobotEndpoints
         {
             Id = Guid.NewGuid(),
             RobotId = robot.Id,
-            TokenHash = HashSecret(tokenValue),
+            TokenHash = DeviceAuth.HashSecret(tokenValue),
             IssuedByUserId = user.Id,
             CreatedAt = now,
             ExpiresAt = now.AddMinutes(ttlMinutes),
@@ -195,7 +171,7 @@ public static class RobotEndpoints
         Guid robotId,
         CancellationToken cancellationToken)
     {
-        var (_, robot) = await RequireRobotAccess(
+        var (_, robot) = await RobotAccess.RequireRobotAccess(
             httpContext, db, robotId, OrgRole.Operator, cancellationToken);
         var credentials = await db.RobotCredentials
             .Where(credential => credential.RobotId == robot.Id)
@@ -213,7 +189,7 @@ public static class RobotEndpoints
         Guid robotId,
         CancellationToken cancellationToken)
     {
-        var (user, robot) = await RequireRobotAccess(
+        var (user, robot) = await RobotAccess.RequireRobotAccess(
             httpContext, db, robotId, OrgRole.Owner, cancellationToken);
         if (robot.EnrolledAt is null)
         {
@@ -248,7 +224,7 @@ public static class RobotEndpoints
         {
             Id = Guid.NewGuid(),
             RobotId = robot.Id,
-            SecretHash = HashSecret(secret),
+            SecretHash = DeviceAuth.HashSecret(secret),
             CreatedAt = now,
             ExpiresAt = null,
             RevokedAt = null,
@@ -265,11 +241,12 @@ public static class RobotEndpoints
     private static async Task<RobotCredentialResponse> RevokeCredential(
         HttpContext httpContext,
         RingfourDbContext db,
+        DeviceConnectionManager connectionManager,
         Guid robotId,
         Guid credentialId,
         CancellationToken cancellationToken)
     {
-        var (user, robot) = await RequireRobotAccess(
+        var (user, robot) = await RobotAccess.RequireRobotAccess(
             httpContext, db, robotId, OrgRole.Owner, cancellationToken);
         var credential = await db.RobotCredentials.SingleOrDefaultAsync(
             candidate => candidate.RobotId == robot.Id && candidate.Id == credentialId,
@@ -285,7 +262,28 @@ public static class RobotEndpoints
             var now = DateTimeOffset.UtcNow;
             credential.RevokedAt = now;
             Audit(db, robot.Id, RobotAuditTypes.CredentialRevoked, user.Id, now);
+            // The revocation is committed before any disconnect handling so a
+            // crash between the two never leaves a revoked session alive.
             await db.SaveChangesAsync(cancellationToken);
+
+            var session = connectionManager.FindByCredential(credential.Id);
+            if (session is not null)
+            {
+                try
+                {
+                    // CloseOutputAsync sends the close frame without waiting
+                    // for the peer's handshake response: the owner's HTTP
+                    // response must not block on a (possibly dead) device.
+                    await session.Socket.CloseOutputAsync(
+                        (System.Net.WebSockets.WebSocketCloseStatus)DeviceSocketEndpoints.CloseUnauthorized,
+                        "credential_revoked", CancellationToken.None);
+                }
+                catch (System.Net.WebSockets.WebSocketException)
+                {
+                    // The session is already gone; reconnects are denied by
+                    // the credential check in the handshake.
+                }
+            }
         }
         return RobotCredentialResponse.FromEntity(credential);
     }
@@ -303,7 +301,7 @@ public static class RobotEndpoints
             throw ApiException.InvalidInput("token is required.");
         }
 
-        var tokenHash = HashSecret(request.Token);
+        var tokenHash = DeviceAuth.HashSecret(request.Token);
         await using var transaction =
             await db.Database.BeginTransactionAsync(cancellationToken);
 
@@ -336,7 +334,7 @@ public static class RobotEndpoints
         {
             Id = Guid.NewGuid(),
             RobotId = robot.Id,
-            SecretHash = HashSecret(secret),
+            SecretHash = DeviceAuth.HashSecret(secret),
             CreatedAt = now,
             ExpiresAt = null,
             RevokedAt = null,
@@ -354,28 +352,8 @@ public static class RobotEndpoints
         DeviceAuthenticateRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.Secret is null || string.IsNullOrWhiteSpace(request.Secret))
-        {
-            throw ApiException.InvalidInput("secret is required.");
-        }
-
-        var credential = await db.RobotCredentials.SingleOrDefaultAsync(
-            candidate => candidate.Id == request.CredentialId, cancellationToken);
-        var now = DateTimeOffset.UtcNow;
-        if (credential is null ||
-            credential.RevokedAt is not null ||
-            (credential.ExpiresAt is not null && credential.ExpiresAt <= now) ||
-            !FixedTimeEquals(HashSecret(request.Secret), credential.SecretHash))
-        {
-            throw ApiException.InvalidToken("The robot credential is invalid, expired, or revoked.");
-        }
-
-        var robot = await db.Robots.SingleAsync(
-            candidate => candidate.Id == credential.RobotId, cancellationToken);
+        var (robot, credential) = await DeviceAuth.VerifyCredential(
+            db, request.CredentialId, request.Secret, cancellationToken);
         return new DeviceAuthenticateResponse(robot.Id, robot.OrganizationId, credential.Id);
     }
-
-    private static bool FixedTimeEquals(string leftHex, string rightHex) =>
-        CryptographicOperations.FixedTimeEquals(
-            Convert.FromHexString(leftHex), Convert.FromHexString(rightHex));
 }

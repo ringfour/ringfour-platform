@@ -210,6 +210,46 @@ def test_forbidden_error_is_reported(monkeypatch, keyring):
     assert "403 forbidden" in result.output
 
 
+def test_robot_status_shows_observed_state(monkeypatch, keyring):
+    def online(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == f"/v1/robots/{ROBOT_ID}/status"
+        return httpx.Response(
+            200,
+            json={
+                "robot_id": ROBOT_ID,
+                "online": True,
+                "last_seen_at": "2026-11-10T09:00:14Z",
+                "daemon_version": "0.1.0",
+                "protocol_version": 1,
+            },
+        )
+
+    monkeypatch.setattr(httpx, "Client", _client_factory(online))
+    result = runner.invoke(app, ["robot", "status", ROBOT_ID])
+    assert result.exit_code == 0
+    assert "online" in result.output
+    assert "2026-11-10T09:00:14Z" in result.output
+    assert "0.1.0" in result.output
+
+    def offline(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "robot_id": ROBOT_ID,
+                "online": False,
+                "last_seen_at": None,
+                "daemon_version": None,
+                "protocol_version": None,
+            },
+        )
+
+    monkeypatch.setattr(httpx, "Client", _client_factory(offline))
+    result = runner.invoke(app, ["robot", "status", ROBOT_ID])
+    assert result.exit_code == 0
+    assert "offline" in result.output
+    assert "never" in result.output
+
+
 def test_daemon_enroll_success(monkeypatch, env):
     seen = {}
 

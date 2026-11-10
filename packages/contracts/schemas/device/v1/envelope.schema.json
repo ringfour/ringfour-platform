@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/v1/envelope.schema.json",
+  "title": "Device message envelope",
+  "description": "Envelope for every message on the authenticated /v1/device/connect WebSocket. The platform derives robot authority from the credential presented at connection time and checks robot_id against it on every message; it never trusts the envelope for identity. Payload is validated against the payload schema matching the message type. Sequence numbers increase by exactly one per message per connection; the first message of a connection (hello) carries sequence 1.",
+  "type": "object",
+  "required": ["version", "message_id", "type", "robot_id", "sequence", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "message_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "type": {
+      "type": "string",
+      "enum": ["hello", "welcome", "heartbeat", "command", "ack", "operation_status", "error"]
+    },
+    "robot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

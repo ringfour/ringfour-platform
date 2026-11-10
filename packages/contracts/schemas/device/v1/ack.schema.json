@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/v1/ack.schema.json",
+  "title": "ack payload",
+  "description": "Sent by the daemon after committing the local deduplication record for a command. The platform moves the operation from queued to accepted and stamps acknowledged_at. Re-acked operations are idempotent; acks for unknown operation ids receive an error message and leave the connection open.",
+  "type": "object",
+  "required": ["operation_id"],
+  "additionalProperties": false,
+  "properties": {
+    "operation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

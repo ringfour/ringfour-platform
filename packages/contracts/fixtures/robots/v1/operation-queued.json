@@ -1,0 +1,14 @@
+{
+  "id": "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
+  "robot_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "kind": "diagnostic.noop",
+  "payload_version": 1,
+  "payload": {},
+  "state": "queued",
+  "created_at": "2026-11-10T09:00:05Z",
+  "updated_at": "2026-11-10T09:00:05Z",
+  "deadline_at": "2026-11-10T09:01:05Z",
+  "acknowledged_at": null,
+  "result": null,
+  "requested_by": "3f6c1e2a-7b4d-4e5f-9a0b-1c2d3e4f5a6b"
+}

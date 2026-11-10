@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "message_id": "msg-error-0002",
+  "type": "error",
+  "robot_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "sequence": 2,
+  "payload": {
+    "code": "session_replaced",
+    "message": "This connection was replaced by a newer session for the same robot."
+  }
+}

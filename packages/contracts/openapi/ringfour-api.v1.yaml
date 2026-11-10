@@ -4,8 +4,9 @@ info:
   version: "0.1.0"
   description: |
     Ringfour hosted API. Current scope: health endpoints (milestone 00),
-    identity/organization membership (milestone 01) and robot enrollment
-    (milestone 02).
+    identity/organization membership (milestone 01), robot enrollment
+    (milestone 02) and device connectivity with durable operations
+    (milestone 03).
     All /v1 endpoints require an Auth0 RS256 access token for audience
     https://api.ringfour.eu and share the error envelope referenced below,
     except the /v1/device/* endpoints which authenticate by possession of an
@@ -23,7 +24,7 @@ tags:
   - name: robots
     description: Robot records and credential lifecycle (Auth0 JWT required).
   - name: device
-    description: Local-daemon-facing enrollment and credential verification; no human token.
+    description: Local-daemon-facing enrollment, credential verification and the authenticated WebSocket connection; no human token.
 paths:
   /health/live:
     get:
@@ -450,6 +451,151 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}/status:
+    get:
+      tags: [robots]
+      operationId: getRobotStatus
+      summary: Observed device status
+      description: |
+        Any member may read. Reports the newest accepted connection's observed
+        state: last_seen_at (server receive time of the most recent message),
+        daemon and protocol versions, and online derived from the freshness
+        window (offline threshold 45 seconds by default). All nullable fields
+        are null before the first connection; a connected robot that stops
+        heartbeating goes offline without any state change.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+      responses:
+        "200":
+          description: Observed status.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/robot-status-response.schema.json"
+              examples:
+                online:
+                  $ref: "../fixtures/robots/v1/robot-status-online.json"
+                offline:
+                  $ref: "../fixtures/robots/v1/robot-status-offline.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}/operations:
+    post:
+      tags: [robots]
+      operationId: createRobotOperation
+      summary: Create a durable operation
+      description: |
+        Developer role or higher. Commits the operation (state queued,
+        deadline from configuration) before dispatching it over the device's
+        WebSocket; an offline robot simply keeps the operation queued until a
+        connection arrives. v1 supports exactly one authenticated diagnostic
+        kind, diagnostic.noop, used to prove the protocol end to end.
+        Retries: an Idempotency-Key header scoped to the caller, route and
+        robot makes a repeated request with an identical body return the
+        original operation (200); the same key with a different body is a 409
+        conflict. Records expire after 24 hours.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/robots/v1/create-operation-request.schema.json"
+      responses:
+        "201":
+          description: Operation committed and queued for dispatch.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/operation.schema.json"
+              examples:
+                queued:
+                  $ref: "../fixtures/robots/v1/operation-queued.json"
+        "200":
+          description: Idempotency replay; the original operation is returned unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/operation.schema.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/robots/{robot_id}/operations/{operation_id}:
+    get:
+      tags: [robots]
+      operationId: getRobotOperation
+      summary: Get an operation
+      description: |
+        Any member may read. Poll this endpoint while waiting for a terminal
+        state; terminal states (succeeded, failed, cancelled) are immutable.
+        Non-members receive 404, not 403.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+        - $ref: "#/components/parameters/OperationId"
+      responses:
+        "200":
+          description: The operation.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/operation.schema.json"
+              examples:
+                succeeded:
+                  $ref: "../fixtures/robots/v1/operation-succeeded.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/device/connect:
+    get:
+      tags: [device]
+      operationId: connectDevice
+      summary: Authenticated device WebSocket (RFC 6455)
+      description: |
+        This endpoint is a WebSocket handshake, not a JSON HTTP operation; the
+        JSON schemas under schemas/device/v1 govern the messages. The daemon
+        initiates the connection and authenticates with the headers
+        x-ringfour-credential-id and x-ringfour-credential-secret; unknown,
+        expired or revoked credentials are rejected with 4401 before the
+        upgrade. The first message must be hello (sequence 1); the platform
+        answers welcome (server time, negotiated heartbeat, session id) and
+        replays commands for nonterminal operations, then dispatches new
+        commands as operations are created. A newer connection for the same
+        robot replaces the previous session, which receives an error message
+        and is closed with 4409. Heartbeat interval is 15 s and the offline
+        threshold 45 s, both platform-frozen in configuration.
+      security: []
+      parameters:
+        - name: x-ringfour-credential-id
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        - name: x-ringfour-credential-secret
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "101":
+          description: WebSocket upgrade accepted.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/InvalidToken"
   /v1/device/enroll:
     post:
       tags: [device]
@@ -555,6 +701,26 @@ components:
       schema:
         type: string
         pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    OperationId:
+      name: operation_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    IdempotencyKey:
+      name: idempotency-key
+      in: header
+      required: false
+      description: |
+        Optional retry scope for mutation endpoints. Same principal, route,
+        target and key with an identical request body replays the original
+        outcome; the same key with a different body is a 409 conflict. Records
+        expire after 24 hours.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
     Cursor:
       name: cursor
       in: query

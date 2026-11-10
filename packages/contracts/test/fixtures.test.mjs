@@ -148,6 +148,152 @@ test("robot schemas reject malformed documents", async () => {
   );
 });
 
+test("device fixtures validate against the v1 device schemas", async () => {
+  const envelope = await validatorFor("schemas/device/v1/envelope.schema.json");
+  const payloads = {
+    hello: await validatorFor("schemas/device/v1/hello.schema.json"),
+    welcome: await validatorFor("schemas/device/v1/welcome.schema.json"),
+    heartbeat: await validatorFor("schemas/device/v1/heartbeat.schema.json"),
+    command: await validatorFor("schemas/device/v1/command.schema.json"),
+    ack: await validatorFor("schemas/device/v1/ack.schema.json"),
+    operation_status: await validatorFor("schemas/device/v1/operation-status.schema.json"),
+    error: await validatorFor("schemas/device/v1/protocol-error.schema.json"),
+  };
+
+  for (const name of [
+    "hello",
+    "welcome",
+    "heartbeat",
+    "command",
+    "ack",
+    "operation-status-succeeded",
+    "protocol-error",
+  ]) {
+    const message = await loadJson(`fixtures/device/v1/${name}.json`);
+    assert.ok(envelope(message), `${name} envelope`);
+    assert.ok(payloads[message.type](message.payload), `${name} payload`);
+  }
+});
+
+test("device schemas reject malformed documents", async () => {
+  const envelope = await validatorFor("schemas/device/v1/envelope.schema.json");
+  const hello = await validatorFor("schemas/device/v1/hello.schema.json");
+  const welcome = await validatorFor("schemas/device/v1/welcome.schema.json");
+  const command = await validatorFor("schemas/device/v1/command.schema.json");
+  const operationStatus = await validatorFor("schemas/device/v1/operation-status.schema.json");
+  const protocolError = await validatorFor("schemas/device/v1/protocol-error.schema.json");
+
+  assert.equal(
+    envelope({
+      version: 1,
+      message_id: "m1",
+      type: "heartbeat",
+      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      sequence: 1,
+      payload: {},
+      extra: true,
+    }),
+    false,
+    "envelope with an extra property",
+  );
+  assert.equal(
+    envelope({
+      version: 2,
+      message_id: "m1",
+      type: "hello",
+      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      sequence: 1,
+      payload: {},
+    }),
+    false,
+    "envelope with an unsupported protocol version",
+  );
+  assert.equal(
+    hello({ daemon_version: "0.1.0", supported_protocol_versions: [] }),
+    false,
+    "hello without a supported protocol version",
+  );
+  assert.equal(
+    welcome({
+      server_time: "2026-11-10T09:00:00Z",
+      heartbeat_interval_seconds: 0,
+      session_id: "8d3e1f2a-9b4c-4d5e-8f6a-7b8c9d0e1f2a",
+    }),
+    false,
+    "welcome with a zero heartbeat interval",
+  );
+  assert.equal(
+    command({
+      operation_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
+      kind: "Bad Kind!",
+      payload_version: 1,
+      payload: {},
+      deadline_at: "2026-11-10T09:01:00Z",
+    }),
+    false,
+    "command with a kind outside the allowed shape",
+  );
+  assert.equal(
+    operationStatus({
+      operation_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
+      state: "queued",
+    }),
+    false,
+    "operation_status with a platform-only state",
+  );
+  assert.equal(
+    protocolError({ code: "something_else", message: "x" }),
+    false,
+    "protocol error with an unknown code",
+  );
+});
+
+test("operation and status fixtures validate against the v1 robots schemas", async () => {
+  const status = await validatorFor("schemas/robots/v1/robot-status-response.schema.json");
+  const operation = await validatorFor("schemas/robots/v1/operation.schema.json");
+  const createOperation = await validatorFor("schemas/robots/v1/create-operation-request.schema.json");
+
+  assert.ok(status(await loadJson("fixtures/robots/v1/robot-status-online.json")), "status online fixture");
+  assert.ok(status(await loadJson("fixtures/robots/v1/robot-status-offline.json")), "status offline fixture");
+  assert.ok(operation(await loadJson("fixtures/robots/v1/operation-queued.json")), "operation queued fixture");
+  assert.ok(operation(await loadJson("fixtures/robots/v1/operation-succeeded.json")), "operation succeeded fixture");
+  assert.ok(createOperation({ kind: "diagnostic.noop", payload_version: 1, payload: {} }), "create operation request");
+
+  assert.equal(
+    createOperation({ kind: "mission.run", payload_version: 1, payload: {} }),
+    false,
+    "create request with an unsupported kind",
+  );
+  assert.equal(
+    operation({
+      id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
+      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      kind: "diagnostic.noop",
+      payload_version: 1,
+      payload: {},
+      state: "preparing",
+      created_at: "2026-11-10T09:00:05Z",
+      updated_at: "2026-11-10T09:00:05Z",
+      deadline_at: "2026-11-10T09:01:05Z",
+      acknowledged_at: null,
+      result: null,
+    }),
+    false,
+    "operation with an execution-era state",
+  );
+  assert.equal(
+    status({
+      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      online: "yes",
+      last_seen_at: "2026-11-10T09:00:14Z",
+      daemon_version: null,
+      protocol_version: null,
+    }),
+    false,
+    "status with a non-boolean online",
+  );
+});
+
 test("schemas reject malformed documents", async () => {
   const liveness = await validatorFor("schemas/health/v1/liveness-response.schema.json");
   const readiness = await validatorFor("schemas/health/v1/readiness-response.schema.json");
