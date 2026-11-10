@@ -4,6 +4,7 @@ import { useState } from "react";
 import { HealthPage } from "@/components/HealthPage";
 import { IdentityPage } from "@/components/IdentityPage";
 import { LoginPage } from "@/components/LoginPage";
+import { RobotsPage } from "@/components/RobotsPage";
 
 export default function App() {
   if (!import.meta.env.DEV) {
@@ -18,7 +19,9 @@ export default function App() {
 
 function DevConsole() {
   const { isAuthenticated, isLoading, error } = useAuth0();
-  const [view, setView] = useState<"identity" | "health">("identity");
+  const [view, setView] = useState<"identity" | "robots" | "health">(
+    "identity",
+  );
 
   if (isLoading) {
     return (
@@ -57,6 +60,17 @@ function DevConsole() {
         <button
           type="button"
           className={
+            view === "robots"
+              ? "font-medium text-primary"
+              : "text-muted-foreground"
+          }
+          onClick={() => setView("robots")}
+        >
+          Robots
+        </button>
+        <button
+          type="button"
+          className={
             view === "health"
               ? "font-medium text-primary"
               : "text-muted-foreground"
@@ -66,7 +80,9 @@ function DevConsole() {
           Health
         </button>
       </nav>
-      {view === "identity" ? <IdentityPage /> : <HealthPage />}
+      {view === "identity" && <IdentityPage />}
+      {view === "robots" && <RobotsPage />}
+      {view === "health" && <HealthPage />}
     </>
   );
 }
