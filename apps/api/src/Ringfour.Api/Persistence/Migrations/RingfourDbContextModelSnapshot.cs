@@ -22,6 +22,50 @@ namespace Ringfour.Api.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.EnrollmentToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("IssuedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("issued_by_user_id");
+
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssuedByUserId");
+
+                    b.HasIndex("RobotId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("enrollment_tokens", (string)null);
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.Membership", b =>
                 {
                     b.Property<Guid>("OrganizationId")
@@ -72,6 +116,115 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("organizations", (string)null);
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.Robot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("EnrolledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("enrolled_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("ProfileRef")
+                        .HasColumnType("text")
+                        .HasColumnName("profile_ref");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.ToTable("robots", (string)null);
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.RobotAuditEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("RobotId", "OccurredAt", "Id");
+
+                    b.ToTable("robot_audit_events", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_robot_audit_events_type", "type IN ('robot_created', 'enrollment_token_issued', 'enrolled', 'credential_rotated', 'credential_revoked')");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.RobotCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("secret_hash");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RobotId");
+
+                    b.HasIndex("SecretHash")
+                        .IsUnique();
+
+                    b.ToTable("robot_credentials", (string)null);
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -96,6 +249,25 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.EnrollmentToken", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "IssuedBy")
+                        .WithMany()
+                        .HasForeignKey("IssuedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Robot", "Robot")
+                        .WithMany("EnrollmentTokens")
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("IssuedBy");
+
+                    b.Navigation("Robot");
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.Membership", b =>
                 {
                     b.HasOne("Ringfour.Api.Persistence.Organization", "Organization")
@@ -115,9 +287,58 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.Robot", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.RobotAuditEvent", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Ringfour.Api.Persistence.Robot", "Robot")
+                        .WithMany("AuditEvents")
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Robot");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.RobotCredential", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.Robot", "Robot")
+                        .WithMany("Credentials")
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Robot");
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.Organization", b =>
                 {
                     b.Navigation("Memberships");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.Robot", b =>
+                {
+                    b.Navigation("AuditEvents");
+
+                    b.Navigation("Credentials");
+
+                    b.Navigation("EnrollmentTokens");
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.User", b =>

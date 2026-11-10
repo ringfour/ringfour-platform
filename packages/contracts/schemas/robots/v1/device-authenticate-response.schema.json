@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/robots/v1/device-authenticate-response.schema.json",
+  "title": "DeviceAuthenticateResponse",
+  "description": "POST /v1/device/authenticate response. Confirms the credential is usable (unexpired, unrevoked) and returns the identity derived from it.",
+  "type": "object",
+  "required": ["robot_id", "organization_id", "credential_id"],
+  "additionalProperties": false,
+  "properties": {
+    "robot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "organization_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "credential_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

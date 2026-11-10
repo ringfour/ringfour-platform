@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/robots/v1/enrollment-token-response.schema.json",
+  "title": "EnrollmentTokenResponse",
+  "description": "POST /v1/robots/{id}/enrollment-tokens response (owner-only). The token value is returned exactly once and is never retrievable again; only its hash is stored. Single-use, expires shortly after issuance.",
+  "type": "object",
+  "required": ["token_id", "robot_id", "token", "created_at", "expires_at"],
+  "additionalProperties": false,
+  "properties": {
+    "token_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "robot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^rft_[A-Za-z0-9_-]{43}$"
+    },
+    "created_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "expires_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    }
+  }
+}

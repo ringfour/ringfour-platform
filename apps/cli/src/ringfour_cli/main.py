@@ -24,6 +24,10 @@ app = typer.Typer(
 )
 org_app = typer.Typer(help="Manage organizations.", no_args_is_help=True)
 app.add_typer(org_app, name="org")
+robot_app = typer.Typer(help="Manage robots and their credentials.", no_args_is_help=True)
+app.add_typer(robot_app, name="robot")
+daemon_app = typer.Typer(help="Drive the local device daemon.", no_args_is_help=True)
+app.add_typer(daemon_app, name="daemon")
 console = Console()
 
 # name -> (env var, default base URL)
@@ -261,3 +265,179 @@ def org_select(org_id: str) -> None:
         raise typer.Exit(code=1)
     update_config(settings, selected_org=org_id)
     console.print(f"[green]Selected organization {match['name']} ({org_id})[/green]")
+
+
+def _resolve_org(settings, org: str | None) -> str:
+    org_id = org or selected_org(settings)
+    if not org_id:
+        console.print("[red]No organization selected. Use --org or `ringfour org select`.[/red]")
+        raise typer.Exit(code=1)
+    return org_id
+
+
+@robot_app.command("create")
+def robot_create(
+    name: str,
+    org: str | None = typer.Option(None, "--org", help="Organization ID (default: selected org)."),
+    profile_ref: str | None = typer.Option(None, "--profile-ref", help="External robot profile reference."),
+) -> None:
+    """Create a robot in an organization (owner-only)."""
+    settings = _settings()
+    store = auth.TokenStore()
+    org_id = _resolve_org(settings, org)
+    body = _api_request(
+        "POST",
+        f"/v1/organizations/{org_id}/robots",
+        settings,
+        store,
+        json={"name": name, "profile_ref": profile_ref},
+    ).json()
+    console.print(f"[green]Created robot {body['id']} ({body['name']})[/green]")
+
+
+@robot_app.command("list")
+def robot_list(
+    org: str | None = typer.Option(None, "--org", help="Organization ID (default: selected org)."),
+) -> None:
+    """List the organization's robots."""
+    settings = _settings()
+    store = auth.TokenStore()
+    org_id = _resolve_org(settings, org)
+    body = _api_request("GET", f"/v1/organizations/{org_id}/robots", settings, store).json()
+
+    table = Table(title="Robots")
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Enrolled")
+    table.add_column("Created")
+    for item in body["items"]:
+        enrolled = item["enrolled_at"] or "no"
+        table.add_row(item["id"], item["name"], enrolled, item["created_at"])
+    console.print(table)
+    if body.get("next_cursor"):
+        console.print("More robots available; use the API with cursor pagination.")
+
+
+@robot_app.command("show")
+def robot_show(robot_id: str) -> None:
+    """Show one robot."""
+    settings = _settings()
+    store = auth.TokenStore()
+    body = _api_request("GET", f"/v1/robots/{robot_id}", settings, store).json()
+    console.print(f"Robot: {body['id']}")
+    console.print(f"  Name:          {body['name']}")
+    console.print(f"  Organization:  {body['organization_id']}")
+    console.print(f"  Created:       {body['created_at']}")
+    console.print(f"  Enrolled:      {body['enrolled_at'] or 'no'}")
+    console.print(f"  Profile ref:   {body['profile_ref'] or '-'}")
+
+
+@robot_app.command("enrollment-token")
+def robot_enrollment_token(robot_id: str) -> None:
+    """Issue a single-use enrollment token (owner-only; shown exactly once)."""
+    settings = _settings()
+    store = auth.TokenStore()
+    body = _api_request(
+        "POST", f"/v1/robots/{robot_id}/enrollment-tokens", settings, store
+    ).json()
+    console.print(f"[bold]{body['token']}[/bold]")
+    console.print(
+        f"Expires {body['expires_at']}. Single-use and shown exactly once; "
+        "pass it to `ringfour daemon enroll`."
+    )
+
+
+@robot_app.command("credentials")
+def robot_credentials(robot_id: str) -> None:
+    """List a robot's credential metadata (never secrets)."""
+    settings = _settings()
+    store = auth.TokenStore()
+    body = _api_request("GET", f"/v1/robots/{robot_id}/credentials", settings, store).json()
+
+    table = Table(title="Robot credentials")
+    table.add_column("ID")
+    table.add_column("Created")
+    table.add_column("Expires")
+    table.add_column("Revoked")
+    for item in body["items"]:
+        table.add_row(
+            item["id"],
+            item["created_at"],
+            item["expires_at"] or "-",
+            item["revoked_at"] or "-",
+        )
+    console.print(table)
+
+
+@robot_app.command("rotate")
+def robot_rotate(robot_id: str) -> None:
+    """Rotate the robot credential (owner-only; new secret shown exactly once)."""
+    settings = _settings()
+    store = auth.TokenStore()
+    body = _api_request("POST", f"/v1/robots/{robot_id}/credentials", settings, store).json()
+    credential = body["credential"]
+    console.print(f"[green]Created credential {credential['id']}[/green]")
+    console.print(f"[bold]{body['secret']}[/bold]")
+    console.print(
+        "The new secret is shown exactly once. The previous credential keeps "
+        "working until its expires_at bounds the rotation overlap."
+    )
+
+
+@robot_app.command("revoke")
+def robot_revoke(robot_id: str, credential_id: str) -> None:
+    """Revoke one robot credential immediately (owner-only)."""
+    settings = _settings()
+    store = auth.TokenStore()
+    body = _api_request(
+        "POST", f"/v1/robots/{robot_id}/credentials/{credential_id}/revoke", settings, store
+    ).json()
+    console.print(f"[green]Revoked credential {body['id']} at {body['revoked_at']}[/green]")
+
+
+def _daemon_base_url() -> str:
+    return os.environ.get("RINGFOUR_DAEMON_URL", "http://localhost:8081")
+
+
+@daemon_app.command("enroll")
+def daemon_enroll(token: str) -> None:
+    """Enroll this device through the local daemon using an enrollment token."""
+    with httpx.Client(base_url=_daemon_base_url(), timeout=15.0) as client:
+        try:
+            response = client.post("/v1/enroll", json={"token": token})
+        except httpx.HTTPError:
+            console.print("[red]Daemon unreachable. Is the daemon container running?[/red]")
+            raise typer.Exit(code=1) from None
+    if response.status_code != 200:
+        try:
+            detail = response.json()["detail"]
+        except (ValueError, KeyError):
+            detail = f"status {response.status_code}"
+        console.print(f"[red]Enrollment failed: {detail}[/red]")
+        raise typer.Exit(code=1)
+    body = response.json()
+    console.print("[green]Device enrolled.[/green]")
+    console.print(f"  Robot:         {body['robot_id']}")
+    console.print(f"  Organization:  {body['organization_id']}")
+    console.print(f"  Credential:    {body['credential_id']}")
+
+
+@daemon_app.command("identity")
+def daemon_identity() -> None:
+    """Show the local daemon's enrolled device identity."""
+    with httpx.Client(base_url=_daemon_base_url(), timeout=15.0) as client:
+        try:
+            response = client.get("/v1/identity")
+        except httpx.HTTPError:
+            console.print("[red]Daemon unreachable. Is the daemon container running?[/red]")
+            raise typer.Exit(code=1) from None
+    body = response.json()
+    if not body["enrolled"]:
+        console.print("Device is not enrolled.")
+        return
+    console.print(f"Robot:         {body['robot_id']}")
+    console.print(f"Organization:  {body['organization_id']}")
+    console.print(f"Platform:      {body['platform_url']}")
+    console.print(f"Credential:    {body['credential_id']}")
+    if body.get("error"):
+        console.print(f"[red]Error: {body['error']}[/red]")

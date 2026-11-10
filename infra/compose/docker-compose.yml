@@ -46,10 +46,12 @@ services:
     environment:
       DAEMON_DB_PATH: /data/ringfour.db
       RUNNER_URL: http://runner:8082
+      PLATFORM_API_URL: http://api:8080
     volumes:
       - daemon-data:/data
     depends_on:
       - runner
+      - api
     ports:
       - "8081:8081"
 

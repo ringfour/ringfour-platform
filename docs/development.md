@@ -21,6 +21,7 @@ via `scripts/dotnet.sh`; no host .NET installation is required or supported.
 | `npm test` | Component tests per app (xUnit+Testcontainers, pytest, vitest, contracts) |
 | `npm run test:e2e` | Milestone 00 integrated acceptance against the real Compose stack |
 | `npm run test:e2e:01` | Milestone 01 identity acceptance (requires a completed `ringfour login`) |
+| `npm run test:e2e:02` | Milestone 02 robot enrollment acceptance (requires `ringfour login`; resets the daemon volume) |
 | `npm run compose:up` | Build and start the full stack (postgres, api, daemon, runner, console) |
 | `npm run compose:down` | Stop the stack (volumes kept) |
 | `npm run compose:clean` | Stop and delete all volumes (fresh start) |
@@ -50,6 +51,19 @@ The CLI reads `RINGFOUR_AUTH0_DOMAIN`, `RINGFOUR_AUTH0_CLIENT_ID`,
 `~/.config/ringfour/config.json`; tokens live in the OS credential store (keyring),
 the selected org in the config file. See `docs/human-testing/01.md` for the full
 manual flow and `docs/evidence/01.md` for the required tenant settings.
+
+## Robot enrollment (milestone 02)
+
+API configuration: `Enrollment__TokenTtlMinutes` (default 15) and
+`Enrollment__RotationOverlapSeconds` (default 300). The daemon reads
+`PLATFORM_API_URL` (compose sets `http://api:8080`) and stores the credential
+secret at `DAEMON_CREDENTIAL_PATH` (default `/data/robot-credential`, mode 0600);
+the durable binding lives in SQLite table `device_identity` (migration 0002).
+
+CLI commands: `ringfour robot create|list|show|enrollment-token|credentials|rotate|revoke`
+(owner-only administration; members can read) and `ringfour daemon enroll|identity`
+(local daemon, no login needed). See `docs/human-testing/02.md` for the manual
+flow and `docs/evidence/02.md` for acceptance results.
 
 
 ## Layout

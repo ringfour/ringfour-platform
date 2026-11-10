@@ -5,6 +5,7 @@ using Ringfour.Api.Errors;
 using Ringfour.Api.Health;
 using Ringfour.Api.Identity;
 using Ringfour.Api.Persistence;
+using Ringfour.Api.Robots;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,6 +40,7 @@ app.UseAuthorization();
 
 app.MapHealthEndpoints();
 app.MapIdentityEndpoints();
+app.MapRobotEndpoints();
 app.MapFallback(() =>
 {
     throw ApiException.NotFound("The requested resource does not exist in this organization.");

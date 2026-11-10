@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/robots/v1/enroll-response.schema.json",
+  "title": "EnrollResponse",
+  "description": "POST /v1/device/enroll response. Returned exactly once when a valid token is consumed. The credential_secret is shown only here; the platform stores only its hash. If this response is lost, an owner must issue a fresh enrollment token (the stranded credential can be revoked).",
+  "type": "object",
+  "required": ["robot_id", "organization_id", "credential_id", "credential_secret"],
+  "additionalProperties": false,
+  "properties": {
+    "robot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "organization_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "credential_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "credential_secret": {
+      "type": "string",
+      "pattern": "^rfs_[A-Za-z0-9_-]{43}$"
+    }
+  }
+}

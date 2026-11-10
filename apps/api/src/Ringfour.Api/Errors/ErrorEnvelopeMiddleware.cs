@@ -23,6 +23,9 @@ public sealed class ApiException(int statusCode, string code, string message)
 
     public static ApiException Conflict(string code, string message) =>
         new(StatusCodes.Status409Conflict, code, message);
+
+    public static ApiException InvalidToken(string message) =>
+        new(StatusCodes.Status401Unauthorized, "invalid_token", message);
 }
 
 public sealed record ErrorBody(string Code, string Message, string RequestId);

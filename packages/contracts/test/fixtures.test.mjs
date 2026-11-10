@@ -37,6 +37,7 @@ test("error fixtures validate against the v1 error schema", async () => {
   assert.ok(error(await loadJson("fixtures/errors/v1/unauthenticated.json")), "unauthenticated fixture");
   assert.ok(error(await loadJson("fixtures/errors/v1/forbidden.json")), "forbidden fixture");
   assert.ok(error(await loadJson("fixtures/errors/v1/last-owner.json")), "last-owner fixture");
+  assert.ok(error(await loadJson("fixtures/errors/v1/invalid-token.json")), "invalid-token fixture");
 });
 
 test("identity fixtures validate against the v1 identity schemas", async () => {
@@ -49,6 +50,102 @@ test("identity fixtures validate against the v1 identity schemas", async () => {
   assert.ok(organization(await loadJson("fixtures/identity/v1/organization.json")), "organization fixture");
   assert.ok(organizations(await loadJson("fixtures/identity/v1/organizations-list.json")), "organizations fixture");
   assert.ok(members(await loadJson("fixtures/identity/v1/members-list.json")), "members fixture");
+});
+
+test("robot fixtures validate against the v1 robots schemas", async () => {
+  const robot = await validatorFor("schemas/robots/v1/robot.schema.json");
+  const robots = await validatorFor("schemas/robots/v1/robot-list-response.schema.json");
+  const enrollmentToken = await validatorFor("schemas/robots/v1/enrollment-token-response.schema.json");
+  const enroll = await validatorFor("schemas/robots/v1/enroll-response.schema.json");
+  const credential = await validatorFor("schemas/robots/v1/robot-credential.schema.json");
+  const credentials = await validatorFor("schemas/robots/v1/credential-list-response.schema.json");
+  const rotate = await validatorFor("schemas/robots/v1/rotate-credential-response.schema.json");
+  const deviceIdentity = await validatorFor("schemas/robots/v1/device-authenticate-response.schema.json");
+
+  assert.ok(robot(await loadJson("fixtures/robots/v1/robot.json")), "robot fixture");
+  assert.ok(robots(await loadJson("fixtures/robots/v1/robots-list.json")), "robots-list fixture");
+  assert.ok(enrollmentToken(await loadJson("fixtures/robots/v1/enrollment-token.json")), "enrollment-token fixture");
+  assert.ok(enroll(await loadJson("fixtures/robots/v1/enroll.json")), "enroll fixture");
+  assert.ok(credential(await loadJson("fixtures/robots/v1/credential.json")), "credential fixture");
+  assert.ok(credentials(await loadJson("fixtures/robots/v1/credential-list.json")), "credential-list fixture");
+  assert.ok(rotate(await loadJson("fixtures/robots/v1/rotate.json")), "rotate fixture");
+  assert.ok(deviceIdentity(await loadJson("fixtures/robots/v1/device-identity.json")), "device-identity fixture");
+});
+
+test("robot schemas reject malformed documents", async () => {
+  const robot = await validatorFor("schemas/robots/v1/robot.schema.json");
+  const createRobot = await validatorFor("schemas/robots/v1/create-robot-request.schema.json");
+  const enrollmentToken = await validatorFor("schemas/robots/v1/enrollment-token-response.schema.json");
+  const enrollRequest = await validatorFor("schemas/robots/v1/enroll-request.schema.json");
+  const enroll = await validatorFor("schemas/robots/v1/enroll-response.schema.json");
+  const credential = await validatorFor("schemas/robots/v1/robot-credential.schema.json");
+  const deviceAuth = await validatorFor("schemas/robots/v1/device-authenticate-request.schema.json");
+
+  assert.equal(
+    robot({
+      id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      organization_id: "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d",
+      name: "warehouse-01",
+      created_at: "2026-11-09T08:20:11Z",
+      profile_ref: null,
+    }),
+    false,
+    "robot without enrolled_at",
+  );
+  assert.equal(
+    robot({
+      id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      organization_id: "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d",
+      name: "warehouse-01",
+      created_at: "2026-11-09T08:20:11Z",
+      enrolled_at: null,
+      profile_ref: null,
+      secret_hash: "abc123",
+    }),
+    false,
+    "robot leaking a credential hash",
+  );
+  assert.equal(createRobot({ name: "   " }), false, "blank robot name");
+  assert.equal(createRobot({ name: "warehouse-01", token: "x" }), false, "create request with extra property");
+  assert.equal(
+    enrollmentToken({
+      token_id: "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      token: "rft_short",
+      created_at: "2026-11-09T08:21:30Z",
+      expires_at: "2026-11-09T08:36:30Z",
+    }),
+    false,
+    "enrollment token with a wrong token shape",
+  );
+  assert.equal(enrollRequest({}), false, "enroll request without token");
+  assert.equal(
+    enroll({
+      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      organization_id: "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d",
+      credential_id: "3c4d5e6f-7a8b-4c9d-0e1f-2a3b4c5d6e7f",
+      credential_secret: "rft_9N2dKmX4pQvR7sT1wYzA3bC6dE8fG0hI1jK4lM5nO6p",
+    }),
+    false,
+    "enroll response with a token-shaped secret",
+  );
+  assert.equal(
+    credential({
+      id: "3c4d5e6f-7a8b-4c9d-0e1f-2a3b4c5d6e7f",
+      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      created_at: "2026-11-09T08:22:40Z",
+      expires_at: null,
+      revoked_at: null,
+      secret_hash: "deadbeef",
+    }),
+    false,
+    "credential leaking its secret hash",
+  );
+  assert.equal(
+    deviceAuth({ credential_id: "3c4d5e6f-7a8b-4c9d-0e1f-2a3b4c5d6e7f" }),
+    false,
+    "device authenticate without secret",
+  );
 });
 
 test("schemas reject malformed documents", async () => {

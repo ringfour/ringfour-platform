@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/robots/v1/device-authenticate-request.schema.json",
+  "title": "DeviceAuthenticateRequest",
+  "description": "POST /v1/device/authenticate request body. Unauthenticated by design: the robot credential is the proof. Identity is always derived from the verified credential, never from caller-supplied claims.",
+  "type": "object",
+  "required": ["credential_id", "secret"],
+  "additionalProperties": false,
+  "properties": {
+    "credential_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "secret": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

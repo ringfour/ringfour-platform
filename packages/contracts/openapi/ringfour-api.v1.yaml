@@ -3,10 +3,13 @@ info:
   title: Ringfour API
   version: "0.1.0"
   description: |
-    Ringfour hosted API. Current scope: health endpoints (milestone 00) and
-    identity/organization membership (milestone 01).
+    Ringfour hosted API. Current scope: health endpoints (milestone 00),
+    identity/organization membership (milestone 01) and robot enrollment
+    (milestone 02).
     All /v1 endpoints require an Auth0 RS256 access token for audience
-    https://api.ringfour.eu and share the error envelope referenced below.
+    https://api.ringfour.eu and share the error envelope referenced below,
+    except the /v1/device/* endpoints which authenticate by possession of an
+    enrollment token or robot credential instead.
   license:
     name: Proprietary
 servers:
@@ -17,6 +20,10 @@ tags:
     description: Infrastructure health; no authentication, no product data.
   - name: identity
     description: Human identity, organizations and membership (Auth0 JWT required).
+  - name: robots
+    description: Robot records and credential lifecycle (Auth0 JWT required).
+  - name: device
+    description: Local-daemon-facing enrollment and credential verification; no human token.
 paths:
   /health/live:
     get:
@@ -259,6 +266,256 @@ paths:
               examples:
                 lastOwner:
                   $ref: "../fixtures/errors/v1/last-owner.json"
+  /v1/organizations/{org_id}/robots:
+    post:
+      tags: [robots]
+      operationId: createRobot
+      summary: Create a robot
+      description: |
+        Owner-only. Creates a robot bound immutably to this organization and
+        records a robot_created audit event. The robot is not enrolled until a
+        device consumes an enrollment token.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/robots/v1/create-robot-request.schema.json"
+      responses:
+        "201":
+          description: Robot created.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/robot.schema.json"
+              examples:
+                created:
+                  $ref: "../fixtures/robots/v1/robot.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    get:
+      tags: [robots]
+      operationId: listRobots
+      summary: List robots
+      description: Any member may list the organization's robots. Non-members receive 404, not 403.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Page of robots.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/robot-list-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/robots/v1/robots-list.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}:
+    get:
+      tags: [robots]
+      operationId: getRobot
+      summary: Get a robot
+      description: Any member of the robot's organization may read it. Non-members receive 404, not 403.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+      responses:
+        "200":
+          description: The robot.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/robot.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/robots/v1/robot.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}/enrollment-tokens:
+    post:
+      tags: [robots]
+      operationId: issueEnrollmentToken
+      summary: Issue an enrollment token
+      description: |
+        Owner-only. Issues a single-use, short-lived enrollment token and
+        records an enrollment_token_issued audit event. The token value is
+        returned exactly once and is never retrievable again; only its SHA-256
+        hash is stored. An unconsumed token can simply be left to expire.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+      responses:
+        "201":
+          description: Token issued; shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/enrollment-token-response.schema.json"
+              examples:
+                issued:
+                  $ref: "../fixtures/robots/v1/enrollment-token.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}/credentials:
+    get:
+      tags: [robots]
+      operationId: listRobotCredentials
+      summary: List robot credentials
+      description: |
+        Any member may list credential metadata. Secrets and their hashes are
+        never exposed. Non-members receive 404, not 403.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+      responses:
+        "200":
+          description: Credential metadata, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/credential-list-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/robots/v1/credential-list.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [robots]
+      operationId: rotateRobotCredential
+      summary: Rotate the robot credential
+      description: |
+        Owner-only. Creates a replacement credential and bounds the rotation
+        overlap by setting expires_at on the previous newest credential. The
+        old credential keeps working until that expiry; the new secret is
+        returned exactly once. Records a credential_rotated audit event.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+      responses:
+        "201":
+          description: New credential created; secret shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/rotate-credential-response.schema.json"
+              examples:
+                rotated:
+                  $ref: "../fixtures/robots/v1/rotate.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}/credentials/{credential_id}/revoke:
+    post:
+      tags: [robots]
+      operationId: revokeRobotCredential
+      summary: Revoke a robot credential
+      description: |
+        Owner-only. Revokes one credential immediately; it stops authenticating
+        at once. Records a credential_revoked audit event. Revoking an already
+        revoked credential is a no-op returning 200.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+        - $ref: "#/components/parameters/CredentialId"
+      responses:
+        "200":
+          description: Credential revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/robot-credential.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/device/enroll:
+    post:
+      tags: [device]
+      operationId: enrollDevice
+      summary: Enroll a device
+      description: |
+        Unauthenticated by design: the enrollment token is the only proof
+        required. Consumed atomically — the token works exactly once, even
+        under concurrent attempts. On success the platform creates the robot's
+        first credential, stamps enrolled_at and records an enrolled audit
+        event in one transaction, and returns the credential secret exactly
+        once. If this response is lost, an owner must issue a fresh token.
+        Invalid, expired or already consumed tokens all receive 401
+        invalid_token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/robots/v1/enroll-request.schema.json"
+      responses:
+        "200":
+          description: Enrolled; credential secret shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/enroll-response.schema.json"
+              examples:
+                enrolled:
+                  $ref: "../fixtures/robots/v1/enroll.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/InvalidToken"
+  /v1/device/authenticate:
+    post:
+      tags: [device]
+      operationId: authenticateDevice
+      summary: Verify a robot credential
+      description: |
+        Unauthenticated by design: the robot credential is the proof. Returns
+        the identity derived from the verified credential — never from
+        caller-supplied claims. Unknown, expired or revoked credentials all
+        receive 401 invalid_token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/robots/v1/device-authenticate-request.schema.json"
+      responses:
+        "200":
+          description: Credential is usable; derived identity returned.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/robots/v1/device-authenticate-response.schema.json"
+              examples:
+                ok:
+                  $ref: "../fixtures/robots/v1/device-identity.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/InvalidToken"
 components:
   securitySchemes:
     bearerAuth:
@@ -279,6 +536,20 @@ components:
         pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     UserId:
       name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    RobotId:
+      name: robot_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    CredentialId:
+      name: credential_id
       in: path
       required: true
       schema:
@@ -347,6 +618,15 @@ components:
           examples:
             conflict:
               $ref: "../fixtures/errors/v1/conflict.json"
+    InvalidToken:
+      description: Enrollment token or robot credential is invalid, expired, consumed or revoked.
+      content:
+        application/json:
+          schema:
+            $ref: "../schemas/errors/v1/error.schema.json"
+          examples:
+            invalidToken:
+              $ref: "../fixtures/errors/v1/invalid-token.json"
   schemas:
     Error:
       $ref: "../schemas/errors/v1/error.schema.json"

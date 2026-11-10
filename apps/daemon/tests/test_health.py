@@ -73,5 +73,5 @@ def test_migrations_are_repeatable(tmp_path):
     db = str(tmp_path / "daemon.db")
     first = migrate(db)
     second = migrate(db)
-    assert first == [1]
+    assert first == [1, 2]
     assert second == []

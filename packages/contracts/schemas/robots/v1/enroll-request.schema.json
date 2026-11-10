@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/robots/v1/enroll-request.schema.json",
+  "title": "EnrollRequest",
+  "description": "POST /v1/device/enroll request body. Unauthenticated by design: the single-use enrollment token is the only proof required. Issued by the local daemon enrollment flow.",
+  "type": "object",
+  "required": ["token"],
+  "additionalProperties": false,
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

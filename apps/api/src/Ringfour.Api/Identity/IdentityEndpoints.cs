@@ -1,6 +1,4 @@
-using System.Text;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Persistence;
 
@@ -8,9 +6,6 @@ namespace Ringfour.Api.Identity;
 
 public static class IdentityEndpoints
 {
-    private const int DefaultPageSize = 100;
-    private const int MaxPageSize = 200;
-
     public static void MapIdentityEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/v1").RequireAuthorization();
@@ -24,71 +19,11 @@ public static class IdentityEndpoints
         group.MapDelete("/organizations/{orgId:guid}/members/{userId:guid}", RemoveMember);
     }
 
-    private static string RequireSubject(HttpContext httpContext) =>
-        httpContext.User.FindFirst("sub")?.Value
-        ?? throw ApiException.Unauthenticated("The access token has no subject claim.");
-
-    private static async Task<User> ResolveOrCreateUser(
-        RingfourDbContext db, string subject, CancellationToken cancellationToken)
-    {
-        var user = await db.Users.SingleOrDefaultAsync(
-            existing => existing.Auth0Sub == subject, cancellationToken);
-        if (user is not null)
-        {
-            return user;
-        }
-
-        user = new User
-        {
-            Id = Guid.NewGuid(),
-            Auth0Sub = subject,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-        db.Users.Add(user);
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-            return user;
-        }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
-        {
-            // Concurrent first request for the same subject won the insert.
-            db.Entry(user).State = EntityState.Detached;
-            return await db.Users.SingleAsync(
-                existing => existing.Auth0Sub == subject, cancellationToken);
-        }
-    }
-
-    private static async Task<Membership> RequireMembership(
-        RingfourDbContext db,
-        Guid organizationId,
-        Guid userId,
-        OrgRole minimumRole,
-        CancellationToken cancellationToken)
-    {
-        var membership = await db.Memberships.SingleOrDefaultAsync(
-            candidate =>
-                candidate.OrganizationId == organizationId && candidate.UserId == userId,
-            cancellationToken);
-        if (membership is null)
-        {
-            throw ApiException.NotFound(
-                "The requested resource does not exist in this organization.");
-        }
-        if (membership.Role < minimumRole)
-        {
-            throw ApiException.Forbidden($"This operation requires the {minimumRole} role.");
-        }
-        return membership;
-    }
-
-    private static bool IsUniqueViolation(DbUpdateException exception) =>
-        exception.InnerException is PostgresException { SqlState: "23505" };
-
     private static async Task<MeResponse> GetMe(
         HttpContext httpContext, RingfourDbContext db, CancellationToken cancellationToken)
     {
-        var user = await ResolveOrCreateUser(db, RequireSubject(httpContext), cancellationToken);
+        var user = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
         var memberships = await db.Memberships
             .Where(membership => membership.UserId == user.Id)
             .OrderBy(membership => membership.CreatedAt)
@@ -114,7 +49,8 @@ public static class IdentityEndpoints
             throw ApiException.InvalidInput("Organization name must not exceed 200 characters.");
         }
 
-        var user = await ResolveOrCreateUser(db, RequireSubject(httpContext), cancellationToken);
+        var user = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var organization = new Organization
         {
@@ -144,9 +80,10 @@ public static class IdentityEndpoints
         int? limit,
         CancellationToken cancellationToken)
     {
-        var user = await ResolveOrCreateUser(db, RequireSubject(httpContext), cancellationToken);
-        var (createdAfter, idAfter) = DecodeCursor(cursor);
-        var pageSize = ClampLimit(limit);
+        var user = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        var (createdAfter, idAfter) = Pagination.DecodeCursor(cursor);
+        var pageSize = Pagination.ClampLimit(limit);
 
         var query = db.Memberships
             .Where(membership => membership.UserId == user.Id)
@@ -173,9 +110,10 @@ public static class IdentityEndpoints
                 membership.Organization.Name,
                 membership.Role,
                 membership.Organization.CreatedAt)).ToList(),
-            NextCursor(
+            Pagination.NextCursor(
                 memberships.Count > pageSize,
                 page,
+                membership => membership.CreatedAt,
                 membership => membership.OrganizationId));
     }
 
@@ -187,10 +125,11 @@ public static class IdentityEndpoints
         int? limit,
         CancellationToken cancellationToken)
     {
-        var user = await ResolveOrCreateUser(db, RequireSubject(httpContext), cancellationToken);
-        await RequireMembership(db, orgId, user.Id, OrgRole.Operator, cancellationToken);
-        var (createdAfter, idAfter) = DecodeCursor(cursor);
-        var pageSize = ClampLimit(limit);
+        var user = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Operator, cancellationToken);
+        var (createdAfter, idAfter) = Pagination.DecodeCursor(cursor);
+        var pageSize = Pagination.ClampLimit(limit);
 
         var query = db.Memberships
             .Where(membership => membership.OrganizationId == orgId)
@@ -209,7 +148,11 @@ public static class IdentityEndpoints
         var page = memberships.Take(pageSize).ToList();
         return new MemberListResponse(
             page.Select(MembershipResponse.FromEntity).ToList(),
-            NextCursor(memberships.Count > pageSize, page, membership => membership.UserId));
+            Pagination.NextCursor(
+                memberships.Count > pageSize,
+                page,
+                membership => membership.CreatedAt,
+                membership => membership.UserId));
     }
 
     private static async Task<IResult> AddMember(
@@ -219,8 +162,9 @@ public static class IdentityEndpoints
         AddMemberRequest request,
         CancellationToken cancellationToken)
     {
-        var caller = await ResolveOrCreateUser(db, RequireSubject(httpContext), cancellationToken);
-        await RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
 
         var targetExists = await db.Users.AnyAsync(
             user => user.Id == request.UserId, cancellationToken);
@@ -241,7 +185,7 @@ public static class IdentityEndpoints
         {
             await db.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        catch (DbUpdateException exception) when (IdentityAccess.IsUniqueViolation(exception))
         {
             throw ApiException.Conflict("conflict", "The user is already a member of this organization.");
         }
@@ -259,8 +203,9 @@ public static class IdentityEndpoints
         UpdateMemberRequest request,
         CancellationToken cancellationToken)
     {
-        var caller = await ResolveOrCreateUser(db, RequireSubject(httpContext), cancellationToken);
-        await RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
 
         await using var transaction =
             await db.Database.BeginTransactionAsync(cancellationToken);
@@ -297,8 +242,9 @@ public static class IdentityEndpoints
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var caller = await ResolveOrCreateUser(db, RequireSubject(httpContext), cancellationToken);
-        await RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
 
         await using var transaction =
             await db.Database.BeginTransactionAsync(cancellationToken);
@@ -344,64 +290,4 @@ public static class IdentityEndpoints
             membership =>
                 membership.OrganizationId == organizationId && membership.Role == OrgRole.Owner,
             cancellationToken);
-
-    private static int ClampLimit(int? limit)
-    {
-        if (limit is null)
-        {
-            return DefaultPageSize;
-        }
-        if (limit < 1 || limit > MaxPageSize)
-        {
-            throw ApiException.InvalidInput($"limit must be between 1 and {MaxPageSize}.");
-        }
-        return limit.Value;
-    }
-
-    // Opaque cursor: base64url of "createdAt round-trip|tie-break id" of the
-    // last item returned. Round-trip formatting preserves the exact value read
-    // from PostgreSQL so equality comparisons hold.
-    private static (DateTimeOffset? CreatedAt, Guid? Id) DecodeCursor(string? cursor)
-    {
-        if (string.IsNullOrEmpty(cursor))
-        {
-            return (null, null);
-        }
-        try
-        {
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(PadBase64(cursor)));
-            var parts = decoded.Split('|');
-            return (
-                DateTimeOffset.ParseExact(
-                    parts[0], "o", System.Globalization.CultureInfo.InvariantCulture),
-                Guid.Parse(parts[1]));
-        }
-        catch (Exception exception) when (exception is FormatException or IndexOutOfRangeException)
-        {
-            throw ApiException.InvalidInput("cursor is not valid.");
-        }
-    }
-
-    private static string EncodeCursor(DateTimeOffset createdAt, Guid id)
-    {
-        var raw = Encoding.UTF8.GetBytes($"{createdAt:o}|{id}");
-        return Convert.ToBase64String(raw).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    }
-
-    private static string? NextCursor(
-        bool hasMore, IReadOnlyList<Membership> page, Func<Membership, Guid> tieBreakId)
-    {
-        if (!hasMore || page.Count == 0)
-        {
-            return null;
-        }
-        var last = page[^1];
-        return EncodeCursor(last.CreatedAt, tieBreakId(last));
-    }
-
-    private static string PadBase64(string value)
-    {
-        var padded = value.Replace('-', '+').Replace('_', '/');
-        return padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '=');
-    }
 }
