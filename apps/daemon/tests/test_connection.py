@@ -209,8 +209,7 @@ def test_full_session_executes_and_reports_terminal_status(tmp_path):
 
 
 def test_replayed_command_does_not_reexecute_after_restart(tmp_path):
-    """The platform replays nonterminal operations after a daemon restart; a
-    command already committed locally must replay its status, not its effect."""
+    """An accepted command has not started and resumes after restart."""
 
     async def scenario():
         stub = StubPlatform()
@@ -234,15 +233,46 @@ def test_replayed_command_does_not_reexecute_after_restart(tmp_path):
                 await stub.send("command", command)
                 replayed = await asyncio.wait_for(stub.received.get(), timeout=5)
                 assert replayed["type"] == "ack"
-                # The stored record is still accepted, so no terminal replay.
+                status = await asyncio.wait_for(stub.received.get(), timeout=5)
+                assert status["payload"]["state"] == "succeeded"
+                done.set()
+
+            await asyncio.gather(run_manager(manager, done.wait()), drive())
+            assert effects == [command["operation_id"]]
+            assert manager.effects == 1
+            stored = operations.get(settings.db_path, command["operation_id"])
+            assert stored is not None
+            assert stored.state == "succeeded"
+        finally:
+            await stub.stop()
+
+    run(scenario())
+
+
+def test_running_replay_is_failed_without_repeating_effect(tmp_path):
+    async def scenario():
+        stub = StubPlatform()
+        url = await stub.start()
+        try:
+            settings = make_settings(tmp_path, url)
+            command = command_payload("4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b")
+            operations.record_command(settings.db_path, ROBOT_ID, command)
+            operations.apply_status(settings.db_path, command["operation_id"], "running")
+            effects = []
+            manager = ConnectionManager(settings, execute=lambda op: effects.append(op))
+            done = asyncio.Event()
+
+            async def drive():
+                await stub.expect_hello()
+                await stub.send("command", command)
+                assert (await asyncio.wait_for(stub.received.get(), timeout=5))["type"] == "ack"
+                status = await asyncio.wait_for(stub.received.get(), timeout=5)
+                assert status["payload"]["state"] == "failed"
+                assert status["payload"]["result"]["error"]["code"] == "interrupted_unknown_outcome"
                 done.set()
 
             await asyncio.gather(run_manager(manager, done.wait()), drive())
             assert effects == []
-            assert manager.effects == 0
-            stored = operations.get(settings.db_path, command["operation_id"])
-            assert stored is not None
-            assert stored.state == "accepted"
         finally:
             await stub.stop()
 

@@ -35,7 +35,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://localhost:$RU
 echo "    runner not reachable from host (connection failed as expected)"
 
 echo "==> 3. CLI health — all services ok"
-uv run --project apps/cli ringfour health
+uv run --project apps/cli ringfour-cli health
 echo "    exit code $?"
 
 echo "==> 4. stop postgres — api readiness fails, CLI exits nonzero"
@@ -44,7 +44,7 @@ wait_http "$API_URL/health/ready" 503 30
 body=$(curl -s "$API_URL/health/ready")
 [ "$(echo "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin)["checks"]["postgresql"])')" = "fail" ] \
   || fail "expected postgresql=fail, got: $body"
-if uv run --project apps/cli ringfour health; then
+if uv run --project apps/cli ringfour-cli health; then
   fail "CLI health exited 0 with postgres down"
 else
   echo "    CLI exited nonzero as expected; api: $body"
@@ -61,7 +61,7 @@ wait_http "$DAEMON_URL/health/ready" 503 30
 body=$(curl -s "$DAEMON_URL/health/ready")
 [ "$(echo "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin)["checks"]["runner"])')" = "fail" ] \
   || fail "expected runner=fail, got: $body"
-if uv run --project apps/cli ringfour health; then
+if uv run --project apps/cli ringfour-cli health; then
   fail "CLI health exited 0 with runner down"
 else
   echo "    CLI exited nonzero as expected; daemon: $body"
@@ -80,6 +80,6 @@ curl -s http://localhost:5173/api/health/ready | grep -q '"status":"ok"' \
 echo "    console serves and proxies api health"
 
 echo "==> 9. final state: all ready"
-uv run --project apps/cli ringfour health
+uv run --project apps/cli ringfour-cli health
 
 echo "ACCEPTANCE PASSED — stack left running; clean up with: npm run compose:clean"

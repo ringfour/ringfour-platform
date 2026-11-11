@@ -119,7 +119,10 @@ class ConnectionManager:
                 maximum=self._settings.backoff_max_seconds,
             )
             attempt += 1
-            logger.info("reconnecting in %.1fs (attempt %d)", delay, attempt)
+            logger.info(
+                "robot %s reconnecting in %.1fs (attempt %d)",
+                identity["robot_id"], delay, attempt,
+            )
             await self._sleep(delay)
 
     async def _session(self, identity: dict) -> None:
@@ -236,11 +239,25 @@ class ConnectionManager:
         # The local record is committed before this ack goes out.
         await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
         if not created:
-            # Replay of a command we already hold: re-report stored status,
-            # never execute the effect again.
             if operation.state in operations.TERMINAL_STATES:
+                logger.info("operation %s replaying terminal state %s", operation.operation_id, operation.state)
                 await self._report(outbound, state, operation)
-            return
+                return
+            if operation.state == "running":
+                # The effect may have happened before a crash. Never repeat it.
+                finished = operations.apply_status(
+                    self._settings.db_path,
+                    operation.operation_id,
+                    "failed",
+                    {"error": {
+                        "code": "interrupted_unknown_outcome",
+                        "message": "The daemon restarted while the operation outcome was unknown.",
+                    }},
+                )
+                await self._report(outbound, state, finished)
+                return
+            # accepted is committed before execution starts, so it is safe to
+            # resume after an interruption at the acknowledgement boundary.
 
         if operations.is_expired(operation.deadline_at, self._now()):
             finished = operations.apply_status(
@@ -258,6 +275,7 @@ class ConnectionManager:
             return
 
         operations.apply_status(self._settings.db_path, operation.operation_id, "running")
+        logger.info("operation %s started for robot %s", operation.operation_id, state.robot_id)
         try:
             result = self._execute(operation)
             self.effects += 1
@@ -278,6 +296,7 @@ class ConnectionManager:
                 },
             )
         await self._report(outbound, state, finished)
+        logger.info("operation %s finished with state %s", operation.operation_id, finished.state)
 
     def _handle_error(self, error: dict) -> None:
         code = error.get("code")

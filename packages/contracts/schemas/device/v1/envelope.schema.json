@@ -2,9 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.ringfour.dev/device/v1/envelope.schema.json",
   "title": "Device message envelope",
-  "description": "Envelope for every message on the authenticated /v1/device/connect WebSocket. The platform derives robot authority from the credential presented at connection time and checks robot_id against it on every message; it never trusts the envelope for identity. Payload is validated against the payload schema matching the message type. Sequence numbers increase by exactly one per message per connection; the first message of a connection (hello) carries sequence 1.",
+  "description": "Envelope for every message on the authenticated /v1/device/connect WebSocket. The platform derives robot authority from the credential presented at connection time and checks robot_id against it on every message; it never trusts the envelope for identity. Payload is validated against the payload schema matching the message type. Sequence numbers increase by exactly one per message per connection; the first message of a connection (hello) carries sequence 1. Device-to-platform WebSocket messages must be text and at most 65536 UTF-8 bytes after reassembly; violations receive malformed_message and close 4409.",
   "type": "object",
-  "required": ["version", "message_id", "type", "robot_id", "sequence", "payload"],
+  "required": [
+    "version",
+    "message_id",
+    "type",
+    "robot_id",
+    "sequence",
+    "payload"
+  ],
   "additionalProperties": false,
   "properties": {
     "version": {
@@ -17,7 +24,15 @@
     },
     "type": {
       "type": "string",
-      "enum": ["hello", "welcome", "heartbeat", "command", "ack", "operation_status", "error"]
+      "enum": [
+        "hello",
+        "welcome",
+        "heartbeat",
+        "command",
+        "ack",
+        "operation_status",
+        "error"
+      ]
     },
     "robot_id": {
       "type": "string",

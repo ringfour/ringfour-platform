@@ -23,6 +23,7 @@ builder.Services.AddDbContext<RingfourDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
 builder.Services.AddSingleton<DeviceConnectionManager>();
+builder.Services.AddSingleton<ConnectivityMetrics>();
 builder.Services.AddHostedService<OperationSweeper>();
 
 builder.AddRingfourAuth();

@@ -2,9 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.ringfour.dev/device/v1/operation-status.schema.json",
   "title": "operation_status payload",
-  "description": "Sent by the daemon to report progress and terminal outcomes. Terminal states (succeeded, failed, cancelled) are immutable on the platform: a conflicting terminal report receives an error message, a repeat of the same terminal state is a no-op. Failed results carry {\"error\": {\"code\", \"message\"}}; diagnostic.noop successes carry {\"noop\": true}.",
+  "description": "Sent by the daemon to report progress and terminal outcomes. Terminal states (succeeded, failed, cancelled) are immutable on the platform: a conflicting terminal report receives an error message, a repeat of the same terminal state is a no-op. Failed results carry {\"error\": {\"code\", \"message\"}}; diagnostic.noop successes carry {\"noop\": true}. On replay, a locally accepted diagnostic operation can start; a locally running operation with an unknown outcome must not be rerun and is reported failed with code interrupted_unknown_outcome.",
   "type": "object",
-  "required": ["operation_id", "state"],
+  "required": [
+    "operation_id",
+    "state"
+  ],
   "additionalProperties": false,
   "properties": {
     "operation_id": {
@@ -13,7 +16,13 @@
     },
     "state": {
       "type": "string",
-      "enum": ["accepted", "running", "succeeded", "failed", "cancelled"]
+      "enum": [
+        "accepted",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
     },
     "result": {
       "type": "object"

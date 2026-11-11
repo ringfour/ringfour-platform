@@ -167,6 +167,7 @@ test("device fixtures validate against the v1 device schemas", async () => {
     "command",
     "ack",
     "operation-status-succeeded",
+    "operation-status-interrupted",
     "protocol-error",
   ]) {
     const message = await loadJson(`fixtures/device/v1/${name}.json`);

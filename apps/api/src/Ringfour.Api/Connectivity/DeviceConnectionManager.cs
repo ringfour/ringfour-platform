@@ -54,7 +54,8 @@ public sealed class DeviceConnectionManager
         if (_sessions.TryGetValue(robotId, out var current) &&
             current.SessionId == sessionId)
         {
-            _sessions.TryRemove(robotId, out _);
+            ((ICollection<KeyValuePair<Guid, DeviceConnection>>)_sessions)
+                .Remove(new KeyValuePair<Guid, DeviceConnection>(robotId, current));
         }
     }
 
@@ -63,22 +64,21 @@ public sealed class DeviceConnectionManager
 
     public async Task SendAsync(DeviceConnection session, JsonSerializerOptions options, string type, JsonObject payload)
     {
-        var envelope = new JsonObject
-        {
-            ["version"] = 1,
-            ["message_id"] = Guid.NewGuid().ToString(),
-            ["type"] = type,
-            ["robot_id"] = session.RobotId.ToString(),
-            ["sequence"] = ++session.ServerSequence,
-            ["payload"] = payload,
-        };
-        var bytes = Encoding.UTF8.GetBytes(envelope.ToJsonString(options));
-
         await session.SendLock.WaitAsync();
         try
         {
             if (session.Socket.State == WebSocketState.Open)
             {
+                var envelope = new JsonObject
+                {
+                    ["version"] = 1,
+                    ["message_id"] = Guid.NewGuid().ToString(),
+                    ["type"] = type,
+                    ["robot_id"] = session.RobotId.ToString(),
+                    ["sequence"] = ++session.ServerSequence,
+                    ["payload"] = payload,
+                };
+                var bytes = Encoding.UTF8.GetBytes(envelope.ToJsonString(options));
                 await session.Socket.SendAsync(
                     bytes, WebSocketMessageType.Text, endOfMessage: true, CancellationToken.None);
             }

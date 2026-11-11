@@ -30,8 +30,11 @@ public static class DeviceSocketEndpoints
         RingfourDbContext db,
         DeviceConnectionManager manager,
         IConfiguration configuration,
+        ILoggerFactory loggerFactory,
+        ConnectivityMetrics metrics,
         CancellationToken cancellationToken)
     {
+        metrics.ConnectionAttempt();
         if (!httpContext.WebSockets.IsWebSocketRequest)
         {
             throw ApiException.InvalidInput("This endpoint requires a WebSocket upgrade.");
@@ -60,13 +63,24 @@ public static class DeviceSocketEndpoints
         var options = RingfourJson.Options;
         var heartbeatSeconds = configuration.GetValue("Connectivity:HeartbeatIntervalSeconds", 15);
         var helloAccepted = false;
+        var logger = loggerFactory.CreateLogger("Ringfour.Connectivity");
 
         try
         {
             var buffer = new byte[64 * 1024];
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
-                var message = await ReceiveMessageAsync(socket, buffer, cancellationToken);
+                string? message;
+                try
+                {
+                    message = await ReceiveMessageAsync(socket, buffer, cancellationToken);
+                }
+                catch (InvalidDataException)
+                {
+                    await manager.CloseWithErrorAsync(session, options, "malformed_message",
+                        "Messages must be valid UTF-8 text and at most 65536 bytes.", CloseProtocolViolation);
+                    return;
+                }
                 if (message is null)
                 {
                     break;
@@ -98,11 +112,11 @@ public static class DeviceSocketEndpoints
                     messageId = envelope["message_id"]?.GetValue<string>();
                     robotIdText = envelope["robot_id"]?.GetValue<string>();
                     type = envelope["type"]?.GetValue<string>();
-                    sequence = envelope["sequence"]!.GetValue<long>();
+                    sequence = envelope["sequence"]?.GetValue<long>() ?? -1;
                     payload = envelope["payload"] as JsonObject;
                 }
                 catch (Exception exception)
-                    when (exception is InvalidOperationException or FormatException)
+                    when (exception is InvalidOperationException or FormatException or ArgumentException)
                 {
                     await manager.CloseWithErrorAsync(
                         session, options, "malformed_message",
@@ -110,7 +124,8 @@ public static class DeviceSocketEndpoints
                     return;
                 }
 
-                if (envelopeVersion != ProtocolVersion || messageId is null || payload is null)
+                if (envelopeVersion != ProtocolVersion || messageId is null || payload is null ||
+                    !ValidMessage(envelope, type, messageId, sequence, payload))
                 {
                     await manager.CloseWithErrorAsync(
                         session, options, "malformed_message",
@@ -194,7 +209,7 @@ public static class DeviceSocketEndpoints
                                 CloseUnsupportedProtocol);
                             return;
                         }
-                        if (daemonVersion is null || daemonVersion.Length > 100)
+                        if (daemonVersion is null || daemonVersion.EnumerateRunes().Count() > 100)
                         {
                             await manager.CloseWithErrorAsync(
                                 session, options, "malformed_message",
@@ -205,6 +220,8 @@ public static class DeviceSocketEndpoints
 
                         helloAccepted = true;
                         var replaced = manager.Register(session);
+                        logger.LogInformation("Device session {SessionId} connected for robot {RobotId}; replaced={Replaced}",
+                            session.SessionId, session.RobotId, replaced is not null);
                         await ReplacePresenceAsync(db, robot.Id, session, daemonVersion, cancellationToken);
                         await manager.SendAsync(session, options, "welcome", new JsonObject
                         {
@@ -227,12 +244,12 @@ public static class DeviceSocketEndpoints
                         break;
 
                     case "ack":
-                        await HandleAckAsync(db, manager, session, options, payload, cancellationToken);
+                        await HandleAckAsync(db, manager, session, options, payload, logger, cancellationToken);
                         break;
 
                     case "operation_status":
                         await HandleOperationStatusAsync(
-                            db, manager, session, options, payload, cancellationToken);
+                            db, manager, session, options, payload, logger, metrics, cancellationToken);
                         break;
 
                     default:
@@ -255,6 +272,8 @@ public static class DeviceSocketEndpoints
         finally
         {
             manager.Unregister(robot.Id, session.SessionId);
+            if (helloAccepted)
+                logger.LogInformation("Device session {SessionId} disconnected for robot {RobotId}", session.SessionId, robot.Id);
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
                 try
@@ -341,6 +360,7 @@ public static class DeviceSocketEndpoints
         DeviceConnection session,
         JsonSerializerOptions options,
         JsonObject payload,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         var operation = await FindOperationAsync(db, session, payload, cancellationToken);
@@ -358,6 +378,8 @@ public static class DeviceSocketEndpoints
             operation.AcknowledgedAt ??= now;
             operation.UpdatedAt = now;
             await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Operation {OperationId} accepted for robot {RobotId} in session {SessionId}",
+                operation.Id, session.RobotId, session.SessionId);
         }
         else if (OperationStates.IsTerminal(operation.State))
         {
@@ -373,6 +395,8 @@ public static class DeviceSocketEndpoints
         DeviceConnection session,
         JsonSerializerOptions options,
         JsonObject payload,
+        ILogger logger,
+        ConnectivityMetrics metrics,
         CancellationToken cancellationToken)
     {
         var stateText = payload["state"]?.GetValue<string>();
@@ -415,6 +439,9 @@ public static class DeviceSocketEndpoints
             operation.Result = payload["result"]?.ToJsonString(options) ?? "{}";
         }
         await db.SaveChangesAsync(cancellationToken);
+        if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
+        logger.LogInformation("Operation {OperationId} reported {OperationState} for robot {RobotId} in session {SessionId}",
+            operation.Id, state, session.RobotId, session.SessionId);
     }
 
     private static async Task<Operation?> FindOperationAsync(
@@ -448,7 +475,7 @@ public static class DeviceSocketEndpoints
     private static async Task<string?> ReceiveMessageAsync(
         WebSocket socket, byte[] buffer, CancellationToken cancellationToken)
     {
-        var builder = new StringBuilder();
+        using var bytes = new MemoryStream();
         while (true)
         {
             var result = await socket.ReceiveAsync(buffer, cancellationToken);
@@ -456,11 +483,50 @@ public static class DeviceSocketEndpoints
             {
                 return null;
             }
-            builder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            if (result.MessageType != WebSocketMessageType.Text || bytes.Length + result.Count > 65536)
+            {
+                throw new InvalidDataException();
+            }
+            bytes.Write(buffer, 0, result.Count);
             if (result.EndOfMessage)
             {
-                return builder.ToString();
+                try { return new UTF8Encoding(false, true).GetString(bytes.ToArray()); }
+                catch (DecoderFallbackException) { throw new InvalidDataException(); }
             }
+        }
+    }
+
+    private static bool ValidMessage(JsonObject envelope, string? type, string messageId, long sequence, JsonObject payload)
+    {
+        try
+        {
+            if (envelope.Count != 6 || envelope.Any(pair => pair.Key is not
+                    ("version" or "message_id" or "type" or "robot_id" or "sequence" or "payload")) ||
+                messageId.EnumerateRunes().Count() is < 1 or > 100 || sequence < 1)
+                return false;
+            static bool ValidId(JsonNode? node) => node is not null &&
+                Guid.TryParseExact(node.GetValue<string>(), "D", out var id) &&
+                id.ToString() == node.GetValue<string>();
+            if (!ValidId(envelope["robot_id"])) return false;
+            return type switch
+            {
+                "hello" => payload.Count == 2 &&
+                    payload["daemon_version"]?.GetValue<string>().EnumerateRunes().Count() is >= 1 and <= 100 &&
+                    payload["supported_protocol_versions"] is JsonArray versions && versions.Count > 0 &&
+                    versions.All(value => value is not null && value.GetValue<int>() >= 1),
+                "heartbeat" => payload.Count == 0,
+                "ack" => payload.Count == 1 && ValidId(payload["operation_id"]),
+                "operation_status" => payload.Count is 2 or 3 &&
+                    payload.All(pair => pair.Key is "operation_id" or "state" or "result") &&
+                    ValidId(payload["operation_id"]) &&
+                    payload["state"]?.GetValue<string>() is "accepted" or "running" or "succeeded" or "failed" or "cancelled" &&
+                    (!payload.ContainsKey("result") || payload["result"] is JsonObject),
+                _ => false,
+            };
+        }
+        catch (Exception error) when (error is InvalidOperationException or FormatException or ArgumentException)
+        {
+            return false;
         }
     }
 }

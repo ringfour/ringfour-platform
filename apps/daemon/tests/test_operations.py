@@ -74,6 +74,15 @@ def test_conflicting_reuse_of_operation_id_is_an_error(db_path):
         operations.record_command(db_path, ROBOT_ID, conflicting)
 
 
+def test_replay_accepts_equivalent_postgres_timestamp_precision(db_path):
+    original = dict(COMMAND, deadline_at="2026-11-10T09:01:05.1234567Z")
+    replay = dict(COMMAND, deadline_at="2026-11-10T09:01:05.123456Z")
+    operations.record_command(db_path, ROBOT_ID, original)
+    operation, created = operations.record_command(db_path, ROBOT_ID, replay)
+    assert not created
+    assert operation.operation_id == COMMAND["operation_id"]
+
+
 def test_command_for_another_robot_is_an_error(db_path):
     operations.record_command(db_path, ROBOT_ID, COMMAND)
 

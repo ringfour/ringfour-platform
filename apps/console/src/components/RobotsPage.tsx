@@ -343,8 +343,8 @@ export function RobotsPage() {
               {shownSecret.expires_at !== undefined
                 ? `Single-use; expires ${shownSecret.expires_at}. `
                 : ""}
-              This value is never retrievable again. Pass it to `ringfour daemon
-              enroll` or store it nowhere at all.
+              This value is never retrievable again. Pass it to `ringfour-cli
+              daemon enroll` or store it nowhere at all.
             </p>
             <button
               type="button"

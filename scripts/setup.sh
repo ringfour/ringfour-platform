@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> packages/contracts"
-npm --prefix packages/contracts install
+npm --prefix packages/contracts ci
 
 echo "==> apps/api (dotnet via Docker)"
 bash scripts/dotnet.sh tool restore
@@ -15,14 +15,14 @@ bash scripts/dotnet.sh restore
 for app in console; do
   if [ -d "apps/$app" ]; then
     echo "==> apps/$app"
-    npm --prefix "apps/$app" install
+    npm --prefix "apps/$app" ci
   fi
 done
 
 for app in daemon runner cli; do
   if [ -d "apps/$app" ]; then
     echo "==> apps/$app"
-    uv sync --project "apps/$app"
+    uv sync --frozen --project "apps/$app"
   fi
 done
 

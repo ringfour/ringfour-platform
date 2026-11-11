@@ -16,7 +16,7 @@ Freeze request/response/message schemas, state transitions and error examples in
 
 ## Implementation
 
-ASP.NET Core JWT Bearer validates Auth0 access tokens. `GET /v1/me` resolves or creates the local user by `sub`. Add EF Core migrations and Ringfour-owned membership checks in PostgreSQL. CLI `ringfour login` uses device authorization; add `ringfour logout`, `ringfour whoami`, and `org create/list/select`. Persist selected org separately from secrets. Console uses Ringfour Web with Authorization Code + PKCE and calls the same API to inspect identity/membership. Daemon/Runner do not use Auth0.
+ASP.NET Core JWT Bearer validates Auth0 access tokens. `GET /v1/me` resolves or creates the local user by `sub`. Add EF Core migrations and Ringfour-owned membership checks in PostgreSQL. CLI `ringfour-cli login` uses device authorization; add `ringfour-cli logout`, `ringfour-cli whoami`, and `org create/list/select`. Persist selected org separately from secrets. Console uses Ringfour Web with Authorization Code + PKCE and calls the same API to inspect identity/membership. Daemon/Runner do not use Auth0.
 
 ## Independent component tests
 
@@ -26,7 +26,7 @@ Run each affected application's tests independently; use fixtures for external d
 
 ## Integrated acceptance
 
-Use a real Auth0 tenant: `ringfour login` → device authorization in Auth0 → valid API access token → `GET /v1/me` creates/looks up the local user → `ringfour whoami` reports that identity. Repeat to verify stable lookup. Sign in to Console via Authorization Code + PKCE, create an organization and inspect membership. A second account outside the organization cannot read it. Run reproducible local authorization integration with test signing fixtures separately.
+Use a real Auth0 tenant: `ringfour-cli login` → device authorization in Auth0 → valid API access token → `GET /v1/me` creates/looks up the local user → `ringfour-cli whoami` reports that identity. Repeat to verify stable lookup. Sign in to Console via Authorization Code + PKCE, create an organization and inspect membership. A second account outside the organization cannot read it. Run reproducible local authorization integration with test signing fixtures separately.
 
 Exercise real processes and protocols. Record exact commands, expected and observed results, versions and cleanup steps in docs/evidence/01.md. A mock-only result does not satisfy acceptance.
 

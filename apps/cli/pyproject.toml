@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ringfour = "ringfour_cli.main:app"
+ringfour-cli = "ringfour_cli.main:app"
 
 [dependency-groups]
 dev = [

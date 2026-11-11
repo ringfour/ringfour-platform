@@ -14,6 +14,12 @@ Implement architecture WebSocket protocol with hello, heartbeat, command, ack an
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.
 
+A replay of a locally `accepted` operation resumes execution: `accepted` is
+persisted before any effect starts. A replay of `running` has an uncertain
+outcome after interruption, so it is never rerun; report `failed` with result
+`{"error":{"code":"interrupted_unknown_outcome","message":"The daemon restarted while the operation outcome was unknown."}}`.
+Terminal outcomes are immutable. This recovery result is a new Ringfour design.
+
 ## Implementation
 
 API tracks live sessions and durable command status; reject competing sessions using an explicit replacement policy. Daemon reconnects, persists/deduplicates no-op commands and reconciles status. CLI `robot status` and Console status inspector. Revocation closes active sessions and denies reconnect.

@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 import httpx
@@ -40,3 +41,14 @@ def create_app(settings: Settings | None = None, http_client_factory=None) -> Fa
     app.include_router(health_router)
     app.include_router(enrollment_router)
     return app
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "ringfour_daemon.main:create_app",
+        factory=True,
+        host=os.environ.get("RINGFOUR_DAEMON_HOST", "0.0.0.0"),
+        port=int(os.environ.get("RINGFOUR_DAEMON_PORT", "8081")),
+    )

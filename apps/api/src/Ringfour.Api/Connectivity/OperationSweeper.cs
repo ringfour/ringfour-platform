@@ -15,6 +15,7 @@ public sealed class OperationSweeper(
     IServiceScopeFactory scopeFactory,
     DeviceConnectionManager manager,
     IConfiguration configuration,
+    ConnectivityMetrics metrics,
     ILogger<OperationSweeper> logger)
     : BackgroundService
 {
@@ -27,7 +28,12 @@ public sealed class OperationSweeper(
             {
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<RingfourDbContext>();
-                await SweepOnceAsync(db, manager, DateTimeOffset.UtcNow, stoppingToken);
+                var now = DateTimeOffset.UtcNow;
+                await SweepOnceAsync(db, manager, now, stoppingToken, metrics);
+                var queued = db.Operations.Where(operation => operation.State == OperationState.Queued);
+                var count = await queued.LongCountAsync(stoppingToken);
+                var oldest = await queued.Select(operation => (DateTimeOffset?)operation.CreatedAt).MinAsync(stoppingToken);
+                metrics.Queue(count, oldest is null ? 0 : Math.Max(0, (now - oldest.Value).TotalSeconds));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -52,7 +58,8 @@ public sealed class OperationSweeper(
         RingfourDbContext db,
         DeviceConnectionManager manager,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ConnectivityMetrics? metrics = null)
     {
         var expired = await db.Operations
             .Where(operation =>
@@ -70,6 +77,7 @@ public sealed class OperationSweeper(
         if (expired.Count > 0)
         {
             await db.SaveChangesAsync(cancellationToken);
+            foreach (var _ in expired) metrics?.Terminal("failed");
         }
 
         var connectedRobotIds = manager.All().Select(session => session.RobotId).ToList();

@@ -18,7 +18,7 @@ from .config import (
 )
 
 app = typer.Typer(
-    name="ringfour",
+    name="ringfour-cli",
     help="Ringfour developer CLI.",
     no_args_is_help=True,
 )
@@ -128,7 +128,7 @@ def _api_request(
 ) -> httpx.Response:
     tokens = store.load(settings)
     if tokens is None:
-        console.print("[red]Not logged in. Run `ringfour login` first.[/red]")
+        console.print("[red]Not logged in. Run `ringfour-cli login` first.[/red]")
         raise typer.Exit(code=1)
     with httpx.Client(base_url=settings.api_url, timeout=15.0) as client:
         response = client.request(
@@ -270,7 +270,7 @@ def org_select(org_id: str) -> None:
 def _resolve_org(settings, org: str | None) -> str:
     org_id = org or selected_org(settings)
     if not org_id:
-        console.print("[red]No organization selected. Use --org or `ringfour org select`.[/red]")
+        console.print("[red]No organization selected. Use --org or `ringfour-cli org select`.[/red]")
         raise typer.Exit(code=1)
     return org_id
 
@@ -358,7 +358,7 @@ def robot_enrollment_token(robot_id: str) -> None:
     console.print(f"[bold]{body['token']}[/bold]")
     console.print(
         f"Expires {body['expires_at']}. Single-use and shown exactly once; "
-        "pass it to `ringfour daemon enroll`."
+        "pass it to `ringfour-cli daemon enroll`."
     )
 
 

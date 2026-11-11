@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Milestone 03 integrated acceptance: durable connectivity over the real stack.
-# Prerequisites: `ringfour login` approved for the owner account (account 1)
+# Prerequisites: `ringfour-cli login` approved for the owner account (account 1)
 # and the compose stack running. Everything below exercises real processes —
 # daemon, API, PostgreSQL, SQLite and the WebSocket protocol — no mocks.
 set -euo pipefail
@@ -34,25 +34,25 @@ export RINGFOUR_AUTH0_AUDIENCE="$AUTH0_AUDIENCE"
 
 echo "==> enroll a fresh robot"
 org_name="e2e-03-$(date +%s)"
-uv run ringfour org create "$org_name" >/dev/null || fail "org create failed"
-org_id=$(uv run ringfour org list | grep "$org_name" | grep -oE '[0-9a-f-]{36}' | head -1)
+uv run ringfour-cli org create "$org_name" >/dev/null || fail "org create failed"
+org_id=$(uv run ringfour-cli org list | grep "$org_name" | grep -oE '[0-9a-f-]{36}' | head -1)
 [ -n "$org_id" ] || fail "could not parse org id"
-uv run ringfour org select "$org_id" >/dev/null || fail "org select failed"
+uv run ringfour-cli org select "$org_id" >/dev/null || fail "org select failed"
 
-create_out=$(uv run ringfour robot create "e2e-bot-$(date +%s)")
+create_out=$(uv run ringfour-cli robot create "e2e-bot-$(date +%s)")
 robot_id=$(echo "$create_out" | grep -oE '[0-9a-f-]{36}' | head -1)
 [ -n "$robot_id" ] || fail "could not parse robot id"
-token_out=$(uv run ringfour robot enrollment-token "$robot_id")
+token_out=$(uv run ringfour-cli robot enrollment-token "$robot_id")
 token=$(echo "$token_out" | grep -oE 'rft_[A-Za-z0-9_-]{43}')
 [ -n "$token" ] || fail "could not parse enrollment token"
-uv run ringfour daemon enroll "$token" >/dev/null || fail "daemon enroll failed"
+uv run ringfour-cli daemon enroll "$token" >/dev/null || fail "daemon enroll failed"
 echo "robot: $robot_id"
 
 # wait_status <robot_id> <online|offline> <max_seconds>
 wait_status() {
   local deadline=$((SECONDS + $3))
   while (( SECONDS < deadline )); do
-    out=$(uv run ringfour robot status "$1" 2>/dev/null) || true
+    out=$(uv run ringfour-cli robot status "$1" 2>/dev/null) || true
     if grep -q "Status:.*$2" <<<"$out"; then return 0; fi
     sleep 2
   done
@@ -61,7 +61,7 @@ wait_status() {
 
 echo "==> daemon connects by itself after enrollment and reads online"
 wait_status "$robot_id" online 60 || fail "robot did not come online after enroll"
-status_out=$(uv run ringfour robot status "$robot_id")
+status_out=$(uv run ringfour-cli robot status "$robot_id")
 grep -q "0.1.0" <<<"$status_out" || fail "observed daemon version missing"
 echo "$status_out"
 
@@ -72,7 +72,7 @@ from ringfour_cli.config import load_settings
 
 tokens = TokenStore().load(load_settings())
 if tokens is None:
-    raise SystemExit("not logged in; run `ringfour login` first")
+    raise SystemExit("not logged in; run `ringfour-cli login` first")
 print(tokens["access_token"])
 PY
 )
@@ -164,10 +164,10 @@ row_count=$($COMPOSE exec -T daemon python -c \
 [ "$row_count" = "1" ] || fail "expected exactly one local dedup row, got $row_count"
 
 echo "==> revocation closes the session and denies reconnect"
-identity_out=$(uv run ringfour daemon identity)
+identity_out=$(uv run ringfour-cli daemon identity)
 credential_id=$(grep "Credential:" <<<"$identity_out" | grep -oE '[0-9a-f-]{36}')
 [ -n "$credential_id" ] || fail "could not parse credential id"
-uv run ringfour robot revoke "$robot_id" "$credential_id" || fail "revoke failed"
+uv run ringfour-cli robot revoke "$robot_id" "$credential_id" || fail "revoke failed"
 wait_status "$robot_id" offline 90 || fail "robot did not go offline after revocation"
 # The daemon's first post-revocation retry (401) lands within its backoff
 # window; poll the container log instead of a single-shot grep.
@@ -179,7 +179,7 @@ for _ in $(seq 1 20); do
 done
 [ "$revoke_failures" -ge 1 ] \
   || fail "daemon should report failed sessions after revocation"
-identity_out=$(uv run ringfour daemon identity)
+identity_out=$(uv run ringfour-cli daemon identity)
 grep -q "$robot_id" <<<"$identity_out" || fail "daemon lost its enrolled identity"
 
 echo "PASS: milestone 03 automatable acceptance checks"

@@ -10,6 +10,9 @@ dependencies = [
     "websockets>=14.0",
 ]
 
+[project.scripts]
+ringfour-daemon = "ringfour_daemon.main:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.0",

@@ -64,9 +64,9 @@ def record_command(db_path: str, robot_id: str, command: dict) -> tuple[DeviceOp
     """Commit the local record for a command before it is acknowledged.
 
     Returns (operation, created). A command whose operation id is already
-    known with identical content returns the stored row with created=False so
-    the caller replays the stored status instead of executing again; the same
-    id with different content is a protocol error.
+    known with identical content returns the stored row with created=False;
+    the caller reconciles it according to its stored state. The same id with
+    different content is a protocol error.
     """
     operation_id = command["operation_id"]
     with sqlite3.connect(db_path) as conn:
@@ -81,7 +81,9 @@ def record_command(db_path: str, robot_id: str, command: dict) -> tuple[DeviceOp
                 and stored.kind == command["kind"]
                 and stored.payload_version == command["payload_version"]
                 and stored.payload == command["payload"]
-                and stored.deadline_at == command["deadline_at"]
+                # PostgreSQL stores microseconds while .NET can serialize a
+                # seventh fractional digit before the initial insert returns.
+                and parse_ts(stored.deadline_at) == parse_ts(command["deadline_at"])
             ):
                 return stored, False
             raise OperationConflict(

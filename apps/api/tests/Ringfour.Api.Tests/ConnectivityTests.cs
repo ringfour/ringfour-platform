@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,6 +74,57 @@ public sealed class ConnectivityTests(PostgresFixture postgres)
         }
         throw new InvalidOperationException(
             $"operation {operationId} did not reach state {expected}");
+    }
+
+    [Fact]
+    public async Task Concurrent_sends_keep_wire_sequence_ordered()
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        var (robotId, credentialId, secret, _) = await EnrolledRobotAsync(factory);
+        using var socket = await DeviceSocket.ConnectAsync(factory, robotId, credentialId, secret);
+        await DeviceSocket.ReceiveAsync(socket);
+        var manager = factory.Services.GetRequiredService<DeviceConnectionManager>();
+        var session = Assert.IsType<DeviceConnection>(manager.Get(robotId));
+        var sends = Enumerable.Range(0, 40).Select(_ => Task.Run(() =>
+            manager.SendAsync(session, RingfourJson.Options, "heartbeat", new JsonObject()))).ToArray();
+        for (var sequence = 2; sequence < 42; sequence++)
+        {
+            using var received = await DeviceSocket.ReceiveAsync(socket);
+            Assert.Equal(sequence, received.RootElement.GetProperty("sequence").GetInt32());
+        }
+        await Task.WhenAll(sends);
+    }
+
+    [Fact]
+    public async Task Fragmented_message_over_limit_is_rejected()
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        var (robotId, credentialId, secret, _) = await EnrolledRobotAsync(factory);
+        using var socket = await DeviceSocket.ConnectAsync(factory, robotId, credentialId, secret);
+        await DeviceSocket.ReceiveAsync(socket);
+        var fragment = Encoding.UTF8.GetBytes(new string('x', 32769));
+        await socket.SendAsync(fragment, WebSocketMessageType.Text, false, CancellationToken.None);
+        await socket.SendAsync(fragment, WebSocketMessageType.Text, true, CancellationToken.None);
+        using var error = await DeviceSocket.ReceiveAsync(socket);
+        Assert.Equal("malformed_message", error.Payload().GetProperty("code").GetString());
+        Assert.Equal(4409, (int)await DeviceSocket.ExpectCloseAsync(socket));
+    }
+
+    [Theory]
+    [InlineData("heartbeat", "{\"extra\":true}")]
+    [InlineData("ack", "{\"operation_id\":5}")]
+    [InlineData("operation_status", "{\"operation_id\":\"00000000-0000-0000-0000-000000000000\",\"state\":\"Succeeded\"}")]
+    [InlineData("operation_status", "{\"operation_id\":\"00000000-0000-0000-0000-000000000000\",\"state\":\"running\",\"extra\":true}")]
+    public async Task Invalid_message_payloads_are_rejected(string kind, string rawPayload)
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        var (robotId, credentialId, secret, _) = await EnrolledRobotAsync(factory);
+        using var socket = await DeviceSocket.ConnectAsync(factory, robotId, credentialId, secret);
+        await DeviceSocket.ReceiveAsync(socket);
+        await DeviceSocket.SendAsync(socket, robotId, 2, kind, JsonNode.Parse(rawPayload)!.AsObject());
+        using var error = await DeviceSocket.ReceiveAsync(socket);
+        Assert.Equal("malformed_message", error.Payload().GetProperty("code").GetString());
+        Assert.Equal(4409, (int)await DeviceSocket.ExpectCloseAsync(socket));
     }
 
     [Fact]
