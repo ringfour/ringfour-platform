@@ -169,3 +169,5 @@ environment. The wheel comes from the SDK project's frozen C-preview artifact,
 including its recorded dirty-tree snapshot, rather than an inferred API. The
 SDK connects to the separately deployed Agent; a Runner-side
 `ROBOCORE_AGENT_URL` must address that Agent from inside the Runner container.
+The `base101` deployment sets this automatically to its shared local Unix socket;
+operators need not configure a robot LAN IP for missions.
