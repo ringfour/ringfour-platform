@@ -144,3 +144,28 @@ organization has exactly one online enrolled robot, that robot is selected.
 Multiple possible targets require an explicit ID. `mission init` may create an
 example manifest and files only when explicitly invoked and must not overwrite
 existing files.
+
+## Local daemon status page
+
+The existing read-only LAN page on port 8083 refreshes every five seconds. For
+an enrolled daemon it shows a bounded list of locally recorded mission
+preparation and execution commands, their entrypoint filenames, the latest
+Runner execution state, and up to the last 8 KiB each of stdout and stderr from
+that execution. A successful preparation is reported as prepared, not as proof
+that the Platform has committed selection; a mission start command includes its immutable mission revision ID. The page
+can report a mission as active when Runner reports its execution running. The Platform deployment status remains authoritative for activation.
+The page makes authenticated, read-only calls to its configured private Runner;
+when it is unavailable the page reports that condition and continues to show
+locally persisted activity. This page introduces no new control API or persistent
+data store. It is unauthenticated: anyone able to reach its configured LAN
+listener can read displayed program output, which may contain sensitive data.
+
+The Runner image also carries the unchanged RoboCore C-preview SDK wheel at
+`/opt/ringfour/sdk/robocore-0.1.0.dev20261111114406+c.799c8afa-py3-none-any.whl`
+(SHA-256 `2c41f42c81ee82d8b8fe13535c1feb48de8dd19df7bf126a650bdda2a5592a00`).
+A mission that uses it explicitly pins that wheel and its dependencies in its
+hash-checked requirements lock; uv installs it into that mission's separate
+environment. The wheel comes from the SDK project's frozen C-preview artifact,
+including its recorded dirty-tree snapshot, rather than an inferred API. The
+SDK connects to the separately deployed Agent; a Runner-side
+`ROBOCORE_AGENT_URL` must address that Agent from inside the Runner container.

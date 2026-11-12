@@ -120,3 +120,14 @@ def test_missing_confirmed_runner_execution_reports_unknown_outcome(tmp_path, mo
     assert statuses[0]["state"] == "failed"
     assert statuses[0]["error"]["code"] == "interrupted_unknown_outcome"
     assert scripts.sync_rows(db) == []
+
+
+def test_start_payload_accepts_only_a_valid_optional_mission_revision():
+    _, bundle = sample()
+    payload = {**bundle, "revision_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e", "python_requirement": ">=3.13,<3.14"}
+    scripts.validate_start_payload(payload)
+    scripts.validate_start_payload({**payload, "mission_revision_id": "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d"})
+    with pytest.raises(runner.RunnerRejected):
+        scripts.validate_start_payload({**payload, "mission_revision_id": "not-a-uuid"})
+    with pytest.raises(runner.RunnerRejected):
+        scripts.validate_start_payload({**payload, "unexpected": True})

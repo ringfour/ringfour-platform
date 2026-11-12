@@ -4,14 +4,52 @@
   "title": "Device script start operation payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["revision_id", "archive_sha256", "archive_size", "revision_digest", "entrypoint", "python_requirement", "lock_sha256"],
+  "required": [
+    "revision_id",
+    "archive_sha256",
+    "archive_size",
+    "revision_digest",
+    "entrypoint",
+    "python_requirement",
+    "lock_sha256"
+  ],
   "properties": {
-    "revision_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
-    "archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "archive_size": {"type": "integer", "minimum": 1, "maximum": 1048576},
-    "revision_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "entrypoint": {"type": "string", "minLength": 4, "maxLength": 240, "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\\.py$"},
-    "python_requirement": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
-    "lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    "revision_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "archive_size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
+    "revision_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "entrypoint": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 240,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\\.py$"
+    },
+    "python_requirement": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "\\S"
+    },
+    "lock_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "mission_revision_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
   }
 }

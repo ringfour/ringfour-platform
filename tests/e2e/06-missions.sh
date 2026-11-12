@@ -84,7 +84,7 @@ docker run -d --name "$runner" --network "$network" -v "$stage:/staged:ro" -v "$
 [ -z "$(docker port "$runner")" ]
 [ "$(docker exec "$runner" id -u)" != 0 ]
 [ "$(docker inspect "$runner" --format '{{range .Mounts}}{{if eq .Destination "/staged"}}{{.RW}}{{end}}{{end}}')" = false ]
-docker run -d --name "$daemon" --network "$network" -p 127.0.0.1:18096:8081 -v "$stage:/staged" -v "$daemon_data:/data" \
+docker run -d --name "$daemon" --network "$network" -p 127.0.0.1:18096:8081 -p 127.0.0.1:18098:8083 -v "$stage:/staged" -v "$daemon_data:/data" \
   -e "RUNNER_URL=http://$runner:8082" -e RUNNER_AUTH_TOKEN="$secret" -e "PLATFORM_API_URL=http://$api:8080" ringfour-daemon:06-test >/dev/null
 for service in "$api" "$daemon" "$runner"; do
   if docker inspect "$service" --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -q docker.sock; then
@@ -148,6 +148,13 @@ python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["selected_revision
 "${cli[@]}" mission start "$deployment" --idempotency-key smoke-start >"$test_dir/start.json"
 execution_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_id"])' "$test_dir/start.json")
 wait_execution "$execution_a" running
+for _ in $(seq 1 30); do
+  page=$(curl -fsS http://127.0.0.1:18098/)
+  if [[ "$page" == *"Mission prepared"* && "$page" == *"mission running"* && "$page" == *"Mission active"* && "$page" == *"main.py"* ]]; then break; fi
+  sleep 1
+done
+[[ "$page" == *"Mission prepared"* && "$page" == *"mission running"* && "$page" == *"Mission active"* && "$page" == *"main.py"* ]]
+echo 'PASS: daemon status page shows real mission activity, filename and Runner output'
 start_op=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["operation_id"])' "$test_dir/start.json")
 for _ in $(seq 1 30); do
   action_state=$(api_curl "$RINGFOUR_API_URL/v1/robots/$robot/operations/$start_op" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')

@@ -66,7 +66,9 @@ def valid_id(value):
 
 def validate_start_payload(payload):
     required = {"revision_id", "archive_sha256", "archive_size", "revision_digest", "entrypoint", "python_requirement", "lock_sha256"}
-    if not isinstance(payload, dict) or set(payload) != required or not valid_id(payload["revision_id"]):
+    if (not isinstance(payload, dict) or set(payload) not in (required, required | {"mission_revision_id"})
+            or not valid_id(payload["revision_id"])
+            or ("mission_revision_id" in payload and not valid_id(payload["mission_revision_id"]))):
         raise runner.RunnerRejected("invalid_input", "Invalid revision metadata.")
     size, requirement = payload["archive_size"], payload["python_requirement"]
     if type(size) is not int or not 1 <= size <= MAX_ARCHIVE or not isinstance(requirement, str) or not requirement.strip() or len(requirement) > 128:

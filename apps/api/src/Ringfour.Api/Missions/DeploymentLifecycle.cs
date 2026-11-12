@@ -211,6 +211,7 @@ public sealed class DeploymentLifecycleWorker(IServiceScopeFactory scopes, Devic
                     Payload = JsonSerializer.Serialize(new
                     {
                         revision_id = source.Id,
+                        mission_revision_id = deployment.SelectedRevisionId,
                         archive_sha256 = source.ArchiveSha256,
                         archive_size = source.ArchiveSize,
                         revision_digest = source.RevisionDigest,

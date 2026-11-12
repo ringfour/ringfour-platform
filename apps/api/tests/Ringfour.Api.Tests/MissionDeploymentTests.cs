@@ -141,6 +141,7 @@ public sealed class MissionDeploymentTests(PostgresFixture postgres)
             using var startCommand = await DeviceSocket.ReceiveAsync(socket);
             Assert.Equal(execution, startCommand.Payload().GetProperty("operation_id").GetGuid());
             Assert.Equal("script.execution.start", startCommand.Payload().GetProperty("kind").GetString());
+            Assert.Equal(firstRevision, startCommand.Payload().GetProperty("payload").GetProperty("mission_revision_id").GetGuid());
             await DeviceSocket.SendAsync(socket, robot, 6, "ack", new JsonObject { ["operation_id"] = execution.ToString() });
             await DeviceSocket.SendAsync(socket, robot, 7, "operation_status", new JsonObject
             {

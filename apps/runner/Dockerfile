@@ -7,6 +7,7 @@ COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY src/ src/
+COPY vendor/ /opt/ringfour/sdk/
 RUN uv sync --frozen --no-dev
 
 RUN useradd --create-home app && mkdir -p /data /staged && chown app:app /data /staged

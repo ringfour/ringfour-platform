@@ -102,6 +102,8 @@ test("device script command fixtures validate", async () => {
   const stop = await validatorFor("schemas/scripts/v1/device-stop.schema.json");
   const body = await loadJson("fixtures/scripts/v1/device-start.json");
   assert.ok(start(body));
+  assert.ok(start({ ...body, mission_revision_id: body.revision_id }));
+  assert.equal(start({ ...body, mission_revision_id: "bad" }), false);
   assert.ok(stop(await loadJson("fixtures/scripts/v1/device-stop.json")));
   assert.equal(start({ ...body, entrypoint: "../hello.py" }), false);
 });
