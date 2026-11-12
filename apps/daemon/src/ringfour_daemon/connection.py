@@ -9,9 +9,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import websockets
 
-from . import __version__, operations
+from . import __version__, operations, runner
 from .enrollment import credential_error, load_identity
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ class ConnectionManager:
         self._now = now
         self._uuid = uuid or (lambda: f"{time.monotonic_ns():x}")
         self._stopped = False
+        self.connected = False
         # Total effect executions across reconnects; exposed for tests.
         self.effects = 0
 
@@ -143,6 +145,7 @@ class ConnectionManager:
             try:
                 await self._say_hello(outbound, state)
                 heartbeat_seconds = await self._await_welcome(socket, state)
+                self.connected = True
                 tasks.append(
                     asyncio.create_task(
                         self._reconcile_later(replayed_ids)
@@ -153,6 +156,7 @@ class ConnectionManager:
                 )
                 await self._receive_loop(socket, outbound, state, replayed_ids)
             finally:
+                self.connected = False
                 for task in tasks:
                     task.cancel()
 
@@ -243,7 +247,7 @@ class ConnectionManager:
                 logger.info("operation %s replaying terminal state %s", operation.operation_id, operation.state)
                 await self._report(outbound, state, operation)
                 return
-            if operation.state == "running":
+            if operation.state == "running" and not operation.kind.startswith("diagnostic.execution."):
                 # The effect may have happened before a crash. Never repeat it.
                 finished = operations.apply_status(
                     self._settings.db_path,
@@ -277,10 +281,21 @@ class ConnectionManager:
         operations.apply_status(self._settings.db_path, operation.operation_id, "running")
         logger.info("operation %s started for robot %s", operation.operation_id, state.robot_id)
         try:
-            result = self._execute(operation)
+            if operation.kind.startswith("diagnostic.execution."):
+                result = await runner.execute(self._settings, operation)
+            else:
+                result = self._execute(operation)
             self.effects += 1
             finished = operations.apply_status(
                 self._settings.db_path, operation.operation_id, "succeeded", result
+            )
+        except httpx.HTTPError:
+            # Runner may have received the request; replay with the same ID.
+            raise ProtocolError("Runner unreachable; reconcile on reconnect") from None
+        except runner.RunnerRejected as failure:
+            finished = operations.apply_status(
+                self._settings.db_path, operation.operation_id, "failed",
+                {"error": {"code": failure.code, "message": failure.message}},
             )
         except Exception:
             logger.exception("operation %s failed", operation.operation_id)

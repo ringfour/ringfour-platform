@@ -490,8 +490,10 @@ paths:
         Developer role or higher. Commits the operation (state queued,
         deadline from configuration) before dispatching it over the device's
         WebSocket; an offline robot simply keeps the operation queued until a
-        connection arrives. v1 supports exactly one authenticated diagnostic
-        kind, diagnostic.noop, used to prove the protocol end to end.
+        connection arrives. v1 includes diagnostic.noop and fixed-fixture diagnostic.execution.start,
+        diagnostic.execution.inspect and diagnostic.execution.stop operations.
+        Start and inspect require developer; stop requires operator. See
+        docs/runner-contract.md for payloads, results and recovery semantics.
         Retries: an Idempotency-Key header scoped to the caller, route and
         robot makes a repeated request with an identical body return the
         original operation (200); the same key with a different body is a 409
@@ -557,6 +559,69 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/device/pairing-requests:
+    post:
+      tags: [device]
+      operationId: createDevicePairingRequest
+      summary: Register a daemon-generated pairing request (new design)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../schemas/pairing/v1/create-request.schema.json" }
+      responses:
+        "200":
+          description: Pending request or idempotent replay
+          content:
+            application/json:
+              schema: { $ref: "../schemas/pairing/v1/create-response.schema.json" }
+        "409": { description: Conflicting request }
+        "429": { description: Rate limited }
+  /v1/device/pairing-requests/{request_id}/poll:
+    post:
+      tags: [device]
+      operationId: pollDevicePairingRequest
+      security: []
+      parameters:
+        - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../schemas/pairing/v1/poll-request.schema.json" }
+      responses:
+        "200":
+          description: Pending or claimed pairing request
+          content:
+            application/json:
+              schema: { $ref: "../schemas/pairing/v1/poll-response.schema.json" }
+        "401": { description: Invalid proof }
+        "410": { description: Request expired before claim }
+        "429": { description: Rate limited }
+  /v1/organizations/{org_id}/pairing-claims:
+    post:
+      tags: [robots]
+      operationId: claimDevicePairing
+      summary: Owner claims a code for an existing or new robot
+      parameters:
+        - { name: org_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../schemas/pairing/v1/claim-request.schema.json" }
+      responses:
+        "200":
+          description: Robot claimed
+          content:
+            application/json:
+              schema: { $ref: "../schemas/robots/v1/robot.schema.json" }
+        "401": { description: Authentication required }
+        "403": { description: Owner role required }
+        "404": { description: Pairing or robot unavailable }
+        "409": { description: Code already claimed or robot enrolled }
+        "429": { description: Rate limited }
   /v1/device/connect:
     get:
       tags: [device]

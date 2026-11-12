@@ -259,6 +259,12 @@ test("operation and status fixtures validate against the v1 robots schemas", asy
   assert.ok(operation(await loadJson("fixtures/robots/v1/operation-queued.json")), "operation queued fixture");
   assert.ok(operation(await loadJson("fixtures/robots/v1/operation-succeeded.json")), "operation succeeded fixture");
   assert.ok(createOperation({ kind: "diagnostic.noop", payload_version: 1, payload: {} }), "create operation request");
+  assert.ok(createOperation({ kind: "diagnostic.execution.start", payload_version: 1, payload: { fixture: "hello" } }));
+  assert.ok(createOperation({ kind: "diagnostic.execution.stop", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b" } }));
+  assert.ok(createOperation({ kind: "diagnostic.execution.inspect", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", stream: "stdout", offset: 0, limit: 16384 } }));
+  assert.equal(createOperation({ kind: "diagnostic.execution.start", payload_version: 1, payload: { fixture: "unknown" } }), false);
+  assert.equal(createOperation({ kind: "diagnostic.execution.inspect", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", stream: "stdout", offset: 0, limit: 16385 } }), false);
+  assert.equal(createOperation({ kind: "diagnostic.execution.inspect", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", stream: "stdout", offset: 65537, limit: 1 } }), false);
 
   assert.equal(
     createOperation({ kind: "mission.run", payload_version: 1, payload: {} }),
@@ -361,4 +367,26 @@ test("identity schemas reject malformed documents", async () => {
     false,
     "organization list item without the caller's role",
   );
+});
+
+
+test("runner v1 fixtures validate and output limits hold", async () => {
+  for (const [name, schema] of [["start", "start-execution-request"], ["execution", "execution"], ["output", "output"]]) {
+    const validate = await validatorFor(`schemas/runner/v1/${schema}.schema.json`);
+    assert.ok(validate(await loadJson(`fixtures/runner/v1/${name}.json`)), name);
+  }
+  const error = await validatorFor("schemas/errors/v1/error.schema.json");
+  assert.ok(error(await loadJson("fixtures/runner/v1/error-execution-conflict.json")));
+  const start = await validatorFor("schemas/runner/v1/start-execution-request.schema.json");
+  assert.equal(start({execution_id: "invalid", revision_digest: "bad", code_ref: "x", entrypoint: "x"}), false);
+});
+
+
+test("device pairing fixtures and exclusive claim targets", async () => {
+  for (const [name, schema] of [["create", "create-request"], ["claim", "claim-request"], ["pending", "poll-response"], ["claimed", "poll-response"]]) {
+    const validate = await validatorFor(`schemas/pairing/v1/${schema}.schema.json`);
+    assert.ok(validate(await loadJson(`fixtures/pairing/v1/${name}.json`)), name);
+  }
+  const claim = await validatorFor("schemas/pairing/v1/claim-request.schema.json");
+  assert.equal(claim({code:"ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ", name:"x", robot_id:"4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b"}), false);
 });

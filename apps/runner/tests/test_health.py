@@ -8,7 +8,7 @@ from ringfour_runner.main import create_app
 
 
 def make_client(data_dir: str) -> TestClient:
-    return TestClient(create_app(Settings(data_dir=data_dir)))
+    return TestClient(create_app(Settings(data_dir=data_dir, auth_token="test-secret")))
 
 
 def test_liveness_reports_ok(tmp_path):
@@ -27,7 +27,7 @@ def test_readiness_ok_with_writable_volume_and_uv(tmp_path):
     assert response.json() == {
         "status": "ok",
         "version": "0.1.0",
-        "checks": {"volume": "ok", "uv": "ok"},
+        "checks": {"volume": "ok", "uv": "ok", "auth": "ok"},
     }
 
 
@@ -41,3 +41,10 @@ def test_readiness_fails_when_volume_unwritable(tmp_path):
     body = response.json()
     assert body["status"] == "fail"
     assert body["checks"]["volume"] == "fail"
+
+
+def test_readiness_fails_without_runner_authentication(tmp_path):
+    client = TestClient(create_app(Settings(data_dir=str(tmp_path))))
+    response = client.get("/health/ready")
+    assert response.status_code == 503
+    assert response.json()["checks"]["auth"] == "fail"

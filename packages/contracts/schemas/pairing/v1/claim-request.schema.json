@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/pairing/v1/claim-request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "code"
+  ],
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z2-7-]{26,32}$"
+    },
+    "robot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "robot_id": {}
+      },
+      "required": [
+        "robot_id"
+      ]
+    },
+    {
+      "properties": {
+        "name": {}
+      },
+      "required": [
+        "name"
+      ]
+    }
+  ]
+}

@@ -20,6 +20,7 @@ def ready(request: Request) -> JSONResponse:
     checks = {
         "volume": _check_volume(request.app.state.settings.data_dir),
         "uv": _check_uv(),
+        "auth": "ok" if request.app.state.settings.auth_token else "fail",
     }
     status = "ok" if all(v == "ok" for v in checks.values()) else "fail"
     return JSONResponse(

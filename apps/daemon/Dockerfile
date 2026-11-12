@@ -8,8 +8,8 @@ COPY pyproject.toml uv.lock ./
 COPY src/ src/
 RUN uv sync --frozen --no-dev
 
-RUN useradd --create-home app && mkdir -p /data && chown app:app /data
+RUN useradd --create-home app && mkdir -p /data /staged && chown app:app /data /staged
 USER app
 
-EXPOSE 8081
+EXPOSE 8081 8083
 CMD ["/app/.venv/bin/ringfour-daemon"]

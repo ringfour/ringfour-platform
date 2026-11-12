@@ -1,5 +1,7 @@
 import asyncio
 import os
+import socket
+import threading
 from contextlib import asynccontextmanager
 
 import httpx
@@ -12,6 +14,8 @@ from .db import migrate
 from .enrollment import check_device_state
 from .enrollment import router as enrollment_router
 from .health import router as health_router
+from .pairing import run_pairing
+from .status_page import create_status_app
 
 
 @asynccontextmanager
@@ -20,11 +24,14 @@ async def lifespan(app: FastAPI):
     connection = ConnectionManager(settings)
     app.state.connection_manager = connection
     task = asyncio.create_task(connection.run())
+    pairing_task = asyncio.create_task(run_pairing(settings))
     try:
         yield
     finally:
         connection.stop()
         task.cancel()
+        pairing_task.cancel()
+        await asyncio.gather(pairing_task, return_exceptions=True)
         try:
             await task
         except asyncio.CancelledError:
@@ -46,9 +53,19 @@ def create_app(settings: Settings | None = None, http_client_factory=None) -> Fa
 def main() -> None:
     import uvicorn
 
+    settings = Settings.from_env()
+    control_app = create_app(settings)
+    # The LAN listener serves only a read-only status app. Control endpoints
+    # remain on the independent daemon listener.
+    status_socket = socket.create_server((
+        os.environ.get("RINGFOUR_STATUS_HOST", "0.0.0.0"),
+        int(os.environ.get("RINGFOUR_STATUS_PORT", "8083")),
+    ))
+    status_server = uvicorn.Server(uvicorn.Config(create_status_app(settings, control_app), access_log=False))
+    thread = threading.Thread(target=status_server.run, kwargs={"sockets": [status_socket]}, daemon=True)
+    thread.start()
     uvicorn.run(
-        "ringfour_daemon.main:create_app",
-        factory=True,
+        control_app,
         host=os.environ.get("RINGFOUR_DAEMON_HOST", "0.0.0.0"),
         port=int(os.environ.get("RINGFOUR_DAEMON_PORT", "8081")),
     )

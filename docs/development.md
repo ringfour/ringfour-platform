@@ -36,7 +36,9 @@ are dealing with:
 | `npm run test:e2e` | Milestone 00 integrated acceptance against the real Compose stack |
 | `npm run test:e2e:01` | Milestone 01 identity acceptance (requires a completed `ringfour-cli login`) |
 | `npm run test:e2e:02` | Milestone 02 robot enrollment acceptance (requires `ringfour-cli login`; resets the daemon volume) |
+| `npm run test:e2e:pairing` | Device pairing through the Console proxy and isolated daemon (requires owner login and selected org) |
 | `npm run test:e2e:03` | Milestone 03 connectivity acceptance (requires `ringfour-cli login`; resets the daemon volume; ~4 min, includes two 45 s offline-threshold waits) |
+| `npm run test:e2e:04` | Local Runner acceptance with isolated daemon/Runner containers and volumes; requires an owner login and selected organization |
 | `npm run compose:up` | Build and start the full stack (postgres, api, daemon, runner, console) |
 | `npm run compose:down` | Stop the stack (volumes kept) |
 | `npm run compose:clean` | Stop and delete all volumes (fresh start) |
@@ -53,8 +55,9 @@ from a freshly resolved dependency graph.
 
 Run `bash scripts/quality.sh` for contract tests, lint, type checks and each
 component suite. For the automated local integration gates, use
-`bash scripts/quality.sh --integration` after configuring Auth0 and signing in
-as an owner with an organization selected. The legacy 00/02/03 scripts delete
+`bash scripts/quality.sh --integration` after configuring Auth0, setting
+`RUNNER_AUTH_TOKEN` and signing in as an owner with an organization selected.
+The legacy 00/02/03 scripts delete
 Compose volumes, including local database and daemon state; run that option only
 on a disposable stack. It also runs the isolated pre-ack and credential recovery
 scenario. Live Auth0 sign-in and any physical-device gates remain separately
@@ -98,6 +101,29 @@ CLI commands: `ringfour-cli robot create|list|show|status|enrollment-token|crede
 (local daemon, no login needed). See `docs/human-testing/02.md` for the manual
 flow and `docs/evidence/02.md` for acceptance results.
 
+## Runner diagnostic execution (milestone 04)
+
+Before starting or rebuilding the local Compose stack, set the same random
+`RUNNER_AUTH_TOKEN` for the daemon and Runner. Compose passes it to both; it has
+no committed default. For a disposable local shell, for example:
+
+```bash
+export RUNNER_AUTH_TOKEN="$(openssl rand -hex 32)"
+docker compose -f infra/compose/docker-compose.yml up -d --build
+```
+
+Keep the value consistent when recreating either service. Runner readiness
+fails if its secret is absent. The daemon writes fixed diagnostic fixtures to a
+shared volume; Runner mounts it read-only and has a separate durable data volume.
+Runner is non-root and has no published host port or Docker socket. Run the
+isolated, non-destructive local acceptance with `bash tests/e2e/04-runner.sh`;
+it creates a test robot and leaves that robot in the selected organization.
+The full manual flow and output-offset behavior are in `docs/human-testing/04.md`.
+
+For a separate Agent and empty ROS stack, see `infra/robot/README.md`.
+Balena preparation is described in `infra/balena/README.md`. The non-motion
+physical device smoke and its limits are recorded in `docs/evidence/04.md`.
+
 ## Device connectivity and operations (milestone 03)
 
 The daemon opens an authenticated WebSocket to `GET /v1/device/connect`
@@ -138,3 +164,17 @@ the manual flow and `docs/evidence/03.md` for acceptance results.
 - `packages/contracts` — OpenAPI + JSON Schema + fixtures, language-independent
 - `infra/compose` — local stack
 - `tests/e2e` — integrated acceptance scripts
+
+## Device pairing page
+
+An unenrolled daemon starts a pairing request and shows its code on the
+read-only `http://<device-ip>:8083/` page and in its logs. Claim it as an owner using **Robots → Add a robot** in the Console. Enter a
+name to create the robot as part of pairing, or choose an existing unpaired
+robot.
+The page shows only the code or enrolled connection state; control API routes
+are not served on that port. Restrict page access to a trusted network while
+pairing. The daemon persists the pending request and machine credential in its
+own volume with owner-only permissions. Use HTTPS for the Platform URL outside a
+controlled local test. The API's per-process pairing limiter is keyed by the
+observed client IP; configure trusted proxies and edge limits appropriately for
+hosted deployments. See `docs/pairing-contract.md` and `docs/human-testing/02.md`.

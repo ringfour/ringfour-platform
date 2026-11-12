@@ -2,7 +2,7 @@
   "name": "ringfour-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "Ringfour v0.1 — hosted robotics application platform. Monorepo root; orchestration scripts only, no dependencies. Each app and package has its own manifest and lockfile.",
+  "description": "Ringfour v0.1 \u2014 hosted robotics application platform. Monorepo root; orchestration scripts only, no dependencies. Each app and package has its own manifest and lockfile.",
   "scripts": {
     "setup": "bash scripts/setup.sh",
     "lint": "bash scripts/lint.sh",
@@ -15,6 +15,8 @@
     "compose:up": "docker compose -f infra/compose/docker-compose.yml up -d --build",
     "compose:down": "docker compose -f infra/compose/docker-compose.yml down",
     "compose:clean": "docker compose -f infra/compose/docker-compose.yml down -v --remove-orphans",
-    "compose:logs": "docker compose -f infra/compose/docker-compose.yml logs -f"
+    "compose:logs": "docker compose -f infra/compose/docker-compose.yml logs -f",
+    "test:e2e:04": "bash tests/e2e/04-runner.sh",
+    "test:e2e:pairing": "bash tests/e2e/02-pairing.sh"
   }
 }

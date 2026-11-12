@@ -59,26 +59,30 @@ public static class OperationEndpoints
         CancellationToken cancellationToken)
     {
         var (user, robot) = await RobotAccess.RequireRobotAccess(
-            httpContext, db, robotId, OrgRole.Developer, cancellationToken);
+            httpContext, db, robotId, OrgRole.Operator, cancellationToken);
 
         var rawBody = await new StreamReader(httpContext.Request.Body).ReadToEndAsync(cancellationToken);
         CreateOperationRequest request;
         try
         {
+            var document = JsonNode.Parse(rawBody) as JsonObject;
+            if (document is null || document.Count != 3 || document.Any(pair => pair.Key is not
+                    ("kind" or "payload_version" or "payload")))
+                throw new JsonException("Request must contain only kind, payload_version and payload.");
             request = JsonSerializer.Deserialize<CreateOperationRequest>(rawBody, RingfourJson.Options)
                 ?? throw new JsonException("Request body must be a JSON object.");
         }
-        catch (JsonException exception)
+        catch (Exception exception) when (exception is JsonException or ArgumentException)
         {
             throw ApiException.InvalidInput($"Request body is not valid JSON: {exception.Message}");
         }
-        if (request.Kind != "diagnostic.noop" ||
-            request.PayloadVersion != 1 ||
-            request.Payload is null)
+        if (request.Kind is null || request.PayloadVersion != 1 || request.Payload is not JsonObject payload ||
+            !ValidDiagnosticOperation(request.Kind, payload))
         {
-            throw ApiException.InvalidInput(
-                "v1 supports exactly kind diagnostic.noop with payload_version 1 and a JSON object payload.");
+            throw ApiException.InvalidInput("Unsupported diagnostic operation or invalid payload.");
         }
+        if (request.Kind != "diagnostic.execution.stop")
+            await RobotAccess.RequireRobotAccess(httpContext, db, robotId, OrgRole.Developer, cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
         var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].ToString();
@@ -181,6 +185,29 @@ public static class OperationEndpoints
         return Results.Created(
             $"/v1/robots/{robot.Id}/operations/{operation.Id}",
             OperationResponse.FromEntity(operation));
+    }
+
+    private static bool ValidDiagnosticOperation(string? kind, JsonObject payload)
+    {
+        try
+        {
+            static bool ValidId(JsonNode? value) => value is not null &&
+                Guid.TryParseExact(value.GetValue<string>(), "D", out var id) && id.ToString() == value.GetValue<string>();
+            return kind switch
+            {
+                "diagnostic.noop" => true,
+                "diagnostic.execution.start" => payload.Count == 1 && payload["fixture"]?.GetValue<string>() is "hello" or "long",
+                "diagnostic.execution.stop" => payload.Count == 1 && ValidId(payload["execution_id"]),
+                "diagnostic.execution.inspect" => payload.Count == 4 && ValidId(payload["execution_id"]) &&
+                    payload["stream"]?.GetValue<string>() is "stdout" or "stderr" &&
+                    payload["offset"]?.GetValue<int>() is >= 0 and <= 65536 && payload["limit"]?.GetValue<int>() is >= 1 and <= 16384,
+                _ => false,
+            };
+        }
+        catch (Exception error) when (error is InvalidOperationException or FormatException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static async Task<OperationResponse> GetOperation(

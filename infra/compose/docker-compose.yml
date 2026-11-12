@@ -35,8 +35,12 @@ services:
 
   runner:
     build: ../../apps/runner
+    environment:
+      RUNNER_AUTH_TOKEN: ${RUNNER_AUTH_TOKEN:?Set a random RUNNER_AUTH_TOKEN before starting Compose}
+      RUNNER_STAGE_DIR: /staged
     volumes:
       - runner-data:/data
+      - staged-data:/staged:ro
     # Private: reachable only on the internal network, never published.
     expose:
       - "8082"
@@ -47,13 +51,17 @@ services:
       DAEMON_DB_PATH: /data/ringfour.db
       RUNNER_URL: http://runner:8082
       PLATFORM_API_URL: http://api:8080
+      RUNNER_AUTH_TOKEN: ${RUNNER_AUTH_TOKEN:?Set a random RUNNER_AUTH_TOKEN before starting Compose}
+      RUNNER_STAGE_DIR: /staged
     volumes:
       - daemon-data:/data
+      - staged-data:/staged
     depends_on:
       - runner
       - api
     ports:
       - "8081:8081"
+      - "8083:8083"
 
   console:
     build: ../../apps/console
@@ -77,3 +85,4 @@ volumes:
   pgdata:
   runner-data:
   daemon-data:
+  staged-data:

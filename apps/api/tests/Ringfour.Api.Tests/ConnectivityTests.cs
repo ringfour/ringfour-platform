@@ -610,6 +610,54 @@ public sealed class ConnectivityTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Diagnostic_execution_operations_validate_payload_and_operator_stop_role()
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        var owner = factory.CreateAuthenticatedClient(UniqueSub());
+        var orgId = await OrganizationTests.CreateOrganization(owner, "Runner Org");
+        var robotId = await RobotTests.CreateRobot(owner, orgId, "robot");
+        var member = factory.CreateAuthenticatedClient(UniqueSub());
+        await owner.PostAsJsonAsync($"/v1/organizations/{orgId}/members", new
+        {
+            user_id = await RobotTests.UserId(member),
+            role = "operator",
+        }, RingfourJson.Options);
+        var path = $"/v1/robots/{robotId}/operations";
+        var stop = await member.PostAsJsonAsync(path, new
+        {
+            kind = "diagnostic.execution.stop",
+            payload_version = 1,
+            payload = new { execution_id = Guid.NewGuid() },
+        }, RingfourJson.Options);
+        Assert.Equal(HttpStatusCode.Created, stop.StatusCode);
+        var denied = await member.PostAsJsonAsync(path, new
+        {
+            kind = "diagnostic.execution.start",
+            payload_version = 1,
+            payload = new { fixture = "hello" },
+        }, RingfourJson.Options);
+        await RobotTests.AssertError(denied, HttpStatusCode.Forbidden, "forbidden");
+        var invalid = await owner.PostAsJsonAsync(path, new
+        {
+            kind = "diagnostic.execution.start",
+            payload_version = 1,
+            payload = new { fixture = "unknown" },
+        }, RingfourJson.Options);
+        await RobotTests.AssertError(invalid, HttpStatusCode.BadRequest, "invalid_input");
+        using var duplicate = new StringContent(
+            """{"kind":"diagnostic.noop","kind":"diagnostic.execution.stop","payload_version":1,"payload":{}}""",
+            Encoding.UTF8, "application/json");
+        await RobotTests.AssertError(await owner.PostAsync(path, duplicate), HttpStatusCode.BadRequest, "invalid_input");
+        var inspect = await owner.PostAsJsonAsync(path, new
+        {
+            kind = "diagnostic.execution.inspect",
+            payload_version = 1,
+            payload = new { execution_id = Guid.NewGuid(), stream = "stdout", offset = 0, limit = 16384 },
+        }, RingfourJson.Options);
+        Assert.Equal(HttpStatusCode.Created, inspect.StatusCode);
+    }
+
+    [Fact]
     public async Task Operation_endpoints_enforce_roles_and_membership()
     {
         await using var factory = new ApiFactory(postgres.ConnectionString);

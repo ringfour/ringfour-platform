@@ -53,6 +53,20 @@ public sealed class RobotCredential
     public Robot Robot { get; set; } = null!;
 }
 
+public sealed class DevicePairingRequest
+{
+    public Guid Id { get; set; }
+    public required string CodeHash { get; set; }
+    public required string CredentialHash { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? ClaimedAt { get; set; }
+    public Guid? RobotId { get; set; }
+    public Guid? CredentialId { get; set; }
+    public Robot? Robot { get; set; }
+    public RobotCredential? Credential { get; set; }
+}
+
 public sealed class RobotAuditEvent
 {
     public Guid Id { get; set; }

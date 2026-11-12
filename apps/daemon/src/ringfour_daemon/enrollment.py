@@ -3,6 +3,7 @@ import os
 import sqlite3
 import stat
 import tempfile
+import threading
 from pathlib import Path
 
 import httpx
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 CREDENTIAL_MISSING = "credential_missing"
+_identity_lock = threading.Lock()
 
 
 class EnrollRequest(BaseModel):
@@ -93,6 +95,16 @@ def _commit_identity(db_path: str, identity: dict) -> None:
         )
 
 
+def save_identity(settings, identity: dict, secret: str) -> bool:
+    """Serialize both enrollment paths so one cannot overwrite the other's secret."""
+    with _identity_lock:
+        if load_identity(settings.db_path) is not None:
+            return False
+        _write_credential(settings.credential_path, secret)
+        _commit_identity(settings.db_path, identity)
+        return True
+
+
 @router.post("/v1/enroll")
 def enroll(request: Request, body: EnrollRequest) -> JSONResponse:
     settings = request.app.state.settings
@@ -128,8 +140,8 @@ def enroll(request: Request, body: EnrollRequest) -> JSONResponse:
     }
     # Secret first, binding second: never commit an identity whose credential
     # is not safely stored.
-    _write_credential(settings.credential_path, payload["credential_secret"])
-    _commit_identity(settings.db_path, identity)
+    if not save_identity(settings, identity, payload["credential_secret"]):
+        return JSONResponse({"detail": "device is already enrolled"}, status_code=409)
     return JSONResponse(
         {
             "robot_id": identity["robot_id"],

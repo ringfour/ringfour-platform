@@ -125,3 +125,62 @@ or tokens in this file.
 - Added and ran `bash tests/e2e/03-pre-ack.sh` with live API/daemon, an isolated test barrier and volume. Pre-ack partition/restart, offline detection and queued-operation reconnect, and revoked credential rejection, re-enrollment, restart and new operation passed.
 - Added contract-aligned device input validation and 64 KiB reassembled-message limit, serialized sequence allocation with socket writes, fenced session removal, structured logs and .NET metrics.
 - Setup now consumes frozen lockfiles; documented dependency update cadence and `bash scripts/quality.sh` gate. Quality: contracts 10, API 60, Console 14, daemon 33, Runner 3, CLI 28; lint/typecheck passed. The optional full integration gate was not run because it deletes existing Compose volumes; metrics require a collector.
+
+## 2026-11-11 — milestone 04 local Runner slice
+
+- Defined new private Runner and hosted diagnostic contracts, fixed fixture digests, persistence and limits; implemented authenticated non-root Runner, daemon coordination, hosted operations and CLI diagnostics.
+- `bash scripts/quality.sh` passed: contracts 11, API 61, Console 14, daemon 37, Runner 9, CLI 29; lint and type checks passed. `bash tests/e2e/04-runner.sh` passed with the real API, isolated daemon and Runner: hello output/exit, daemon restart, stop, Runner restart recovery and private authentication. Test robots remain in the selected organization.
+- Created separate `infra/robot` Agent/empty ROS Compose stack; `robocore-agent:c-preview` revision 799c8afa reached ready using the external synthetic SDK fixture. No real robot or SDK execution was claimed.
+- Prepared `infra/balena` build bundle and verified Compose syntax. Physical Balena smoke remains incomplete; user is preparing a robot deployment. Evidence and human guide: `docs/evidence/04.md`, `docs/human-testing/04.md`. Do not mark milestone 04 complete or proceed to 05 until the physical gate passes.
+
+## 2026-11-12 — device-initiated pairing and status page
+
+- Added owner-claimed pairing requests, private credential proof, expiry,
+  rate limit, restart recovery, EF migration and CLI `robot pair` for new or
+  existing robots. Daemon page on port 8083 is separate/read-only and shows the
+  pending code or enrolled connection state.
+- Rebuilt local API/daemon with the existing Runner secret and retained volumes.
+  `bash tests/e2e/02-pairing.sh` passed actual API/daemon/CLI pairing and restart
+  recovery. Component suites passed; see `docs/evidence/02.md` for details.
+- At user request removed 30 generated test robots and dependent records from
+  local PostgreSQL; retained base101, active local daemon robot and all orgs.
+  No Balena device was modified; robot-side image deployment remains pending.
+
+## 2026-11-12 — Console-led pairing
+
+- Replaced standalone Console robot creation with a single pairing form for new
+  or existing unpaired robots; removed the new CLI `robot pair` command and
+  directed the device status page to the Console. Existing API and legacy CLI
+  enrollment remain compatible.
+- Console 16, daemon 40, CLI 29 component tests passed; actual pairing through
+  the local Console proxy/API/daemon passed and cleaned up its test robot.
+  Interactive browser QA could not run: the browser automation host was unavailable.
+
+## 2026-11-12 — Balena pairing connectivity diagnosis and org cleanup
+
+- Read-only robot inspection: pairing/status code present, daemon
+  `PLATFORM_API_URL` unset and defaulting to container localhost; Mac API
+  reachable from robot; Runner auth not configured and readiness reports auth
+  fail; status port 8083 is exposed but not published. No robot-side files or
+  configuration changed. At user request, source changes are persistent and the
+  user will rebuild/deploy.
+- Fixed recovery from correcting a Platform URL when the saved pairing request
+  has never been registered; confirmed requests remain protected from silent
+  deletion. Replaced connection stack traces with concise configuration warnings.
+  Daemon tests 42/42 passed; no image was rebuilt or deployed for this fix.
+- At user direction removed every organization except Acme Robotics, including
+  dependent robots `base101`, `ducky`, `nustiu` and the old local test daemon
+  robot. Acme and its memberships remain. The old local daemon credential and
+  the previously selected CLI organization no longer point to valid records.
+
+## 2026-11-12 — milestone 04 physical Balena smoke
+
+- Odin/base101 was enrolled in Acme and online; user reported successful
+  Console pairing. Physical Runner smoke passed: hello output/exit 0, daemon
+  restart with running work and cancellation, Runner restart with explicit
+  interrupted outcome, stored hello output after restart, overlap conflict,
+  non-root identity, authenticated private Runner and volume/mount inspection.
+- Device details, commands, image hashes, retained data and non-motion scope
+  recorded in `docs/evidence/04.md`; portable diagnostic helper added at
+  `tests/e2e/04-device.sh` and human guide updated. No SDK/Agent or movement
+  acceptance is claimed.

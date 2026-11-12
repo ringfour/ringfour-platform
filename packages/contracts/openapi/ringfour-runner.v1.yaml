@@ -1,0 +1,77 @@
+openapi: 3.1.0
+info:
+  title: Ringfour private Runner API
+  version: 0.1.0
+  description: New Ringfour design; authenticated private daemon-to-Runner interface.
+security:
+  - runnerBearer: []
+paths:
+  /v1/executions:
+    post:
+      summary: Start or replay an execution by stable ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/runner/v1/start-execution-request.schema.json }
+      responses:
+        '200':
+          description: Existing identical execution
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/execution.schema.json }
+        '201':
+          description: New execution durably accepted
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/execution.schema.json }
+        '400': { description: Invalid bundle, digest or request }
+        '401': { description: Missing or incorrect Runner credential }
+        '409': { description: Conflicting ID or active execution }
+        '413': { description: Request exceeds 4096 bytes }
+        '503': { description: Retained execution capacity reached }
+  /v1/executions/{execution_id}:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Inspect an execution
+      responses:
+        '200':
+          description: Current execution
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/execution.schema.json }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown execution }
+  /v1/executions/{execution_id}/stop:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Idempotently request stop
+      responses:
+        '200':
+          description: Current execution after stop request
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/execution.schema.json }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown execution }
+  /v1/executions/{execution_id}/output:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: stream, in: query, required: true, schema: { enum: [stdout, stderr] } }
+      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 65536 } }
+      - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 16384 } }
+    get:
+      summary: Read bounded output bytes by stream and offset
+      responses:
+        '200':
+          description: Output chunk
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/output.schema.json }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown execution }
+components:
+  securitySchemes:
+    runnerBearer: { type: http, scheme: bearer }

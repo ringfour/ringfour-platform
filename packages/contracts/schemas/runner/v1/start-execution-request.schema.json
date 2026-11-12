@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/runner/v1/start-execution-request.schema.json",
+  "title": "Start execution request",
+  "description": "New private Ringfour design. See docs/runner-contract.md for canonical digest and path rules.",
+  "type": "object",
+  "required": [
+    "execution_id",
+    "robot_id",
+    "revision_digest",
+    "code_ref",
+    "entrypoint"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "execution_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "revision_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "code_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "entrypoint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "robot_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

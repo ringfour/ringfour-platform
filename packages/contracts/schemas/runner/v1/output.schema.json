@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/runner/v1/output.schema.json",
+  "title": "Execution output chunk",
+  "description": "Offset and next_offset count bytes. Read at most 16384 bytes; output is capped at 65536 bytes per stream.",
+  "type": "object",
+  "required": [
+    "execution_id",
+    "stream",
+    "offset",
+    "next_offset",
+    "data_base64",
+    "eof",
+    "truncated"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "execution_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "stream": {
+      "enum": [
+        "stdout",
+        "stderr"
+      ]
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65536
+    },
+    "next_offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65536
+    },
+    "data_base64": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "maxLength": 21848
+    },
+    "eof": {
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  }
+}

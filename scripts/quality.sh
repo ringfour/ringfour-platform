@@ -13,8 +13,10 @@ if [ "${1:-}" = "--integration" ]; then
   bash tests/e2e/00-health.sh
   bash tests/e2e/01-identity.sh
   bash tests/e2e/02-enrollment.sh
+  bash tests/e2e/02-pairing.sh
   bash tests/e2e/03-connectivity.sh
   bash tests/e2e/03-pre-ack.sh
+  bash tests/e2e/04-runner.sh
 else
   echo 'Integration and external device gates not run; see docs/development.md.'
 fi

@@ -2,13 +2,22 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.ringfour.dev/robots/v1/create-operation-request.schema.json",
   "title": "Create operation request",
-  "description": "Creates a durable operation for a robot. v1 supports exactly one authenticated diagnostic kind; the platform dispatches it over the device WebSocket as soon as the robot is connected. The Idempotency-Key header (optional) scopes retries: same key and identical body replay the original operation, same key with a different body is a 409 conflict. The stored record expires after 24 hours; one-time credential responses are never replayed from idempotency records.",
+  "description": "Creates a durable hosted operation. Diagnostic execution kinds and role rules are new Ringfour design; see docs/runner-contract.md. Idempotency-Key remains scoped per principal, route and robot.",
   "type": "object",
-  "required": ["kind", "payload_version", "payload"],
+  "required": [
+    "kind",
+    "payload_version",
+    "payload"
+  ],
   "additionalProperties": false,
   "properties": {
     "kind": {
-      "const": "diagnostic.noop"
+      "enum": [
+        "diagnostic.noop",
+        "diagnostic.execution.start",
+        "diagnostic.execution.inspect",
+        "diagnostic.execution.stop"
+      ]
     },
     "payload_version": {
       "const": 1
@@ -16,5 +25,106 @@
     "payload": {
       "type": "object"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "diagnostic.execution.start"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "fixture"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "fixture": {
+                "enum": [
+                  "hello",
+                  "long"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "diagnostic.execution.stop"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "execution_id"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "execution_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "diagnostic.execution.inspect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "execution_id",
+              "stream",
+              "offset",
+              "limit"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "execution_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "stream": {
+                "enum": [
+                  "stdout",
+                  "stderr"
+                ]
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65536
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16384
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

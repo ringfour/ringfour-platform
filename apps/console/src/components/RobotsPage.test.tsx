@@ -112,27 +112,96 @@ test("lists robots with enrollment status", async () => {
   stubApi();
   render(<RobotsPage />);
 
-  expect(await screen.findByText("warehouse-01")).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "warehouse-01" }),
+  ).toBeTruthy();
   expect(screen.getByText("not enrolled")).toBeTruthy();
   // Organization picker defaults to the first org.
   expect(screen.getByLabelText(/organization/i)).toBeTruthy();
 });
 
-test("owner creates a robot", async () => {
-  const { posts } = stubApi();
-  render(<RobotsPage />);
-  await screen.findByText("warehouse-01");
-
-  await userEvent.type(
-    screen.getByPlaceholderText(/new robot name/i),
-    "lab-bench-02",
-  );
-  await userEvent.click(screen.getByRole("button", { name: /create/i }));
-
-  expect(posts).toContainEqual({
-    url: `/api/v1/organizations/${ORG.id}/robots`,
-    body: { name: "lab-bench-02", profile_ref: null },
+test("owner adds a robot by pairing without a separate creation step", async () => {
+  const { posts } = stubApi({
+    robots: [],
+    onPost: (url) =>
+      url.endsWith("/pairing-claims")
+        ? jsonResponse({
+            ...ROBOT,
+            name: "lab-bench-02",
+            enrolled_at: "2026-11-12T12:00:00Z",
+          })
+        : undefined,
   });
+  render(<RobotsPage />);
+  await screen.findByText("No robots in this organization yet.");
+  await userEvent.type(
+    screen.getByLabelText(/pairing code/i),
+    "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ",
+  );
+  await userEvent.type(screen.getByLabelText(/robot name/i), "lab-bench-02");
+  await userEvent.click(screen.getByRole("button", { name: /add robot/i }));
+  expect(posts).toContainEqual({
+    url: `/api/v1/organizations/${ORG.id}/pairing-claims`,
+    body: { code: "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ", name: "lab-bench-02" },
+  });
+  expect((await screen.findByRole("status")).textContent).toContain(
+    "lab-bench-02 paired",
+  );
+  expect(
+    (screen.getByLabelText(/pairing code/i) as HTMLInputElement).value,
+  ).toBe("");
+});
+
+test("owner pairs a previously created unregistered robot", async () => {
+  const { posts } = stubApi({
+    onPost: (url) =>
+      url.endsWith("/pairing-claims")
+        ? jsonResponse({ ...ROBOT, enrolled_at: "2026-11-12T12:00:00Z" })
+        : undefined,
+  });
+  render(<RobotsPage />);
+  await screen.findByRole("button", { name: "warehouse-01" });
+  await userEvent.type(
+    screen.getByLabelText(/pairing code/i),
+    "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ",
+  );
+  await userEvent.selectOptions(screen.getByLabelText(/pair with/i), ROBOT.id);
+  expect(screen.queryByLabelText(/robot name/i)).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: /add robot/i }));
+  expect(posts).toContainEqual({
+    url: `/api/v1/organizations/${ORG.id}/pairing-claims`,
+    body: { code: "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ", robot_id: ROBOT.id },
+  });
+  expect((await screen.findByRole("status")).textContent).toContain(
+    "warehouse-01 paired",
+  );
+});
+
+test("pairing errors are shown and the code remains editable", async () => {
+  stubApi({
+    robots: [],
+    onPost: () =>
+      jsonResponse(
+        {
+          error: {
+            code: "not_found",
+            message: "Pairing code is invalid or expired.",
+          },
+        },
+        404,
+      ),
+  });
+  render(<RobotsPage />);
+  await screen.findByText("No robots in this organization yet.");
+  await userEvent.type(screen.getByLabelText(/pairing code/i), "EXPIRED");
+  await userEvent.type(screen.getByLabelText(/robot name/i), "base101");
+  await userEvent.click(screen.getByRole("button", { name: /add robot/i }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Pairing code is invalid or expired.",
+  );
+  expect(
+    (screen.getByLabelText(/pairing code/i) as HTMLInputElement).value,
+  ).toBe("EXPIRED");
 });
 
 test("owner issues an enrollment token shown exactly once", async () => {
@@ -155,7 +224,9 @@ test("owner issues an enrollment token shown exactly once", async () => {
   });
   render(<RobotsPage />);
 
-  await userEvent.click(await screen.findByText("warehouse-01"));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "warehouse-01" }),
+  );
   await userEvent.click(
     await screen.findByRole("button", { name: /issue enrollment token/i }),
   );
@@ -196,7 +267,9 @@ test("owner rotates and revokes credentials", async () => {
   });
   render(<RobotsPage />);
 
-  await userEvent.click(await screen.findByText("warehouse-01"));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "warehouse-01" }),
+  );
   await screen.findByText("Robot detail");
 
   await userEvent.click(
@@ -221,7 +294,9 @@ test("device status inspector shows observed presence", async () => {
   stubApi();
   render(<RobotsPage />);
 
-  await userEvent.click(await screen.findByText("warehouse-01"));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "warehouse-01" }),
+  );
   const panel = await screen.findByTestId("device-status");
 
   expect(panel.textContent).toContain("online");
@@ -242,7 +317,9 @@ test("device status inspector shows never-connected robots as offline", async ()
   });
   render(<RobotsPage />);
 
-  await userEvent.click(await screen.findByText("warehouse-01"));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "warehouse-01" }),
+  );
   const panel = await screen.findByTestId("device-status");
 
   expect(panel.textContent).toContain("offline");
@@ -253,10 +330,12 @@ test("non-owner members see a read-only view", async () => {
   stubApi({ role: "developer" });
   render(<RobotsPage />);
 
-  await userEvent.click(await screen.findByText("warehouse-01"));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "warehouse-01" }),
+  );
   await screen.findByText("Robot detail");
 
-  expect(screen.queryByPlaceholderText(/new robot name/i)).toBeNull();
+  expect(screen.queryByLabelText(/pairing code/i)).toBeNull();
   expect(
     screen.queryByRole("button", { name: /issue enrollment token/i }),
   ).toBeNull();

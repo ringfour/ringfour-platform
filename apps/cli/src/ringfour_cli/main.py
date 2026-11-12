@@ -347,6 +347,45 @@ def robot_status(robot_id: str) -> None:
     console.print(f"  Protocol version: {body['protocol_version'] or '-'}")
 
 
+def _fixture_operation(robot_id: str, kind: str, payload: dict) -> None:
+    settings = _settings()
+    body = _api_request(
+        "POST", f"/v1/robots/{robot_id}/operations", settings, auth.TokenStore(),
+        json={"kind": kind, "payload_version": 1, "payload": payload},
+    ).json()
+    console.print_json(data=body)
+
+
+@robot_app.command("operation")
+def robot_operation(robot_id: str, operation_id: str) -> None:
+    """Inspect a durable hosted operation and its result."""
+    settings = _settings()
+    body = _api_request("GET", f"/v1/robots/{robot_id}/operations/{operation_id}", settings, auth.TokenStore()).json()
+    console.print_json(data=body)
+
+
+@robot_app.command("fixture-start")
+def fixture_start(robot_id: str, fixture: str) -> None:
+    """Start the fixed hello or long diagnostic fixture."""
+    if fixture not in ("hello", "long"):
+        raise typer.BadParameter("Must be hello or long", param_hint="fixture")
+    _fixture_operation(robot_id, "diagnostic.execution.start", {"fixture": fixture})
+
+
+@robot_app.command("fixture-inspect")
+def fixture_inspect(robot_id: str, execution_id: str, stream: str = "stdout", offset: int = 0, limit: int = 4096) -> None:
+    """Request an execution snapshot and a base64 output chunk."""
+    _fixture_operation(robot_id, "diagnostic.execution.inspect", {
+        "execution_id": execution_id, "stream": stream, "offset": offset, "limit": limit,
+    })
+
+
+@robot_app.command("fixture-stop")
+def fixture_stop(robot_id: str, execution_id: str) -> None:
+    """Request stop for a diagnostic execution."""
+    _fixture_operation(robot_id, "diagnostic.execution.stop", {"execution_id": execution_id})
+
+
 @robot_app.command("enrollment-token")
 def robot_enrollment_token(robot_id: str) -> None:
     """Issue a single-use enrollment token (owner-only; shown exactly once)."""

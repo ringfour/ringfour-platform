@@ -279,6 +279,77 @@ def test_running_replay_is_failed_without_repeating_effect(tmp_path):
     run(scenario())
 
 
+def test_running_runner_operation_is_reconciled_with_same_id(tmp_path, monkeypatch):
+    async def scenario():
+        stub = StubPlatform()
+        url = await stub.start()
+        try:
+            settings = make_settings(tmp_path, url)
+            command = command_payload("4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", payload={"fixture": "hello"})
+            command["kind"] = "diagnostic.execution.start"
+            operations.record_command(settings.db_path, ROBOT_ID, command)
+            operations.apply_status(settings.db_path, command["operation_id"], "running")
+            seen = []
+
+            async def reconcile(_settings, operation):
+                seen.append(operation.operation_id)
+                return {"execution": {"execution_id": operation.operation_id, "state": "running"}}
+
+            monkeypatch.setattr("ringfour_daemon.runner.execute", reconcile)
+            manager = ConnectionManager(settings)
+            done = asyncio.Event()
+
+            async def drive():
+                await stub.expect_hello()
+                await stub.send("command", command)
+                assert (await asyncio.wait_for(stub.received.get(), timeout=5))["type"] == "ack"
+                status = await asyncio.wait_for(stub.received.get(), timeout=5)
+                assert status["payload"]["state"] == "succeeded"
+                assert status["payload"]["result"]["execution"]["execution_id"] == command["operation_id"]
+                done.set()
+
+            await asyncio.gather(run_manager(manager, done.wait()), drive())
+            assert seen == [command["operation_id"]]
+        finally:
+            await stub.stop()
+
+    run(scenario())
+
+
+def test_runner_overlap_becomes_failed_operation(tmp_path, monkeypatch):
+    async def scenario():
+        from ringfour_daemon.runner import RunnerRejected
+
+        stub = StubPlatform()
+        url = await stub.start()
+        try:
+            settings = make_settings(tmp_path, url)
+            command = command_payload("4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", payload={"fixture": "hello"})
+            command["kind"] = "diagnostic.execution.start"
+
+            async def reject(_settings, _operation):
+                raise RunnerRejected("execution_conflict", "Runner rejected the operation.")
+
+            monkeypatch.setattr("ringfour_daemon.runner.execute", reject)
+            manager = ConnectionManager(settings)
+            done = asyncio.Event()
+
+            async def drive():
+                await stub.expect_hello()
+                await stub.send("command", command)
+                assert (await asyncio.wait_for(stub.received.get(), timeout=5))["type"] == "ack"
+                status = await asyncio.wait_for(stub.received.get(), timeout=5)
+                assert status["payload"]["state"] == "failed"
+                assert status["payload"]["result"]["error"]["code"] == "execution_conflict"
+                done.set()
+
+            await asyncio.gather(run_manager(manager, done.wait()), drive())
+        finally:
+            await stub.stop()
+
+    run(scenario())
+
+
 def test_terminal_replay_after_restart_reports_terminal_status(tmp_path):
     async def scenario():
         stub = StubPlatform()

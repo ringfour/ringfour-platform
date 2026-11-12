@@ -64,4 +64,20 @@ The table names and fields above are a baseline. The agent may adjust physical n
 | 08–09 | Durable event outbox and Logbook ingestion checkpoints, interaction requests and terminal outcomes |
 | 10 | Add storage only if a verified SDK/Agent integration requirement warrants it. Keep the robot profile externally owned. |
 
+Milestone 04's Runner-owned execution, output and local event persistence is
+specified in [runner-contract.md](runner-contract.md). It adds no hosted
+PostgreSQL tables and retains the daemon's existing durable operation records.
+
 Test migrations from empty stores and from the previous milestone. Exercise PostgreSQL constraints against real PostgreSQL, including concurrent first login, last-owner protection, single-use enrollment and operation replay as those features land. Test SQLite with a reopened file-backed database to verify restart behavior.
+
+## Device-initiated pairing follow-up
+
+`device_pairing_requests` stores a unique request ID, hashes of the pairing
+code and daemon-generated credential, creation/expiry timestamps, and optional
+claim timestamp plus restrictive robot/credential foreign keys. An owner claim
+creates or binds the robot and its credential atomically; the original enrollment
+flow remains available. Unclaimed requests expire after ten minutes and are
+cleaned after an additional 24-hour retention period. Claimed requests are kept
+for recovery from lost responses. The daemon stores pending proof in a mode-0600
+file; it continues using the existing SQLite identity table. See
+[pairing-contract.md](pairing-contract.md).

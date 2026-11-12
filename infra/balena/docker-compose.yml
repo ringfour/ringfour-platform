@@ -1,0 +1,27 @@
+version: '2.4'
+services:
+  daemon:
+    build: ./daemon
+    environment:
+      DAEMON_DB_PATH: /data/ringfour.db
+      RUNNER_URL: http://runner:8082
+      RUNNER_STAGE_DIR: /staged
+    volumes:
+      - daemon-data:/data
+      - staged-data:/staged
+    depends_on:
+      - runner
+    ports:
+      - '127.0.0.1:8081:8081'
+      - '8083:8083'
+  runner:
+    build: ./runner
+    environment:
+      RUNNER_STAGE_DIR: /staged
+    volumes:
+      - runner-data:/data
+      - staged-data:/staged:ro
+volumes:
+  daemon-data:
+  runner-data:
+  staged-data:

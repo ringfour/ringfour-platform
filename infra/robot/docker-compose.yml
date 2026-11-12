@@ -1,0 +1,20 @@
+# Standalone robot-side development stack. Supply an Agent-owned profile path.
+# This is intentionally independent of infra/compose (API, DB, daemon, Runner).
+name: ringfour-robot-dev
+services:
+  agent:
+    image: robocore-agent:c-preview
+    environment:
+      ROS_DOMAIN_ID: ${ROBOT_ROS_DOMAIN_ID:-84}
+    volumes:
+      - ${ROBOCORE_PROFILE_PATH:?Set ROBOCORE_PROFILE_PATH to an Agent-compatible profile}:/etc/robocore/profile.yaml:ro
+      - agent-state:/var/lib/robocore
+    ports:
+      - "127.0.0.1:${ROBOCORE_AGENT_PORT:-10101}:10101"
+  ros:
+    image: ros:jazzy-ros-base
+    environment:
+      ROS_DOMAIN_ID: ${ROBOT_ROS_DOMAIN_ID:-84}
+    command: ["sleep", "infinity"]
+volumes:
+  agent-state:

@@ -60,7 +60,11 @@ export function RobotsPage() {
   const [selectedRobot, setSelectedRobot] = useState<Robot | null>(null);
   const [credentials, setCredentials] = useState<Credential[] | null>(null);
   const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
-  const [newRobotName, setNewRobotName] = useState("");
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairingName, setPairingName] = useState("");
+  const [pairingTarget, setPairingTarget] = useState("");
+  const [pairingBusy, setPairingBusy] = useState(false);
+  const [pairingMessage, setPairingMessage] = useState<string | null>(null);
   const [shownSecret, setShownSecret] = useState<ShownSecret | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,6 +106,10 @@ export function RobotsPage() {
     setSelectedRobot(null);
     setCredentials(null);
     setShownSecret(null);
+    setPairingCode("");
+    setPairingName("");
+    setPairingTarget("");
+    setPairingMessage(null);
     if (selectedOrg !== null) {
       void loadRobots(selectedOrg.id);
     }
@@ -153,22 +161,46 @@ export function RobotsPage() {
     }
   };
 
-  const createRobot = async (event: React.FormEvent) => {
+  const pairRobot = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (selectedOrg === null) {
+    if (selectedOrg === null || pairingBusy) {
       return;
     }
+    const orgId = selectedOrg.id;
+    setPairingBusy(true);
+    setPairingMessage(null);
+    setError(null);
     try {
-      await apiFetch(getToken, `/v1/organizations/${selectedOrg.id}/robots`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRobotName, profile_ref: null }),
-      });
-      setNewRobotName("");
+      const response = await apiFetch(
+        getToken,
+        `/v1/organizations/${orgId}/pairing-claims`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: pairingCode.trim(),
+            ...(pairingTarget
+              ? { robot_id: pairingTarget }
+              : { name: pairingName.trim() }),
+          }),
+        },
+      );
+      const robot = (await response.json()) as Robot;
+      setPairingCode("");
+      setPairingName("");
+      setPairingTarget("");
+      setPairingMessage(
+        `${robot.name} paired. The device should connect shortly.`,
+      );
       setError(null);
-      await loadRobots(selectedOrg.id);
+      await loadRobots(orgId);
+      if (selectedRobot?.id === robot.id) {
+        await inspectRobot(robot);
+      }
     } catch (cause) {
       report(cause);
+    } finally {
+      setPairingBusy(false);
     }
   };
 
@@ -246,6 +278,7 @@ export function RobotsPage() {
                 <select
                   className="rounded border bg-transparent px-2 py-1.5 text-sm"
                   value={selectedOrg?.id ?? ""}
+                  disabled={pairingBusy}
                   onChange={(event) =>
                     setSelectedOrg(
                       organizations.find(
@@ -307,19 +340,74 @@ export function RobotsPage() {
                 </table>
               )}
               {isOwner && (
-                <form onSubmit={createRobot} className="mt-4 flex gap-2">
-                  <input
-                    className="flex-1 rounded border bg-transparent px-3 py-1.5 text-sm"
-                    placeholder="New robot name"
-                    value={newRobotName}
-                    onChange={(event) => setNewRobotName(event.target.value)}
-                  />
+                <form
+                  onSubmit={pairRobot}
+                  className="mt-6 space-y-3 border-t pt-4"
+                >
+                  <h3 className="text-sm font-medium">Add a robot</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Enter the pairing code shown on the device page.
+                  </p>
+                  <label className="block space-y-1 text-sm">
+                    <span>Pairing code</span>
+                    <input
+                      className="w-full rounded border bg-transparent px-3 py-1.5 text-sm"
+                      value={pairingCode}
+                      onChange={(event) => setPairingCode(event.target.value)}
+                      autoComplete="off"
+                      spellCheck={false}
+                      required
+                    />
+                  </label>
+                  {robots?.some((robot) => robot.enrolled_at === null) && (
+                    <label className="block space-y-1 text-sm">
+                      <span>Pair with</span>
+                      <select
+                        className="w-full rounded border bg-transparent px-3 py-1.5 text-sm"
+                        value={pairingTarget}
+                        onChange={(event) =>
+                          setPairingTarget(event.target.value)
+                        }
+                      >
+                        <option value="">New robot</option>
+                        {robots
+                          .filter((robot) => robot.enrolled_at === null)
+                          .map((robot) => (
+                            <option key={robot.id} value={robot.id}>
+                              {robot.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  )}
+                  {!pairingTarget && (
+                    <label className="block space-y-1 text-sm">
+                      <span>Robot name</span>
+                      <input
+                        className="w-full rounded border bg-transparent px-3 py-1.5 text-sm"
+                        value={pairingName}
+                        onChange={(event) => setPairingName(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                  )}
                   <button
                     type="submit"
-                    className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground"
+                    disabled={
+                      pairingBusy ||
+                      !pairingCode.trim() ||
+                      (!pairingTarget && !pairingName.trim())
+                    }
+                    className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
                   >
-                    Create
+                    {pairingBusy ? "Pairing…" : "Add robot"}
                   </button>
+                  {pairingMessage && (
+                    <p role="status" className="text-sm text-ready-text">
+                      {pairingMessage}
+                    </p>
+                  )}
                 </form>
               )}
             </>
@@ -439,7 +527,7 @@ export function RobotsPage() {
               <p className="text-muted-foreground">Loading…</p>
             ) : credentials.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No credentials yet — enroll a device with a token.
+                No credentials yet — add a device using its pairing code.
               </p>
             ) : (
               <table className="w-full text-sm">

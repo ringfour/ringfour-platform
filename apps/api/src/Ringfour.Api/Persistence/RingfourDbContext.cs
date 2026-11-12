@@ -11,6 +11,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<Robot> Robots => Set<Robot>();
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
     public DbSet<RobotCredential> RobotCredentials => Set<RobotCredential>();
+    public DbSet<DevicePairingRequest> DevicePairingRequests => Set<DevicePairingRequest>();
     public DbSet<RobotAuditEvent> RobotAuditEvents => Set<RobotAuditEvent>();
     public DbSet<RobotPresence> RobotPresences => Set<RobotPresence>();
     public DbSet<Operation> Operations => Set<Operation>();
@@ -116,6 +117,26 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
                 .WithMany(robot => robot.Credentials)
                 .HasForeignKey(credential => credential.RobotId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DevicePairingRequest>(entity =>
+        {
+            entity.ToTable("device_pairing_requests");
+            entity.HasKey(pairing => pairing.Id);
+            entity.Property(pairing => pairing.Id).HasColumnName("id");
+            entity.Property(pairing => pairing.CodeHash).HasColumnName("code_hash");
+            entity.Property(pairing => pairing.CredentialHash).HasColumnName("credential_hash");
+            entity.Property(pairing => pairing.CreatedAt).HasColumnName("created_at");
+            entity.Property(pairing => pairing.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(pairing => pairing.ClaimedAt).HasColumnName("claimed_at");
+            entity.Property(pairing => pairing.RobotId).HasColumnName("robot_id");
+            entity.Property(pairing => pairing.CredentialId).HasColumnName("credential_id");
+            entity.HasIndex(pairing => pairing.CodeHash).IsUnique();
+            entity.HasIndex(pairing => pairing.CredentialHash).IsUnique();
+            entity.HasIndex(pairing => pairing.ExpiresAt);
+            entity.HasOne(pairing => pairing.Robot).WithMany().HasForeignKey(pairing => pairing.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(pairing => pairing.Credential).WithMany().HasForeignKey(pairing => pairing.CredentialId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_pairing_claim", "(claimed_at IS NULL AND robot_id IS NULL AND credential_id IS NULL) OR (claimed_at IS NOT NULL AND robot_id IS NOT NULL AND credential_id IS NOT NULL)"));
         });
 
         modelBuilder.Entity<RobotAuditEvent>(entity =>

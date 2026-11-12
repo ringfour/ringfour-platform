@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/pairing/v1/poll-request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "credential_secret"
+  ],
+  "properties": {
+    "credential_secret": {
+      "type": "string",
+      "pattern": "^rfs_[A-Za-z0-9_-]{43}$"
+    }
+  }
+}

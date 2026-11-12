@@ -12,6 +12,8 @@ class Settings:
     backoff_max_seconds: float = 30.0
     reconcile_delay_seconds: float = 20.0
     outbound_queue_limit: int = 128
+    stage_dir: str = "/staged"
+    runner_auth_token: str | None = None
 
     @staticmethod
     def from_env() -> "Settings":
@@ -28,4 +30,6 @@ class Settings:
                 os.environ.get("DAEMON_RECONCILE_DELAY_SECONDS", "20.0")
             ),
             outbound_queue_limit=int(os.environ.get("DAEMON_OUTBOUND_QUEUE_LIMIT", "128")),
+            stage_dir=os.environ.get("RUNNER_STAGE_DIR", "/staged"),
+            runner_auth_token=os.environ.get("RUNNER_AUTH_TOKEN"),
         )
