@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/scripts/v1/revision.schema.json",
+  "title": "Script revision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "organization_id", "created_by_user_id", "state", "archive_sha256", "archive_size", "revision_digest", "entrypoint", "python_requirement", "lock_sha256", "upload_url", "upload_expires_at", "created_at", "finalized_at"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "organization_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "created_by_user_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "state": {"enum": ["uploading", "ready"]},
+    "archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "archive_size": {"type": "integer", "minimum": 1, "maximum": 1048576},
+    "revision_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "entrypoint": {"type": "string", "minLength": 4, "maxLength": 240},
+    "python_requirement": {"type": "string", "minLength": 1, "maxLength": 128},
+    "lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "upload_url": {"type": "string", "pattern": "^/v1/script-revisions/[0-9a-f-]+/content$"},
+    "upload_expires_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "created_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "finalized_at": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"}
+  }
+}

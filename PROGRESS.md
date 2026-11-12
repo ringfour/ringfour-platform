@@ -184,3 +184,18 @@ or tokens in this file.
   recorded in `docs/evidence/04.md`; portable diagnostic helper added at
   `tests/e2e/04-device.sh` and human guide updated. No SDK/Agent or movement
   acceptance is claimed.
+
+## 2026-11-12 — milestone 05 scripts
+
+- Implemented immutable ZIP revisions with verified promotion to filesystem or
+  Garage S3 storage, authenticated script runs, durable synchronization,
+  bounded output and artifacts, cancellation, locked dependencies and CLI
+  `run`, `logs`, `execution` and `artifact` commands.
+- The isolated real-process acceptance passed with both filesystem and Garage,
+  including interrupted upload, Garage outage, idempotent replay, success,
+  failure, dependency hashes, cancellation, daemon/API restart during output,
+  Runner restart reconciliation and cross-organization denial. The latter used
+  an ephemeral test-only signer; the main flow used live Auth0.
+- Setup, component results, limits, cleanup and device scope are in
+  `docs/evidence/05.md` and `docs/human-testing/05.md`. Milestone 05 has not
+  been deployed to the Balena robot; no physical 05 result is claimed.

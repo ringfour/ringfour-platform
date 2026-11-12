@@ -6,7 +6,8 @@ info:
     Ringfour hosted API. Current scope: health endpoints (milestone 00),
     identity/organization membership (milestone 01), robot enrollment
     (milestone 02) and device connectivity with durable operations
-    (milestone 03).
+    (milestone 03), private Runner diagnostics (milestone 04) and script
+    revisions and executions (milestone 05).
     All /v1 endpoints require an Auth0 RS256 access token for audience
     https://api.ringfour.eu and share the error envelope referenced below,
     except the /v1/device/* endpoints which authenticate by possession of an
@@ -25,7 +26,275 @@ tags:
     description: Robot records and credential lifecycle (Auth0 JWT required).
   - name: device
     description: Local-daemon-facing enrollment, credential verification and the authenticated WebSocket connection; no human token.
+  - name: scripts
+    description: Script revisions, runs, output and artifacts (new Ringfour design).
 paths:
+  /v1/script-revisions:
+    post:
+      tags: [scripts]
+      operationId: createScriptRevision
+      summary: Initiate an immutable script revision upload
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/scripts/v1/create-revision-request.schema.json }
+      responses:
+        '201':
+          description: New upload request
+          content:
+            application/json:
+              schema: { $ref: ../schemas/scripts/v1/revision.schema.json }
+        '200':
+          description: Idempotent replay
+          content:
+            application/json:
+              schema: { $ref: ../schemas/scripts/v1/revision.schema.json }
+        '400': { description: Invalid request }
+        '401': { description: Invalid authentication }
+        '403': { description: Insufficient role }
+        '404': { description: Organization is inaccessible }
+        '409': { description: Idempotency key reused for different input }
+        '503': { description: Revision retention capacity reached }
+  /v1/robots/{robot_id}/script-runs:
+    parameters:
+      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+    post:
+      tags: [scripts]
+      operationId: startScriptRun
+      summary: Start an immutable script revision on an online robot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/scripts/v1/create-run-request.schema.json }
+      responses:
+        '202':
+          description: Accepted or idempotently replayed
+          content:
+            application/json:
+              schema: { $ref: ../schemas/scripts/v1/create-run-response.schema.json }
+        '400': { description: Invalid request }
+        '401': { description: Invalid authentication }
+        '403': { description: Insufficient role }
+        '404': { description: Robot or revision is inaccessible }
+        '409': { description: Conflicting idempotency key or active execution }
+        '503': { description: Robot is offline or retention capacity reached }
+  /v1/executions/{execution_id}:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [scripts]
+      operationId: getScriptExecution
+      responses:
+        '200':
+          description: Durable execution state and requesting actor
+          content:
+            application/json:
+              schema: { $ref: ../schemas/scripts/v1/execution.schema.json }
+        '401': { description: Invalid authentication }
+        '404': { description: Execution is inaccessible }
+  /v1/executions/{execution_id}/output:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: stream, in: query, required: true, schema: { enum: [stdout, stderr] } }
+      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 65536 } }
+      - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 16384 } }
+    get:
+      tags: [scripts]
+      operationId: getScriptOutput
+      responses:
+        '200':
+          description: Byte-offset output chunk
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/output.schema.json }
+        '400': { description: Invalid range or stream }
+        '401': { description: Invalid authentication }
+        '404': { description: Execution is inaccessible }
+  /v1/executions/{execution_id}/artifacts:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [scripts]
+      operationId: listScriptArtifacts
+      responses:
+        '200':
+          description: Uploaded, verified artifact metadata
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/artifact-list.schema.json }
+        '401': { description: Invalid authentication }
+        '404': { description: Execution is inaccessible }
+  /v1/executions/{execution_id}/artifacts/content:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
+    get:
+      tags: [scripts]
+      operationId: downloadScriptArtifact
+      responses:
+        '200':
+          description: Verified artifact bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { description: Invalid authentication }
+        '404': { description: Execution or artifact is inaccessible }
+  /v1/executions/{execution_id}/stop:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+    post:
+      tags: [scripts]
+      operationId: stopScriptExecution
+      responses:
+        '202':
+          description: Stop operation accepted, not yet necessarily complete
+          content:
+            application/json:
+              schema: { $ref: ../schemas/scripts/v1/create-run-response.schema.json }
+        '401': { description: Invalid authentication }
+        '404': { description: Execution is inaccessible }
+        '409': { description: Conflicting idempotency key }
+        '503': { description: Robot is offline }
+  /v1/device/executions/{execution_id}/revision:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [device, scripts]
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      operationId: downloadDeviceRevision
+      description: Authenticated by robot credential headers; scoped to the assigned execution.
+      responses:
+        '200':
+          description: Verified immutable ZIP archive
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '401': { description: Invalid machine credential }
+        '404': { description: Execution is inaccessible }
+        '409': { description: Execution is terminal }
+        '503': { description: Storage is unavailable }
+  /v1/device/executions/{execution_id}/output/{stream}:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: stream, in: path, required: true, schema: { enum: [stdout, stderr] } }
+      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 65536 } }
+    put:
+      tags: [device, scripts]
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      operationId: putDeviceOutput
+      description: Authenticated by robot credential headers; exact-byte replay is idempotent.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '204': { description: Chunk durably stored or identical replay }
+        '400': { description: Invalid stream or offset }
+        '401': { description: Invalid machine credential }
+        '404': { description: Execution is inaccessible }
+        '409': { description: Gap, conflicting replay or new bytes after terminal state }
+        '413': { description: Chunk or total output limit exceeded }
+  /v1/device/executions/{execution_id}/artifacts:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
+      - { name: sha256, in: query, required: true, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    put:
+      tags: [device, scripts]
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      operationId: putDeviceArtifact
+      description: Authenticated by robot credential headers; identical artifact replay is idempotent.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '204': { description: Artifact verified and durably stored, or identical replay }
+        '400': { description: Invalid path or digest }
+        '401': { description: Invalid machine credential }
+        '404': { description: Execution is inaccessible }
+        '409': { description: Conflicting replay or new artifact after terminal state }
+        '413': { description: Artifact or total byte limit exceeded }
+        '503': { description: Storage is unavailable }
+  /v1/device/executions/{execution_id}/status:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [device, scripts]
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      operationId: putDeviceExecutionStatus
+      description: Authenticated by robot credential headers; terminal status follows output and artifact uploads.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/scripts/v1/device-status.schema.json }
+      responses:
+        '204': { description: State recorded or matching replay }
+        '400': { description: Invalid status }
+        '401': { description: Invalid machine credential }
+        '404': { description: Execution is inaccessible }
+        '409': { description: Invalid state transition or conflicting terminal replay }
+        '413': { description: Status request exceeds the byte limit }
+  /v1/script-revisions/{revision_id}/content:
+    parameters:
+      - { name: revision_id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [scripts]
+      operationId: uploadScriptRevision
+      summary: Upload bounded ZIP bytes before the revision upload deadline
+      requestBody:
+        required: true
+        content:
+          application/zip:
+            schema: { type: string, format: binary }
+      responses:
+        '204': { description: Upload stored for verification }
+        '400': { description: Invalid bytes or mismatched declared size or digest }
+        '401': { description: Invalid authentication }
+        '403': { description: Insufficient role }
+        '404': { description: Revision is inaccessible }
+        '409': { description: Revision is finalized or upload has expired }
+        '413': { description: Upload exceeds the byte limit }
+        '503': { description: Storage is unavailable }
+  /v1/script-revisions/{revision_id}/finalize:
+    parameters:
+      - { name: revision_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [scripts]
+      operationId: finalizeScriptRevision
+      summary: Verify stored bytes and promote the revision
+      responses:
+        '200':
+          description: Immutable ready revision, including idempotent replay
+          content:
+            application/json:
+              schema: { $ref: ../schemas/scripts/v1/revision.schema.json }
+        '400': { description: Archive validation or digest failed }
+        '401': { description: Invalid authentication }
+        '403': { description: Insufficient role }
+        '404': { description: Revision is inaccessible }
+        '409': { description: Upload is missing or expired }
+        '503': { description: Storage is unavailable }
   /health/live:
     get:
       tags: [health]
@@ -49,7 +318,8 @@ paths:
       operationId: getReadiness
       summary: Readiness including owned dependencies
       description: |
-        Checks the dependencies this service owns: API checks PostgreSQL.
+        Checks the dependencies this service owns: API checks PostgreSQL and
+        its configured private storage.
         Responds 200 when every check passes, 503 otherwise. The body uses
         the same readiness schema in both cases.
       security: []
@@ -729,6 +999,14 @@ paths:
           $ref: "#/components/responses/InvalidToken"
 components:
   securitySchemes:
+    deviceCredentialId:
+      type: apiKey
+      in: header
+      name: x-ringfour-credential-id
+    deviceCredentialSecret:
+      type: apiKey
+      in: header
+      name: x-ringfour-credential-secret
     bearerAuth:
       type: http
       scheme: bearer

@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 import websockets
 
-from . import __version__, operations, runner
+from . import __version__, operations, runner, scripts
 from .enrollment import credential_error, load_identity
 
 logger = logging.getLogger(__name__)
@@ -247,7 +247,7 @@ class ConnectionManager:
                 logger.info("operation %s replaying terminal state %s", operation.operation_id, operation.state)
                 await self._report(outbound, state, operation)
                 return
-            if operation.state == "running" and not operation.kind.startswith("diagnostic.execution."):
+            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")):
                 # The effect may have happened before a crash. Never repeat it.
                 finished = operations.apply_status(
                     self._settings.db_path,
@@ -263,7 +263,21 @@ class ConnectionManager:
             # accepted is committed before execution starts, so it is safe to
             # resume after an interruption at the acknowledgement boundary.
 
+        if not created and operation.state == "running" and operation.kind == "script.execution.start":
+            try:
+                recovered = await scripts.reconcile_start(self._settings, operation)
+            except httpx.HTTPError:
+                raise ProtocolError("Runner unreachable; reconcile on reconnect") from None
+            except runner.RunnerRejected:
+                raise ProtocolError("Runner rejected reconciliation; reconnecting") from None
+            if recovered is not None:
+                finished = operations.apply_status(self._settings.db_path, operation.operation_id, "succeeded", recovered)
+                await self._report(outbound, state, finished)
+                return
+
         if operations.is_expired(operation.deadline_at, self._now()):
+            if operation.kind == "script.execution.start":
+                scripts.complete_sync(self._settings.db_path, operation.operation_id)
             finished = operations.apply_status(
                 self._settings.db_path,
                 operation.operation_id,
@@ -283,6 +297,10 @@ class ConnectionManager:
         try:
             if operation.kind.startswith("diagnostic.execution."):
                 result = await runner.execute(self._settings, operation)
+            elif operation.kind == "script.execution.start":
+                result = await scripts.start(self._settings, operation)
+            elif operation.kind == "script.execution.stop":
+                result = await scripts.stop(self._settings, operation)
             else:
                 result = self._execute(operation)
             self.effects += 1
@@ -336,6 +354,8 @@ class ConnectionManager:
                 operation.operation_id,
             )
             operations.mark_superseded(self._settings.db_path, operation.operation_id)
+            if operation.kind == "script.execution.start":
+                scripts.complete_sync(self._settings.db_path, operation.operation_id)
 
     async def _heartbeat_loop(
         self, outbound: asyncio.Queue, state: _SessionState, heartbeat_seconds: int

@@ -9,7 +9,8 @@ public sealed class ApiFactory(
     string connectionString,
     bool migrateOnStartup = true,
     bool productionEnvironment = false,
-    bool includeTestAuth = true)
+    bool includeTestAuth = true,
+    string? storageRoot = null)
     : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -34,6 +35,8 @@ public sealed class ApiFactory(
                 values["Auth:Test:Audience"] = TestAuth.Audience;
                 values["Auth:Test:RsaPrivateKeyPem"] = TestAuth.PrivateKeyPem;
             }
+            values["Storage:Backend"] = "filesystem";
+            values["Storage:FilesystemRoot"] = storageRoot ?? Path.GetTempPath();
             config.AddInMemoryCollection(values);
         });
     }

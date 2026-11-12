@@ -372,6 +372,17 @@ public static class DeviceSocketEndpoints
         }
 
         var now = DateTimeOffset.UtcNow;
+        if (operation.Kind == "script.execution.start")
+        {
+            await db.Operations.Where(candidate => candidate.Id == operation.Id && candidate.State == OperationState.Queued)
+                .ExecuteUpdateAsync(update => update.SetProperty(candidate => candidate.State, OperationState.Accepted)
+                    .SetProperty(candidate => candidate.AcknowledgedAt, now)
+                    .SetProperty(candidate => candidate.UpdatedAt, now), cancellationToken);
+            await db.Entry(operation).ReloadAsync(cancellationToken);
+            if (OperationStates.IsTerminal(operation.State))
+                await SendOperationErrorAsync(manager, session, options, "state_conflict", $"The operation is already in the terminal state {operation.State}.");
+            return;
+        }
         if (operation.State == OperationState.Queued)
         {
             operation.State = OperationState.Accepted;
@@ -419,6 +430,11 @@ public static class DeviceSocketEndpoints
             return;
         }
 
+        if (operation.Kind == "script.execution.start")
+        {
+            await HandleScriptStartStatusAsync(db, manager, session, options, payload, operation, state, metrics, cancellationToken);
+            return;
+        }
         var now = DateTimeOffset.UtcNow;
         if (OperationStates.IsTerminal(operation.State))
         {
@@ -442,6 +458,56 @@ public static class DeviceSocketEndpoints
         if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
         logger.LogInformation("Operation {OperationId} reported {OperationState} for robot {RobotId} in session {SessionId}",
             operation.Id, state, session.RobotId, session.SessionId);
+    }
+
+    private static async Task HandleScriptStartStatusAsync(RingfourDbContext db, DeviceConnectionManager manager,
+        DeviceConnection session, JsonSerializerOptions options, JsonObject payload, Operation operation,
+        OperationState state, ConnectivityMetrics metrics, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM operations WHERE id = {operation.Id} FOR UPDATE", ct);
+        await db.Entry(operation).ReloadAsync(ct);
+        if (OperationStates.IsTerminal(operation.State))
+        {
+            if (operation.State != state)
+                await SendOperationErrorAsync(manager, session, options, "state_conflict", $"The operation is already in the terminal state {operation.State}.");
+            await transaction.CommitAsync(ct);
+            return;
+        }
+        var now = DateTimeOffset.UtcNow;
+        operation.State = state;
+        operation.UpdatedAt = now;
+        if (OperationStates.IsTerminal(state))
+        {
+            operation.Result = payload["result"]?.ToJsonString(options) ?? "{}";
+            if (state == OperationState.Failed)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM script_executions WHERE id = {operation.Id} FOR UPDATE", ct);
+                var execution = await db.ScriptExecutions.SingleOrDefaultAsync(candidate => candidate.Id == operation.Id, ct);
+                if (execution is not null && execution.State == "queued")
+                {
+                    execution.State = "failed";
+                    execution.UpdatedAt = now;
+                    var code = "execution_start_failed";
+                    if (payload["result"] is JsonObject result && result["error"] is JsonObject error &&
+                        error["code"] is JsonValue errorCode && errorCode.TryGetValue<string>(out var candidate) &&
+                        candidate is "execution_conflict" or "invalid_input" or "runner_unauthenticated" or "capacity_exceeded" or "not_found" or "runner_error")
+                        code = candidate;
+                    execution.Error = JsonSerializer.Serialize(new { code, message = "The device could not start the execution." }, options);
+                    db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = execution.Id,
+                        ActorUserId = execution.ActorUserId,
+                        State = "failed",
+                        OccurredAt = now
+                    });
+                }
+            }
+        }
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
     }
 
     private static async Task<Operation?> FindOperationAsync(

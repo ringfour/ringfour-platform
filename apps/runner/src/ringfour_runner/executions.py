@@ -15,6 +15,10 @@ from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import Version
+
+from . import artifacts
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -147,10 +151,22 @@ def valid_id(value):
 
 
 def valid_start(body):
-    if not isinstance(body, dict) or set(body) != {"execution_id", "robot_id", "revision_digest", "code_ref", "entrypoint"}:
+    required = {"execution_id", "robot_id", "revision_digest", "code_ref", "entrypoint"}
+    if not isinstance(body, dict) or set(body) not in (required, required | {"python_requirement", "lock_sha256"}):
         return False
     digest = body["revision_digest"]
-    return valid_id(body["execution_id"]) and valid_id(body["robot_id"]) and isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
+    if not (valid_id(body["execution_id"]) and valid_id(body["robot_id"]) and isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)):
+        return False
+    if "python_requirement" in body:
+        requirement, lock = body["python_requirement"], body["lock_sha256"]
+        if not isinstance(requirement, str) or not 1 <= len(requirement) <= 128 or not isinstance(lock, str) or len(lock) != 64 or any(c not in "0123456789abcdef" for c in lock):
+            return False
+        try:
+            if Version(".".join(map(str, sys.version_info[:3]))) not in SpecifierSet(requirement):
+                return False
+        except InvalidSpecifier:
+            return False
+    return True
 
 
 @router.post("/v1/executions")
@@ -175,6 +191,11 @@ async def start(request: Request):
         files, digest = bundle_files(request.app.state.settings, body["code_ref"], body["entrypoint"])
         if digest != body["revision_digest"]:
             raise ValueError("Bundle digest mismatch")
+        if "lock_sha256" in body:
+            lock = next((data for name, data in files if name == "requirements.lock"), None)
+            if lock is None or hashlib.sha256(lock).hexdigest() != body["lock_sha256"]:
+                raise ValueError("Dependency lock mismatch")
+            lock.decode("utf-8")
     except (ValueError, OSError, UnicodeError):
         return error(400, "invalid_input", "Invalid execution request or staged bundle.")
     settings = request.app.state.settings
@@ -250,9 +271,21 @@ async def run_execution(app, body, files):
             with connection(settings) as conn:
                 transition(conn, execution_id, "cancelled")
             return
+        if "lock_sha256" in body:
+            proc = await asyncio.create_subprocess_exec("uv", "pip", "sync", "--require-hashes", "--python", str(venv / "bin" / "python"), str(code / "requirements.lock"), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
+            app.state.processes[execution_id] = proc
+            await proc.communicate()
+            row = get_row(settings, execution_id)
+            if proc.returncode or row["stop_requested"]:
+                with connection(settings) as conn:
+                    transition(conn, execution_id, "cancelled" if row["stop_requested"] else "failed", failure=None if row["stop_requested"] else {"code": "preparation_failed", "message": "Unable to install the locked dependencies."})
+                return
         with connection(settings) as conn:
             transition(conn, execution_id, "running")
-        proc = await asyncio.create_subprocess_exec(str(venv / "bin" / "python"), str(code / body["entrypoint"]), cwd=str(code), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
+        artifact_dir = path / "artifact-output"
+        artifact_dir.mkdir(exist_ok=True)
+        environment = {**os.environ, "RINGFOUR_ARTIFACT_DIR": str(artifact_dir)}
+        proc = await asyncio.create_subprocess_exec(str(venv / "bin" / "python"), str(code / body["entrypoint"]), cwd=str(code), env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
         app.state.processes[execution_id] = proc
         if get_row(settings, execution_id)["stop_requested"] and proc.returncode is None:
             try:
@@ -265,6 +298,11 @@ async def run_execution(app, body, files):
         row = get_row(settings, execution_id)
         state = "cancelled" if row["stop_requested"] else "succeeded" if proc.returncode == 0 else "failed"
         failure = {"code": "process_failed", "message": "Execution exited with a nonzero code."} if state == "failed" else None
+        try:
+            artifacts.collect(artifact_dir, path / "artifact-snapshot")
+        except artifacts.ArtifactError:
+            state = "cancelled" if state == "cancelled" else "failed"
+            failure = {"code": "artifact_collection_failed", "message": "Execution artifacts could not be collected."}
         with connection(settings) as conn:
             transition(conn, execution_id, state, exit_code=proc.returncode, failure=failure)
     except Exception:
@@ -350,3 +388,43 @@ async def output(request: Request, execution_id: str, stream: str = "", offset: 
     return {"execution_id": execution_id, "stream": stream, "offset": start_offset, "next_offset": next_offset,
             "data_base64": base64.b64encode(data).decode(), "eof": row["state"] in TERMINAL and next_offset >= size,
             "truncated": bool(row[f"{stream}_truncated"])}
+
+
+@router.get("/v1/executions/{execution_id}/artifacts")
+async def artifact_list(request: Request, execution_id: str):
+    if not authorize(request):
+        return error(401, "unauthenticated", "Runner authentication required.")
+    row = get_row(request.app.state.settings, execution_id)
+    if not row:
+        return error(404, "not_found", "Execution not found.")
+    if row["state"] not in TERMINAL:
+        return error(409, "execution_not_terminal", "Execution is not terminal.")
+    directory = Path(request.app.state.settings.data_dir) / "executions" / execution_id / "artifact-snapshot"
+    return {"execution_id": execution_id, "artifacts": artifacts.listing(directory)}
+
+
+@router.get("/v1/executions/{execution_id}/artifacts/content")
+async def artifact_content(request: Request, execution_id: str, path: str = "", offset: str = "", limit: str = ""):
+    if not authorize(request):
+        return error(401, "unauthenticated", "Runner authentication required.")
+    try:
+        start_offset, chunk_limit = int(offset), int(limit)
+    except ValueError:
+        return error(400, "invalid_input", "Invalid artifact range or path.")
+    if not artifacts.valid_path(path) or not 0 <= start_offset <= artifacts.MAX_FILE_BYTES or not 1 <= chunk_limit <= 16384:
+        return error(400, "invalid_input", "Invalid artifact range or path.")
+    row = get_row(request.app.state.settings, execution_id)
+    if not row:
+        return error(404, "not_found", "Execution not found.")
+    if row["state"] not in TERMINAL:
+        return error(409, "execution_not_terminal", "Execution is not terminal.")
+    directory = Path(request.app.state.settings.data_dir) / "executions" / execution_id / "artifact-snapshot"
+    entry = next((item for item in artifacts.listing(directory) if item["path"] == path), None)
+    if entry is None:
+        return error(404, "not_found", "Artifact not found.")
+    with (directory / "files" / path).open("rb") as source:
+        source.seek(start_offset)
+        data = source.read(chunk_limit)
+    next_offset = start_offset + len(data)
+    return {"execution_id": execution_id, "path": path, "offset": start_offset, "next_offset": next_offset,
+            "data_base64": base64.b64encode(data).decode(), "eof": next_offset >= entry["size"]}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/scripts/v1/create-run-request.schema.json",
+  "title": "Run an immutable script revision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["revision_id"],
+  "properties": {
+    "revision_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}
+  }
+}

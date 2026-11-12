@@ -17,6 +17,8 @@
     "compose:clean": "docker compose -f infra/compose/docker-compose.yml down -v --remove-orphans",
     "compose:logs": "docker compose -f infra/compose/docker-compose.yml logs -f",
     "test:e2e:04": "bash tests/e2e/04-runner.sh",
-    "test:e2e:pairing": "bash tests/e2e/02-pairing.sh"
+    "test:e2e:pairing": "bash tests/e2e/02-pairing.sh",
+    "test:e2e:05": "bash tests/e2e/05-scripts.sh",
+    "test:e2e:garage": "bash tests/e2e/05-garage.sh"
   }
 }

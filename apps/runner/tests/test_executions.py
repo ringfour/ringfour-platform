@@ -1,11 +1,14 @@
 import base64
+import hashlib
 import sqlite3
 import time
 import uuid
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from ringfour_runner.artifacts import open_regular_under
 from ringfour_runner.config import Settings
 from ringfour_runner.executions import bundle_files
 from ringfour_runner.main import create_app
@@ -110,3 +113,84 @@ def test_preparation_failure_is_explicit(tmp_path, monkeypatch):
         final = wait_terminal(client, body["execution_id"], headers)
         assert final["state"] == "failed"
         assert final["error"]["code"] == "preparation_failed"
+
+
+def test_artifact_snapshot_persists_and_reads_bounded_chunks(tmp_path):
+    settings, body = setup(tmp_path, "import os,pathlib\np=pathlib.Path(os.environ['RINGFOUR_ARTIFACT_DIR'])/'sub'\np.mkdir()\n(p/'report.txt').write_text('hello')\n")
+    headers = {"authorization": "Bearer test-secret"}
+    execution_id = body["execution_id"]
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/v1/executions", json=body, headers=headers).status_code == 201
+        assert wait_terminal(client, execution_id, headers)["state"] == "succeeded"
+        listing = client.get(f"/v1/executions/{execution_id}/artifacts", headers=headers).json()
+        assert listing["artifacts"] == [{"path": "sub/report.txt", "size": 5, "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"}]
+        params = {"path": "sub/report.txt", "offset": 1, "limit": 2}
+        chunk = client.get(f"/v1/executions/{execution_id}/artifacts/content", params=params, headers=headers).json()
+        assert base64.b64decode(chunk["data_base64"]) == b"el"
+        assert chunk["next_offset"] == 3 and not chunk["eof"]
+        assert client.get(f"/v1/executions/{execution_id}/artifacts/content", params={**params, "path": "../secret"}, headers=headers).status_code == 400
+        assert client.get(f"/v1/executions/{execution_id}/artifacts", headers={}).status_code == 401
+    with TestClient(create_app(settings)) as client:
+        assert client.get(f"/v1/executions/{execution_id}/artifacts", headers=headers).json() == listing
+        assert client.get(f"/v1/executions/{execution_id}/artifacts/content", params={**params, "offset": 5}, headers=headers).json()["eof"]
+
+
+def test_invalid_artifacts_fail_without_exposing_partial_snapshot(tmp_path):
+    settings, body = setup(tmp_path, "import os,pathlib\np=pathlib.Path(os.environ['RINGFOUR_ARTIFACT_DIR'])\n(p/'good').write_text('ok')\n(p/'bad').symlink_to('/etc/passwd')\n")
+    headers = {"authorization": "Bearer test-secret"}
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/v1/executions", json=body, headers=headers).status_code == 201
+        final = wait_terminal(client, body["execution_id"], headers)
+        assert final["state"] == "failed" and final["error"]["code"] == "artifact_collection_failed"
+        listing = client.get(f"/v1/executions/{body['execution_id']}/artifacts", headers=headers).json()
+        assert listing["artifacts"] == []
+
+
+def test_artifact_limits_and_not_terminal_response(tmp_path):
+    settings, body = setup(tmp_path, "import os,pathlib,time\np=pathlib.Path(os.environ['RINGFOUR_ARTIFACT_DIR'])\n(p/'too-big').write_bytes(b'x' * 262145)\ntime.sleep(0.5)\n")
+    headers = {"authorization": "Bearer test-secret"}
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/v1/executions", json=body, headers=headers).status_code == 201
+        response = client.get(f"/v1/executions/{body['execution_id']}/artifacts", headers=headers)
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "execution_not_terminal"
+        final = wait_terminal(client, body["execution_id"], headers)
+        assert final["state"] == "failed" and final["error"]["code"] == "artifact_collection_failed"
+        assert client.get(f"/v1/executions/{body['execution_id']}/artifacts", headers=headers).json()["artifacts"] == []
+
+
+def test_artifact_open_refuses_symlinked_parent(tmp_path):
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "secret").write_text("private")
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(OSError):
+        open_regular_under(root, "link/secret")
+
+
+def test_script_lock_and_python_requirement(tmp_path):
+    settings, body = setup(tmp_path, "print('locked')\n")
+    lock = Path(settings.stage_dir) / "test" / "requirements.lock"
+    lock.write_bytes(b"")
+    _, digest = bundle_files(settings, "test", "main.py")
+    body = {**body, "revision_digest": digest, "python_requirement": ">=3.13,<3.14", "lock_sha256": hashlib.sha256(b"").hexdigest()}
+    headers = {"authorization": "Bearer test-secret"}
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/v1/executions", json={**body, "python_requirement": ">=99"}, headers=headers).status_code == 400
+        assert client.post("/v1/executions", json={**body, "lock_sha256": "0" * 64}, headers=headers).status_code == 400
+        assert client.post("/v1/executions", json=body, headers=headers).status_code == 201
+        result = wait_terminal(client, body["execution_id"], headers)
+        assert result["state"] == "succeeded" and result["exit_code"] == 0
+
+
+def test_execution_retention_capacity_refuses_new_work(tmp_path):
+    settings, body = setup(tmp_path, "print('hello')\n")
+    with TestClient(create_app(settings)) as client:
+        with sqlite3.connect(Path(settings.data_dir) / "executions.db") as conn:
+            for _ in range(100):
+                conn.execute("INSERT INTO executions(execution_id,robot_id,request,revision_digest,state,created_at,updated_at) VALUES (?, ?, '{}', ?, 'succeeded', '2026-01-01', '2026-01-01')",
+                    (str(uuid.uuid4()), body["robot_id"], body["revision_digest"]))
+        response = client.post("/v1/executions", json=body, headers={"authorization": "Bearer test-secret"})
+        assert response.status_code == 503 and response.json()["error"]["code"] == "capacity_exceeded"

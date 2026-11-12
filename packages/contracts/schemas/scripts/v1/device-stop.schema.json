@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/scripts/v1/device-stop.schema.json",
+  "title": "Device script stop operation payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["execution_id"],
+  "properties": {
+    "execution_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}
+  }
+}

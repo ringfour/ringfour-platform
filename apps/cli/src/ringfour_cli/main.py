@@ -1,7 +1,13 @@
+import base64
+import codecs
+import hashlib
 import os
+import time
+import uuid
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 import typer
@@ -16,6 +22,7 @@ from .config import (
     selected_org,
     update_config,
 )
+from .script_bundle import build_script_bundle
 
 app = typer.Typer(
     name="ringfour-cli",
@@ -28,6 +35,10 @@ robot_app = typer.Typer(help="Manage robots and their credentials.", no_args_is_
 app.add_typer(robot_app, name="robot")
 daemon_app = typer.Typer(help="Drive the local device daemon.", no_args_is_help=True)
 app.add_typer(daemon_app, name="daemon")
+execution_app = typer.Typer(help="Inspect and stop script executions.", no_args_is_help=True)
+app.add_typer(execution_app, name="execution")
+artifact_app = typer.Typer(help="Download script artifacts.", no_args_is_help=True)
+app.add_typer(artifact_app, name="artifact")
 console = Console()
 
 # name -> (env var, default base URL)
@@ -130,9 +141,10 @@ def _api_request(
     if tokens is None:
         console.print("[red]Not logged in. Run `ringfour-cli login` first.[/red]")
         raise typer.Exit(code=1)
+    extra_headers = kwargs.pop("headers", {})
     with httpx.Client(base_url=settings.api_url, timeout=15.0) as client:
         response = client.request(
-            method, path, headers={"Authorization": f"Bearer {tokens['access_token']}"}, **kwargs
+            method, path, headers={**extra_headers, "Authorization": f"Bearer {tokens['access_token']}"}, **kwargs
         )
         if response.status_code == 401:
             try:
@@ -144,7 +156,7 @@ def _api_request(
             response = client.request(
                 method,
                 path,
-                headers={"Authorization": f"Bearer {tokens['access_token']}"},
+                headers={**extra_headers, "Authorization": f"Bearer {tokens['access_token']}"},
                 **kwargs,
             )
     if response.status_code >= 400:
@@ -155,6 +167,139 @@ def _api_request(
             console.print(f"[red]Request failed with status {response.status_code}.[/red]")
         raise typer.Exit(code=1)
     return response
+
+
+def _execution_logs(settings, store, execution_id: str, follow: bool) -> dict:
+    offsets = {"stdout": 0, "stderr": 0}
+    decoders = {name: codecs.getincrementaldecoder("utf-8")("replace") for name in offsets}
+    while True:
+        execution = _api_request("GET", f"/v1/executions/{execution_id}", settings, store).json()
+        eof = {}
+        for stream in ("stdout", "stderr"):
+            while True:
+                output = _api_request("GET", f"/v1/executions/{execution_id}/output", settings, store,
+                    params={"stream": stream, "offset": offsets[stream], "limit": 16384}).json()
+                data = base64.b64decode(output["data_base64"], validate=True)
+                if output["offset"] != offsets[stream] or output["next_offset"] != offsets[stream] + len(data):
+                    raise ValueError("Server returned inconsistent output offsets.")
+                offsets[stream] = output["next_offset"]
+                eof[stream] = output["eof"]
+                text = decoders[stream].decode(data, final=output["eof"])
+                if text:
+                    typer.echo(text, nl=False, err=stream == "stderr")
+                if not data or output["eof"]:
+                    break
+        terminal = execution["state"] in ("succeeded", "failed", "cancelled")
+        if not follow or (terminal and all(eof.values())):
+            return execution
+        time.sleep(1)
+
+
+@app.command("run")
+def run_script(
+    script: Path,
+    robot: str = typer.Option(..., "--robot", help="Target robot ID."),
+    org: str | None = typer.Option(None, "--org", help="Organization ID (default: selected org)."),
+    lock: Path | None = typer.Option(None, "--lock", help="Hash-pinned requirements lock file."),  # noqa: B008
+    python: str = typer.Option(">=3.13,<3.14", "--python", help="Required Python version."),
+    detach: bool = typer.Option(False, "--detach", help="Return after the run is accepted."),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key", help="Reuse this key to retry the same submission."),
+) -> None:
+    """Upload and run a Python script on an enrolled robot."""
+    settings = _settings()
+    store = auth.TokenStore()
+    org_id = _resolve_org(settings, org)
+    key = idempotency_key or str(uuid.uuid4())
+    if not key.strip() or len(key) > 180:
+        raise typer.BadParameter("Must be nonblank and at most 180 characters.", param_hint="--idempotency-key")
+    try:
+        bundle = build_script_bundle(script, lock)
+    except (OSError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+    typer.echo(f"Submission key: {key}", err=True)
+    revision = _api_request("POST", "/v1/script-revisions", settings, store,
+        headers={"Idempotency-Key": key + ":revision"}, json=bundle.revision_request(org_id, python)).json()
+    try:
+        revision_id = str(uuid.UUID(revision["id"]))
+        if revision_id != revision["id"] or revision["upload_url"] != f"/v1/script-revisions/{revision_id}/content":
+            raise ValueError("Unexpected revision upload URL")
+    except (KeyError, ValueError, TypeError, AttributeError) as error:
+        console.print("[red]The Platform returned an invalid revision response.[/red]")
+        raise typer.Exit(1) from error
+    if revision["state"] != "ready":
+        _api_request("PUT", revision["upload_url"], settings, store, content=bundle.archive,
+            headers={"Content-Type": "application/zip"})
+        _api_request("POST", f"/v1/script-revisions/{revision['id']}/finalize", settings, store)
+    accepted = _api_request("POST", f"/v1/robots/{robot}/script-runs", settings, store,
+        headers={"Idempotency-Key": key + ":run"}, json={"revision_id": revision["id"]}).json()
+    execution_id = accepted["execution_id"]
+    typer.echo(f"Execution: {execution_id}", err=True)
+    if detach:
+        return
+    try:
+        result = _execution_logs(settings, store, execution_id, True)
+    except KeyboardInterrupt:
+        typer.echo("Interrupted; the execution continues. Use `execution stop` to stop it.", err=True)
+        raise typer.Exit(130) from None
+    if result["state"] != "succeeded":
+        typer.echo(f"Execution {result['state']}", err=True)
+        code = result.get("exit_code")
+        raise typer.Exit(code if isinstance(code, int) and 1 <= code <= 125 else 1)
+
+
+@app.command("logs")
+def script_logs(execution_id: str, follow: bool = typer.Option(False, "--follow", "-f")) -> None:
+    """Read stdout and stderr; optionally follow until the execution finishes."""
+    try:
+        _execution_logs(_settings(), auth.TokenStore(), execution_id, follow)
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
+
+
+@execution_app.command("show")
+def execution_show(execution_id: str) -> None:
+    """Show durable execution state and author."""
+    body = _api_request("GET", f"/v1/executions/{execution_id}", _settings(), auth.TokenStore()).json()
+    console.print_json(data=body)
+
+
+@execution_app.command("stop")
+def execution_stop(execution_id: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+    """Request a stop; inspect the execution for its final state."""
+    key = idempotency_key or str(uuid.uuid4())
+    body = _api_request("POST", f"/v1/executions/{execution_id}/stop", _settings(), auth.TokenStore(),
+        headers={"Idempotency-Key": key}).json()
+    console.print_json(data=body)
+
+
+@artifact_app.command("download")
+def artifact_download(execution_id: str, path: str, output: Path = typer.Option(..., "--output", "-o")) -> None:  # noqa: B008
+    """Download and verify one artifact without overwriting a local file."""
+    settings, store = _settings(), auth.TokenStore()
+    listing = _api_request("GET", f"/v1/executions/{execution_id}/artifacts", settings, store).json()
+    item = next((item for item in listing["artifacts"] if item["path"] == path), None)
+    if item is None:
+        console.print("[red]Artifact not found.[/red]")
+        raise typer.Exit(1)
+    data = _api_request("GET", f"/v1/executions/{execution_id}/artifacts/content", settings, store, params={"path": path}).content
+    if len(data) != item["size"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+        console.print("[red]Downloaded artifact failed verification.[/red]")
+        raise typer.Exit(1)
+    try:
+        with output.open("xb") as target:
+            target.write(data)
+    except OSError as error:
+        console.print(f"[red]Cannot write artifact: {error}[/red]")
+        raise typer.Exit(1) from error
+    console.print(f"Saved {output}")
+
+
+@artifact_app.command("list")
+def artifact_list(execution_id: str) -> None:
+    """List verified artifacts available for an execution."""
+    body = _api_request("GET", f"/v1/executions/{execution_id}/artifacts", _settings(), auth.TokenStore()).json()
+    console.print_json(data=body)
 
 
 @app.command()

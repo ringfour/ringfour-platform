@@ -428,6 +428,232 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("robot_presence", (string)null);
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptArtifact", b =>
+                {
+                    b.Property<Guid>("ExecutionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("execution_id");
+
+                    b.Property<string>("Path")
+                        .HasColumnType("text")
+                        .HasColumnName("path");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("sha256");
+
+                    b.Property<int>("Size")
+                        .HasColumnType("integer")
+                        .HasColumnName("size");
+
+                    b.HasKey("ExecutionId", "Path");
+
+                    b.ToTable("script_artifacts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_script_artifact_size", "size BETWEEN 0 AND 262144");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptExecution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("error");
+
+                    b.Property<int?>("ExitCode")
+                        .HasColumnType("integer")
+                        .HasColumnName("exit_code");
+
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("revision_id");
+
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<byte[]>("Stderr")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("stderr");
+
+                    b.Property<bool>("StderrTruncated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("stderr_truncated");
+
+                    b.Property<byte[]>("Stdout")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("stdout");
+
+                    b.Property<bool>("StdoutTruncated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("stdout_truncated");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("RevisionId");
+
+                    b.HasIndex("RobotId")
+                        .IsUnique()
+                        .HasFilter("state IN ('queued', 'preparing', 'running')");
+
+                    b.ToTable("script_executions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_script_execution_output", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536");
+
+                            t.HasCheckConstraint("ck_script_execution_state", "state IN ('queued', 'preparing', 'running', 'succeeded', 'failed', 'cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptExecutionEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<Guid>("ExecutionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("execution_id");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("ExecutionId", "State")
+                        .IsUnique();
+
+                    b.ToTable("script_execution_events", (string)null);
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ArchiveSha256")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("archive_sha256");
+
+                    b.Property<int>("ArchiveSize")
+                        .HasColumnType("integer")
+                        .HasColumnName("archive_size");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Entrypoint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("entrypoint");
+
+                    b.Property<DateTimeOffset?>("FinalizedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finalized_at");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("LockSha256")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("lock_sha256");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("PythonRequirement")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("python_requirement");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("request_fingerprint");
+
+                    b.Property<string>("RevisionDigest")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("revision_digest");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<DateTimeOffset?>("UploadCleanedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("upload_cleaned_at");
+
+                    b.Property<DateTimeOffset>("UploadExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("upload_expires_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("CreatedByUserId", "OrganizationId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("script_revisions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_script_revision_size", "archive_size BETWEEN 1 AND 1048576");
+
+                            t.HasCheckConstraint("ck_script_revision_state", "(state = 'uploading' AND finalized_at IS NULL) OR (state = 'ready' AND finalized_at IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -593,6 +819,90 @@ namespace Ringfour.Api.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Robot");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptArtifact", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.ScriptExecution", "Execution")
+                        .WithMany()
+                        .HasForeignKey("ExecutionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Execution");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptExecution", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Operation", "Operation")
+                        .WithOne()
+                        .HasForeignKey("Ringfour.Api.Persistence.ScriptExecution", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.ScriptRevision", "Revision")
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Robot", "Robot")
+                        .WithMany()
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Operation");
+
+                    b.Navigation("Revision");
+
+                    b.Navigation("Robot");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptExecutionEvent", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.ScriptExecution", "Execution")
+                        .WithMany()
+                        .HasForeignKey("ExecutionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Execution");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.ScriptRevision", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.Organization", b =>

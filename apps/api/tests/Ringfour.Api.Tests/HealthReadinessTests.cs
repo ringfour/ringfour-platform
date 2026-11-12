@@ -23,6 +23,20 @@ public sealed class HealthReadinessTests(PostgresFixture postgres)
         Assert.Equal(
             "ok",
             json.RootElement.GetProperty("checks").GetProperty("postgresql").GetString());
+        Assert.Equal("ok", json.RootElement.GetProperty("checks").GetProperty("storage").GetString());
+    }
+
+    [Fact]
+    public async Task Readiness_fails_when_storage_is_misconfigured()
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString, storageRoot: "relative-storage-is-invalid");
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/health/ready");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("fail", body.RootElement.GetProperty("checks").GetProperty("storage").GetString());
+        Assert.Equal("ok", body.RootElement.GetProperty("checks").GetProperty("postgresql").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
     }
 
     [Fact]

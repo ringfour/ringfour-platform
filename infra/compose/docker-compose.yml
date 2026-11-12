@@ -27,11 +27,15 @@ services:
       # Auth0 tenant values come from .auth.env (symlinked as .env next to this file).
       Auth0__Domain: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN; see .auth.env}
       Auth0__Audience: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
+      Storage__Backend: filesystem
+      Storage__FilesystemRoot: /storage
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8080:8080"
+    volumes:
+      - api-storage:/storage
 
   runner:
     build: ../../apps/runner
@@ -86,3 +90,4 @@ volumes:
   runner-data:
   daemon-data:
   staged-data:
+  api-storage:

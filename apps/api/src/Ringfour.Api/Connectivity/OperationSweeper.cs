@@ -66,6 +66,7 @@ public sealed class OperationSweeper(
                 (operation.State == OperationState.Queued ||
                  operation.State == OperationState.Accepted ||
                  operation.State == OperationState.Running) &&
+                operation.Kind != "script.execution.start" &&
                 operation.DeadlineAt < now)
             .ToListAsync(cancellationToken);
         foreach (var operation in expired)
@@ -78,6 +79,43 @@ public sealed class OperationSweeper(
         {
             await db.SaveChangesAsync(cancellationToken);
             foreach (var _ in expired) metrics?.Terminal("failed");
+        }
+
+        var scriptIds = await db.Operations.AsNoTracking().Where(operation => operation.Kind == "script.execution.start" &&
+            operation.State == OperationState.Queued && operation.DeadlineAt < now).Select(operation => operation.Id).ToListAsync(cancellationToken);
+        foreach (var id in scriptIds)
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM operations WHERE id = {id} FOR UPDATE", cancellationToken);
+            var operation = await db.Operations.SingleAsync(candidate => candidate.Id == id, cancellationToken);
+            await db.Entry(operation).ReloadAsync(cancellationToken);
+            if (operation.State != OperationState.Queued || operation.DeadlineAt >= now)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                continue;
+            }
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM script_executions WHERE id = {id} FOR UPDATE", cancellationToken);
+            var execution = await db.ScriptExecutions.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+            operation.State = OperationState.Failed;
+            operation.UpdatedAt = now;
+            operation.Result = """{"error":{"code":"deadline_exceeded","message":"The operation deadline passed before completion."}}""";
+            if (execution is not null && execution.State == "queued")
+            {
+                execution.State = "failed";
+                execution.UpdatedAt = now;
+                execution.Error = """{"code":"interrupted_unknown_outcome","message":"The device did not confirm the execution start before the deadline."}""";
+                db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
+                {
+                    Id = Guid.NewGuid(),
+                    ExecutionId = execution.Id,
+                    ActorUserId = execution.ActorUserId,
+                    State = "failed",
+                    OccurredAt = now
+                });
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            metrics?.Terminal("failed");
         }
 
         var connectedRobotIds = manager.All().Select(session => session.RobotId).ToList();

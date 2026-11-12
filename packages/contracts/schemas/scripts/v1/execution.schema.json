@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/scripts/v1/execution.schema.json",
+  "title": "Hosted script execution",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "robot_id", "revision_id", "actor_user_id", "state", "created_at", "updated_at", "exit_code", "error"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "robot_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "revision_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "actor_user_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "state": {"enum": ["queued", "preparing", "running", "succeeded", "failed", "cancelled"]},
+    "created_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "updated_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "exit_code": {"type": ["integer", "null"]},
+    "error": {"type": ["object", "null"], "required": ["code", "message"], "additionalProperties": false,
+      "properties": {"code": {"type": "string", "maxLength": 100}, "message": {"type": "string", "maxLength": 500}}}
+  }
+}

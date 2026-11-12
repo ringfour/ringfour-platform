@@ -1,0 +1,8 @@
+{
+  "revision_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "archive_size": 1024,
+  "revision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "entrypoint": "hello.py", "python_requirement": ">=3.13,<3.14",
+  "lock_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

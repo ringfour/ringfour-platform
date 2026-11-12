@@ -12,6 +12,61 @@ async function loadJson(relativePath) {
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validators = new Map();
 
+test("Runner artifact fixtures enforce bounds", async () => {
+  const list = await validatorFor("schemas/runner/v1/artifact-list.schema.json");
+  const chunk = await validatorFor("schemas/runner/v1/artifact-chunk.schema.json");
+  const listing = await loadJson("fixtures/runner/v1/artifact-list.json");
+  const output = await loadJson("fixtures/runner/v1/artifact-chunk.json");
+  assert.ok(list(listing));
+  assert.ok(chunk(output));
+  assert.equal(list({ ...listing, artifacts: Array(17).fill(listing.artifacts[0]) }), false);
+  assert.equal(chunk({ ...output, next_offset: 262145 }), false);
+});
+
+test("script revision request enforces upload bounds", async () => {
+  const validate = await validatorFor("schemas/scripts/v1/create-revision-request.schema.json");
+  const request = await loadJson("fixtures/scripts/v1/create-revision.json");
+  assert.ok(validate(request));
+  assert.equal(validate({ ...request, archive_size: 1048577 }), false);
+  assert.equal(validate({ ...request, archive_sha256: "wrong" }), false);
+  assert.equal(validate({ ...request, unexpected: true }), false);
+});
+
+test("script run fixtures validate and reject extra fields", async () => {
+  const request = await validatorFor("schemas/scripts/v1/create-run-request.schema.json");
+  const response = await validatorFor("schemas/scripts/v1/create-run-response.schema.json");
+  const input = await loadJson("fixtures/scripts/v1/create-run.json");
+  assert.ok(request(input));
+  assert.ok(response(await loadJson("fixtures/scripts/v1/create-run-response.json")));
+  assert.equal(request({ ...input, revision_id: "bad" }), false);
+  assert.equal(request({ ...input, extra: true }), false);
+});
+
+test("script revision response fixture validates", async () => {
+  const revision = await validatorFor("schemas/scripts/v1/revision.schema.json");
+  const body = await loadJson("fixtures/scripts/v1/revision-uploading.json");
+  assert.ok(revision(body));
+  assert.equal(revision({ ...body, state: "unknown" }), false);
+});
+
+test("script execution and device status fixtures validate", async () => {
+  const execution = await validatorFor("schemas/scripts/v1/execution.schema.json");
+  const status = await validatorFor("schemas/scripts/v1/device-status.schema.json");
+  const body = await loadJson("fixtures/scripts/v1/device-status.json");
+  assert.ok(execution(await loadJson("fixtures/scripts/v1/execution.json")));
+  assert.ok(status(body));
+  assert.equal(status({ ...body, state: "unknown" }), false);
+});
+
+test("device script command fixtures validate", async () => {
+  const start = await validatorFor("schemas/scripts/v1/device-start.schema.json");
+  const stop = await validatorFor("schemas/scripts/v1/device-stop.schema.json");
+  const body = await loadJson("fixtures/scripts/v1/device-start.json");
+  assert.ok(start(body));
+  assert.ok(stop(await loadJson("fixtures/scripts/v1/device-stop.json")));
+  assert.equal(start({ ...body, entrypoint: "../hello.py" }), false);
+});
+
 async function validatorFor(relativePath) {
   if (!validators.has(relativePath)) {
     validators.set(relativePath, ajv.compile(await loadJson(relativePath)));

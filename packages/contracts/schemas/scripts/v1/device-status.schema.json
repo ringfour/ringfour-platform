@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/scripts/v1/device-status.schema.json",
+  "title": "Machine execution status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "exit_code", "error", "stdout_truncated", "stderr_truncated"],
+  "properties": {
+    "state": {"enum": ["queued", "preparing", "running", "succeeded", "failed", "cancelled"]},
+    "exit_code": {"type": ["integer", "null"]},
+    "error": {"type": ["object", "null"], "required": ["code", "message"], "additionalProperties": false,
+      "properties": {"code": {"type": "string", "maxLength": 100}, "message": {"type": "string", "maxLength": 500}}},
+    "stdout_truncated": {"type": "boolean"},
+    "stderr_truncated": {"type": "boolean"}
+  }
+}

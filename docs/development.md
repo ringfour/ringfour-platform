@@ -124,6 +124,17 @@ For a separate Agent and empty ROS stack, see `infra/robot/README.md`.
 Balena preparation is described in `infra/balena/README.md`. The non-motion
 physical device smoke and its limits are recorded in `docs/evidence/04.md`.
 
+## Script execution (milestone 05)
+
+The API stores uploaded revisions and verified artifacts through a private
+filesystem or S3-compatible backend. Local Compose uses the persistent
+`api-storage` volume; hosted configuration and CLI examples are in
+`docs/human-testing/05.md`. `tests/e2e/05-scripts.sh` runs a disposable full
+stack with real Auth0 login; set `RINGFOUR_TEST_STORAGE=garage` to exercise
+Garage. The script does not remove or reset the existing development stack.
+See `docs/scripts-contract.md` and `docs/evidence/05.md` for the new contracts,
+limits, restart behavior and recorded tests.
+
 ## Device connectivity and operations (milestone 03)
 
 The daemon opens an authenticated WebSocket to `GET /v1/device/connect`

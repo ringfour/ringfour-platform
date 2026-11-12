@@ -72,6 +72,38 @@ paths:
               schema: { $ref: ../schemas/runner/v1/output.schema.json }
         '401': { description: Missing or incorrect Runner credential }
         '404': { description: Unknown execution }
+  /v1/executions/{execution_id}/artifacts:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: List the immutable artifact snapshot after execution
+      responses:
+        '200':
+          description: Snapshot metadata
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/artifact-list.schema.json }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown execution }
+        '409': { description: Execution is not terminal }
+  /v1/executions/{execution_id}/artifacts/content:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
+      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 262144 } }
+      - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 16384 } }
+    get:
+      summary: Read a bounded artifact chunk
+      responses:
+        '200':
+          description: Byte range from the immutable snapshot
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/artifact-chunk.schema.json }
+        '400': { description: Invalid path or byte range }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown execution or artifact }
+        '409': { description: Execution is not terminal }
 components:
   securitySchemes:
     runnerBearer: { type: http, scheme: bearer }

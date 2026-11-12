@@ -1,0 +1,16 @@
+{
+  "id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "organization_id": "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d",
+  "created_by_user_id": "a50f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "state": "uploading",
+  "archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "archive_size": 1024,
+  "revision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "entrypoint": "hello.py",
+  "python_requirement": ">=3.13,<3.14",
+  "lock_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "upload_url": "/v1/script-revisions/7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e/content",
+  "upload_expires_at": "2026-11-12T12:15:00Z",
+  "created_at": "2026-11-12T12:00:00Z",
+  "finalized_at": null
+}

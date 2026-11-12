@@ -16,9 +16,89 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<RobotPresence> RobotPresences => Set<RobotPresence>();
     public DbSet<Operation> Operations => Set<Operation>();
     public DbSet<OperationIdempotencyRecord> OperationIdempotencyRecords => Set<OperationIdempotencyRecord>();
+    public DbSet<ScriptRevision> ScriptRevisions => Set<ScriptRevision>();
+    public DbSet<ScriptExecution> ScriptExecutions => Set<ScriptExecution>();
+    public DbSet<ScriptArtifact> ScriptArtifacts => Set<ScriptArtifact>();
+    public DbSet<ScriptExecutionEvent> ScriptExecutionEvents => Set<ScriptExecutionEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ScriptExecutionEvent>(entity =>
+        {
+            entity.ToTable("script_execution_events");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
+            entity.Property(item => item.ActorUserId).HasColumnName("actor_user_id");
+            entity.Property(item => item.State).HasColumnName("state");
+            entity.Property(item => item.OccurredAt).HasColumnName("occurred_at");
+            entity.HasIndex(item => new { item.ExecutionId, item.State }).IsUnique();
+            entity.HasOne(item => item.Execution).WithMany().HasForeignKey(item => item.ExecutionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ScriptExecution>(entity =>
+        {
+            entity.ToTable("script_executions");
+            entity.HasKey(execution => execution.Id);
+            entity.Property(execution => execution.Id).HasColumnName("id");
+            entity.Property(execution => execution.RobotId).HasColumnName("robot_id");
+            entity.Property(execution => execution.RevisionId).HasColumnName("revision_id");
+            entity.Property(execution => execution.ActorUserId).HasColumnName("actor_user_id");
+            entity.Property(execution => execution.State).HasColumnName("state");
+            entity.Property(execution => execution.CreatedAt).HasColumnName("created_at");
+            entity.Property(execution => execution.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(execution => execution.ExitCode).HasColumnName("exit_code");
+            entity.Property(execution => execution.Error).HasColumnName("error").HasColumnType("jsonb");
+            entity.Property(execution => execution.Stdout).HasColumnName("stdout");
+            entity.Property(execution => execution.Stderr).HasColumnName("stderr");
+            entity.Property(execution => execution.StdoutTruncated).HasColumnName("stdout_truncated");
+            entity.Property(execution => execution.StderrTruncated).HasColumnName("stderr_truncated");
+            entity.HasIndex(execution => execution.RobotId).IsUnique().HasFilter("state IN ('queued', 'preparing', 'running')");
+            entity.HasOne(execution => execution.Robot).WithMany().HasForeignKey(execution => execution.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(execution => execution.Revision).WithMany().HasForeignKey(execution => execution.RevisionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(execution => execution.Actor).WithMany().HasForeignKey(execution => execution.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(execution => execution.Operation).WithOne().HasForeignKey<ScriptExecution>(execution => execution.Id).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_state", "state IN ('queued', 'preparing', 'running', 'succeeded', 'failed', 'cancelled')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_output", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536"));
+        });
+        modelBuilder.Entity<ScriptArtifact>(entity =>
+        {
+            entity.ToTable("script_artifacts");
+            entity.HasKey(artifact => new { artifact.ExecutionId, artifact.Path });
+            entity.Property(artifact => artifact.ExecutionId).HasColumnName("execution_id");
+            entity.Property(artifact => artifact.Path).HasColumnName("path");
+            entity.Property(artifact => artifact.Size).HasColumnName("size");
+            entity.Property(artifact => artifact.Sha256).HasColumnName("sha256");
+            entity.HasOne(artifact => artifact.Execution).WithMany().HasForeignKey(artifact => artifact.ExecutionId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_size", "size BETWEEN 0 AND 262144"));
+        });
+        modelBuilder.Entity<ScriptRevision>(entity =>
+        {
+            entity.ToTable("script_revisions");
+            entity.HasKey(revision => revision.Id);
+            entity.Property(revision => revision.Id).HasColumnName("id");
+            entity.Property(revision => revision.OrganizationId).HasColumnName("organization_id");
+            entity.Property(revision => revision.CreatedByUserId).HasColumnName("created_by_user_id");
+            entity.Property(revision => revision.State).HasColumnName("state");
+            entity.Property(revision => revision.ArchiveSha256).HasColumnName("archive_sha256");
+            entity.Property(revision => revision.ArchiveSize).HasColumnName("archive_size");
+            entity.Property(revision => revision.RevisionDigest).HasColumnName("revision_digest");
+            entity.Property(revision => revision.Entrypoint).HasColumnName("entrypoint");
+            entity.Property(revision => revision.PythonRequirement).HasColumnName("python_requirement");
+            entity.Property(revision => revision.LockSha256).HasColumnName("lock_sha256");
+            entity.Property(revision => revision.IdempotencyKey).HasColumnName("idempotency_key");
+            entity.Property(revision => revision.RequestFingerprint).HasColumnName("request_fingerprint");
+            entity.Property(revision => revision.CreatedAt).HasColumnName("created_at");
+            entity.Property(revision => revision.UploadExpiresAt).HasColumnName("upload_expires_at");
+            entity.Property(revision => revision.FinalizedAt).HasColumnName("finalized_at");
+            entity.Property(revision => revision.UploadCleanedAt).HasColumnName("upload_cleaned_at");
+            entity.HasIndex(revision => new { revision.CreatedByUserId, revision.OrganizationId, revision.IdempotencyKey }).IsUnique();
+            entity.HasIndex(revision => revision.OrganizationId);
+            entity.HasOne(revision => revision.Organization).WithMany().HasForeignKey(revision => revision.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(revision => revision.CreatedBy).WithMany().HasForeignKey(revision => revision.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_revision_state", "(state = 'uploading' AND finalized_at IS NULL) OR (state = 'ready' AND finalized_at IS NOT NULL)"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_revision_size", "archive_size BETWEEN 1 AND 1048576"));
+        });
         modelBuilder.Entity<User>(entity =>
         {
             entity.ToTable("users");

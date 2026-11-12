@@ -8,6 +8,7 @@ using Ringfour.Api.Health;
 using Ringfour.Api.Identity;
 using Ringfour.Api.Persistence;
 using Ringfour.Api.Robots;
+using Ringfour.Api.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +39,8 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddSingleton<DeviceConnectionManager>();
 builder.Services.AddSingleton<ConnectivityMetrics>();
 builder.Services.AddHostedService<OperationSweeper>();
+builder.Services.AddRingfourStorage(builder.Configuration);
+builder.Services.AddHostedService<ScriptStorageSweeper>();
 
 builder.AddRingfourAuth();
 
@@ -89,6 +92,9 @@ app.MapIdentityEndpoints();
 app.MapRobotEndpoints();
 app.MapPairingEndpoints();
 app.MapOperationEndpoints();
+app.MapScriptRevisionEndpoints();
+app.MapScriptRunEndpoints();
+app.MapDeviceExecutionEndpoints();
 app.MapDeviceSocketEndpoint();
 app.MapFallback(() =>
 {

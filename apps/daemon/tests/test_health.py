@@ -1,3 +1,5 @@
+import sqlite3
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -73,5 +75,24 @@ def test_migrations_are_repeatable(tmp_path):
     db = str(tmp_path / "daemon.db")
     first = migrate(db)
     second = migrate(db)
-    assert first == [1, 2, 3]
+    assert first == [1, 2, 3, 4, 5]
     assert second == []
+
+
+def test_script_sync_migrates_from_previous_schema_with_identity_and_operations(tmp_path):
+    from ringfour_daemon.db import MIGRATIONS_DIR
+
+    db = str(tmp_path / "old-daemon.db")
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+        for path in sorted(MIGRATIONS_DIR.glob("000[123]_*.sql")):
+            version = int(path.name.split("_")[0])
+            conn.executescript(path.read_text())
+            conn.execute("INSERT INTO schema_migrations VALUES (?, '2026-01-01T00:00:00Z')", (version,))
+        conn.execute("INSERT INTO device_identity VALUES (1, 'robot', 'org', 'https://api.example', 'credential')")
+        conn.execute("INSERT INTO device_operations VALUES ('operation', 'robot', 'diagnostic.noop', 1, '{}', 'succeeded', '2026-01-01', '2026-01-01', '{}')")
+    assert migrate(db) == [4, 5]
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT robot_id FROM device_identity").fetchone() == ("robot",)
+        assert conn.execute("SELECT operation_id FROM device_operations").fetchone() == ("operation",)
+        assert conn.execute("SELECT count(*) FROM script_sync").fetchone() == (0,)

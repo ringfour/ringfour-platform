@@ -34,6 +34,12 @@
     "robot_id": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-    }
+    },
+    "python_requirement": {"type": "string", "minLength": 1, "maxLength": 128},
+    "lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "dependentRequired": {
+    "python_requirement": ["lock_sha256"],
+    "lock_sha256": ["python_requirement"]
   }
 }

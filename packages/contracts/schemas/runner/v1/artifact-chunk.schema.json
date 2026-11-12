@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/runner/v1/artifact-chunk.schema.json",
+  "title": "Execution artifact byte chunk",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["execution_id", "path", "offset", "next_offset", "data_base64", "eof"],
+  "properties": {
+    "execution_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 240},
+    "offset": {"type": "integer", "minimum": 0, "maximum": 262144},
+    "next_offset": {"type": "integer", "minimum": 0, "maximum": 262144},
+    "data_base64": {"type": "string", "maxLength": 21848, "pattern": "^[A-Za-z0-9+/]*={0,2}$"},
+    "eof": {"type": "boolean"}
+  }
+}

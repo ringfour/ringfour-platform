@@ -1,0 +1,9 @@
+{
+  "organization_id": "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d",
+  "archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "archive_size": 1024,
+  "revision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "entrypoint": "hello.py",
+  "python_requirement": ">=3.13,<3.14",
+  "lock_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

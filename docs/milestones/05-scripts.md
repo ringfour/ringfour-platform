@@ -16,6 +16,15 @@ Freeze request/response/message schemas, state transitions and error examples in
 
 Implement private artifact storage adapter and local filesystem backend; configure hosted backend. CLI `run hello.py --robot ID`, `logs`, `execution show/stop`, `artifact download`. Upload bundle/lock, dispatch stable operation, stage/download/verify at daemon, execute via Runner. Return explicit unavailable error when disconnected rather than silently queuing runs. Capture author and basic durable events.
 
+The selected hosted target is Garage, accessed through an S3-compatible
+adapter. Use configurable endpoint, region, bucket and credentials; keep the
+filesystem backend for local tests. Garage supports S3 Signature V4,
+path-style requests and presigned URLs, but does not implement bucket policies
+or object versioning. Do not rely on those features for authorization or
+immutable revisions. See the [Garage compatibility reference](https://garagehq.deuxfleurs.fr/documentation/reference-manual/s3-compatibility/).
+Exercise the adapter against an actual Garage instance; S3 compatibility alone
+is not evidence that the integration works.
+
 ## Independent component tests
 
 API authorization, upload finalization/idempotency/quotas; daemon digest mismatch and download interruption; Runner output offsets/artifact escaping; CLI output formatting and exit semantics (success 0, failure nonzero, interrupted/detached documented).

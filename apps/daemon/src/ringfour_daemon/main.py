@@ -15,6 +15,7 @@ from .enrollment import check_device_state
 from .enrollment import router as enrollment_router
 from .health import router as health_router
 from .pairing import run_pairing
+from .scripts import run_sync
 from .status_page import create_status_app
 
 
@@ -25,13 +26,15 @@ async def lifespan(app: FastAPI):
     app.state.connection_manager = connection
     task = asyncio.create_task(connection.run())
     pairing_task = asyncio.create_task(run_pairing(settings))
+    sync_task = asyncio.create_task(run_sync(settings))
     try:
         yield
     finally:
         connection.stop()
         task.cancel()
         pairing_task.cancel()
-        await asyncio.gather(pairing_task, return_exceptions=True)
+        sync_task.cancel()
+        await asyncio.gather(pairing_task, sync_task, return_exceptions=True)
         try:
             await task
         except asyncio.CancelledError:

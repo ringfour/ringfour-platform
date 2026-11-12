@@ -167,6 +167,33 @@ def test_websocket_url_derivation():
     assert websocket_url("https://api.ringfour.eu/") == "wss://api.ringfour.eu/v1/device/connect"
 
 
+def test_expired_ambiguous_script_start_reconciles_before_deadline_check(tmp_path, monkeypatch):
+    from ringfour_daemon import scripts
+    from ringfour_daemon.connection import _SessionState
+
+    settings = make_settings(tmp_path, "http://platform", runner_auth_token="runner-secret")
+    command = command_payload("4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b")
+    command["kind"] = "script.execution.start"
+    command["deadline_at"] = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+    operations.record_command(settings.db_path, ROBOT_ID, command)
+    operations.apply_status(settings.db_path, command["operation_id"], "running")
+    calls = []
+
+    async def reconcile(settings, operation):
+        calls.append(operation.operation_id)
+        return {"execution": {"state": "running"}}
+
+    async def unexpected_start(settings, operation):
+        raise AssertionError("Existing execution must never be started again")
+
+    monkeypatch.setattr(scripts, "reconcile_start", reconcile)
+    monkeypatch.setattr(scripts, "start", unexpected_start)
+    manager = ConnectionManager(settings)
+    asyncio.run(manager._handle_command(command, asyncio.Queue(), _SessionState(robot_id=ROBOT_ID), set()))
+    assert calls == [command["operation_id"]]
+    assert operations.get(settings.db_path, command["operation_id"]).state == "succeeded"
+
+
 def test_full_session_executes_and_reports_terminal_status(tmp_path):
     async def scenario():
         stub = StubPlatform()
