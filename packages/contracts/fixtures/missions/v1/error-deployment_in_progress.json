@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "deployment_in_progress",
+    "message": "A deployment action is already in progress.",
+    "request_id": "example-request-id"
+  }
+}

@@ -19,6 +19,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
 
 from . import artifacts
+from .preparation import prepared_environment
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -199,6 +200,8 @@ async def start(request: Request):
     except (ValueError, OSError, UnicodeError):
         return error(400, "invalid_input", "Invalid execution request or staged bundle.")
     settings = request.app.state.settings
+    if request.app.state.prepare_lock.locked():
+        return error(409, "execution_conflict", "Runner is preparing a revision.")
     execution_id = body["execution_id"]
     with connection(settings) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -253,35 +256,20 @@ async def run_execution(app, body, files):
                 transition(conn, execution_id, "cancelled")
                 return
             transition(conn, execution_id, "preparing")
-        venv = Path(settings.data_dir) / "venvs" / body["revision_digest"]
-        try:
-            proc = await asyncio.create_subprocess_exec("uv", "venv", "--allow-existing", "--no-python-downloads", "--python", sys.executable, str(venv), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
-        except OSError:
+        prepared = prepared_environment(settings, body["revision_digest"], body.get("python_requirement"), body.get("lock_sha256"))
+        venv = prepared or Path(settings.data_dir) / "venvs" / body["revision_digest"]
+        if prepared is not None:
             with connection(settings) as conn:
-                transition(conn, execution_id, "failed", failure={"code": "preparation_failed", "message": "Unable to prepare the Python environment."})
-            return
-        app.state.processes[execution_id] = proc
-        await proc.communicate()
-        if proc.returncode:
+                if conn.execute("SELECT stop_requested FROM executions WHERE execution_id=?", (execution_id,)).fetchone()[0]:
+                    transition(conn, execution_id, "cancelled")
+                    return
+                transition(conn, execution_id, "running")
+        else:
+            await prepare_execution_environment(app, body, code, venv, execution_id)
             row = get_row(settings, execution_id)
-            with connection(settings) as conn:
-                transition(conn, execution_id, "cancelled" if row["stop_requested"] else "failed", failure=None if row["stop_requested"] else {"code": "preparation_failed", "message": "Unable to prepare the Python environment."})
-            return
-        if get_row(settings, execution_id)["stop_requested"]:
-            with connection(settings) as conn:
-                transition(conn, execution_id, "cancelled")
-            return
-        if "lock_sha256" in body:
-            proc = await asyncio.create_subprocess_exec("uv", "pip", "sync", "--require-hashes", "--python", str(venv / "bin" / "python"), str(code / "requirements.lock"), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
-            app.state.processes[execution_id] = proc
-            await proc.communicate()
-            row = get_row(settings, execution_id)
-            if proc.returncode or row["stop_requested"]:
-                with connection(settings) as conn:
-                    transition(conn, execution_id, "cancelled" if row["stop_requested"] else "failed", failure=None if row["stop_requested"] else {"code": "preparation_failed", "message": "Unable to install the locked dependencies."})
+            if row["state"] in TERMINAL:
                 return
-        with connection(settings) as conn:
-            transition(conn, execution_id, "running")
+
         artifact_dir = path / "artifact-output"
         artifact_dir.mkdir(exist_ok=True)
         environment = {**os.environ, "RINGFOUR_ARTIFACT_DIR": str(artifact_dir)}
@@ -314,6 +302,37 @@ async def run_execution(app, body, files):
     finally:
         app.state.processes.pop(execution_id, None)
 
+
+async def prepare_execution_environment(app, body, code, venv, execution_id):
+    settings = app.state.settings
+    try:
+        proc = await asyncio.create_subprocess_exec("uv", "venv", "--allow-existing", "--no-python-downloads", "--python", sys.executable, str(venv), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
+    except OSError:
+        with connection(settings) as conn:
+            transition(conn, execution_id, "failed", failure={"code": "preparation_failed", "message": "Unable to prepare the Python environment."})
+        return
+    app.state.processes[execution_id] = proc
+    await proc.communicate()
+    if proc.returncode:
+        row = get_row(settings, execution_id)
+        with connection(settings) as conn:
+            transition(conn, execution_id, "cancelled" if row["stop_requested"] else "failed", failure=None if row["stop_requested"] else {"code": "preparation_failed", "message": "Unable to prepare the Python environment."})
+        return
+    if get_row(settings, execution_id)["stop_requested"]:
+        with connection(settings) as conn:
+            transition(conn, execution_id, "cancelled")
+        return
+    if "lock_sha256" in body:
+        proc = await asyncio.create_subprocess_exec("uv", "pip", "sync", "--require-hashes", "--python", str(venv / "bin" / "python"), str(code / "requirements.lock"), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
+        app.state.processes[execution_id] = proc
+        await proc.communicate()
+        row = get_row(settings, execution_id)
+        if proc.returncode or row["stop_requested"]:
+            with connection(settings) as conn:
+                transition(conn, execution_id, "cancelled" if row["stop_requested"] else "failed", failure=None if row["stop_requested"] else {"code": "preparation_failed", "message": "Unable to install the locked dependencies."})
+            return
+    with connection(settings) as conn:
+        transition(conn, execution_id, "running")
 
 async def escalate(proc):
     try:

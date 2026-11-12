@@ -12,6 +12,45 @@ async function loadJson(relativePath) {
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validators = new Map();
 
+test("mission manifest fixture rejects traversal and unknown fields", async () => {
+  const validate = await validatorFor("schemas/missions/v1/manifest.schema.json");
+  const manifest = await loadJson("fixtures/missions/v1/manifest.json");
+  assert.ok(validate(manifest));
+  assert.equal(validate({ ...manifest, entrypoint: "../secret.py" }), false);
+  assert.equal(validate({ ...manifest, schema_version: 2 }), false);
+  assert.equal(validate({ ...manifest, source_digest: "bad" }), false);
+  assert.equal(validate({ ...manifest, undocumented: true }), false);
+});
+
+test("mission deployment and action responses validate", async () => {
+  const deployment = await validatorFor("schemas/missions/v1/deployment-accepted.schema.json");
+  const action = await validatorFor("schemas/missions/v1/action-accepted.schema.json");
+  assert.ok(deployment(await loadJson("fixtures/missions/v1/deployment-accepted.json")));
+  assert.ok(action(await loadJson("fixtures/missions/v1/action-accepted.json")));
+  const state = await validatorFor("schemas/missions/v1/deployment.schema.json");
+  assert.ok(state(await loadJson("fixtures/missions/v1/deployment.json")));
+  const prepare = await validatorFor("schemas/missions/v1/runner-prepare.schema.json");
+  assert.ok(prepare(await loadJson("fixtures/missions/v1/runner-prepare.json")));
+  const prepared = await validatorFor("schemas/missions/v1/runner-prepared.schema.json");
+  assert.ok(prepared(await loadJson("fixtures/missions/v1/runner-prepared.json")));
+});
+
+test("mission pages and device preparation payloads validate", async () => {
+  for (const name of ["mission-page", "revision-page", "device-prepare"]) {
+    const validate = await validatorFor(`schemas/missions/v1/${name}.schema.json`);
+    const fixture = await loadJson(`fixtures/missions/v1/${name}.json`);
+    assert.ok(validate(fixture), JSON.stringify(validate.errors));
+    assert.equal(validate({ ...fixture, unexpected: true }), false);
+  }
+  const error = await validatorFor("schemas/errors/v1/error.schema.json");
+  for (const code of ["version_conflict", "execution_conflict", "deployment_in_progress", "robot_unavailable"]) {
+    assert.ok(error(await loadJson(`fixtures/missions/v1/error-${code}.json`)));
+  }
+  const page = await validatorFor("schemas/missions/v1/revision-page.schema.json");
+  const fixture = await loadJson("fixtures/missions/v1/revision-page.json");
+  assert.equal(page({ ...fixture, items: [{ ...fixture.items[0], manifest: {} }] }), false);
+});
+
 test("Runner artifact fixtures enforce bounds", async () => {
   const list = await validatorFor("schemas/runner/v1/artifact-list.schema.json");
   const chunk = await validatorFor("schemas/runner/v1/artifact-chunk.schema.json");

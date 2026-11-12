@@ -1,0 +1,7 @@
+{
+  "revision_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "code_ref":"scripts/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "entrypoint":"main.py", "python_requirement":">=3.13,<3.14",
+  "lock_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "retain_digests":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+}

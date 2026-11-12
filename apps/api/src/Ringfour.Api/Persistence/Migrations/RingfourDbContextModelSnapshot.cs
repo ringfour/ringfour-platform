@@ -22,6 +22,79 @@ namespace Ringfour.Api.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.DeploymentAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DeploymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deployment_id");
+
+                    b.Property<Guid?>("ExecutionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("execution_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("request_fingerprint");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<Guid?>("StopOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stop_operation_id");
+
+                    b.Property<Guid?>("TargetExecutionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_execution_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("DeploymentId", "ActorUserId", "Kind", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("deployment_actions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_deployment_action_kind", "kind IN ('start', 'stop', 'restart')");
+
+                            t.HasCheckConstraint("ck_deployment_action_state", "state IN ('pending', 'starting', 'completed', 'failed')");
+                        });
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.DevicePairingRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -149,6 +222,190 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("memberships", null, t =>
                         {
                             t.HasCheckConstraint("ck_memberships_role", "role IN ('Owner', 'Developer', 'Operator')");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.Mission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<int>("LatestVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("latest_version");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("request_fingerprint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Name")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedByUserId", "OrganizationId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("missions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_mission_version", "latest_version >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.MissionDeployment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("CandidateOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("candidate_operation_id");
+
+                    b.Property<Guid?>("CandidateRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("candidate_revision_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DesiredState")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("desired_state");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("last_error");
+
+                    b.Property<Guid?>("LastExecutionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_execution_id");
+
+                    b.Property<Guid?>("LastOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_operation_id");
+
+                    b.Property<string>("ObservedState")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("observed_state");
+
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<Guid?>("SelectedRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("selected_revision_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateRevisionId");
+
+                    b.HasIndex("RobotId")
+                        .IsUnique();
+
+                    b.HasIndex("SelectedRevisionId");
+
+                    b.ToTable("mission_deployments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_mission_candidate", "(candidate_revision_id IS NULL) = (candidate_operation_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_mission_desired", "desired_state IN ('stopped', 'running')");
+
+                            t.HasCheckConstraint("ck_mission_observed", "observed_state IN ('preparing', 'ready', 'starting', 'running', 'stopping', 'succeeded', 'failed', 'cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.MissionRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("Manifest")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("manifest");
+
+                    b.Property<Guid>("MissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("mission_id");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("request_fingerprint");
+
+                    b.Property<Guid>("ScriptRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_revision_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("ScriptRevisionId");
+
+                    b.HasIndex("MissionId", "Version")
+                        .IsUnique();
+
+                    b.HasIndex("MissionId", "CreatedByUserId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("mission_revisions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_mission_revision_version", "version > 0");
                         });
                 });
 
@@ -469,6 +726,10 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid?>("DeploymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deployment_id");
+
                     b.Property<string>("Error")
                         .HasColumnType("jsonb")
                         .HasColumnName("error");
@@ -476,6 +737,10 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Property<int?>("ExitCode")
                         .HasColumnType("integer")
                         .HasColumnName("exit_code");
+
+                    b.Property<Guid?>("MissionRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("mission_revision_id");
 
                     b.Property<Guid>("RevisionId")
                         .HasColumnType("uuid")
@@ -516,6 +781,10 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.HasIndex("ActorUserId");
 
+                    b.HasIndex("DeploymentId");
+
+                    b.HasIndex("MissionRevisionId");
+
                     b.HasIndex("RevisionId");
 
                     b.HasIndex("RobotId")
@@ -524,6 +793,8 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.ToTable("script_executions", null, t =>
                         {
+                            t.HasCheckConstraint("ck_execution_mission_attribution", "(deployment_id IS NULL) = (mission_revision_id IS NULL)");
+
                             t.HasCheckConstraint("ck_script_execution_output", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536");
 
                             t.HasCheckConstraint("ck_script_execution_state", "state IN ('queued', 'preparing', 'running', 'succeeded', 'failed', 'cancelled')");
@@ -678,6 +949,33 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.DeploymentAction", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.MissionDeployment", "Deployment")
+                        .WithMany()
+                        .HasForeignKey("DeploymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Operation", "Operation")
+                        .WithOne()
+                        .HasForeignKey("Ringfour.Api.Persistence.DeploymentAction", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Deployment");
+
+                    b.Navigation("Operation");
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.DevicePairingRequest", b =>
                 {
                     b.HasOne("Ringfour.Api.Persistence.RobotCredential", "Credential")
@@ -731,6 +1029,77 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.Mission", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.MissionDeployment", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.MissionRevision", "CandidateRevision")
+                        .WithMany()
+                        .HasForeignKey("CandidateRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Ringfour.Api.Persistence.Robot", "Robot")
+                        .WithMany()
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.MissionRevision", "SelectedRevision")
+                        .WithMany()
+                        .HasForeignKey("SelectedRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CandidateRevision");
+
+                    b.Navigation("Robot");
+
+                    b.Navigation("SelectedRevision");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.MissionRevision", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Mission", "Mission")
+                        .WithMany()
+                        .HasForeignKey("MissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.ScriptRevision", "ScriptRevision")
+                        .WithMany()
+                        .HasForeignKey("ScriptRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+
+                    b.Navigation("Mission");
+
+                    b.Navigation("ScriptRevision");
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.Operation", b =>
@@ -840,11 +1209,21 @@ namespace Ringfour.Api.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Ringfour.Api.Persistence.MissionDeployment", "Deployment")
+                        .WithMany()
+                        .HasForeignKey("DeploymentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Ringfour.Api.Persistence.Operation", "Operation")
                         .WithOne()
                         .HasForeignKey("Ringfour.Api.Persistence.ScriptExecution", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.MissionRevision", "MissionRevision")
+                        .WithMany()
+                        .HasForeignKey("MissionRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Ringfour.Api.Persistence.ScriptRevision", "Revision")
                         .WithMany()
@@ -859,6 +1238,10 @@ namespace Ringfour.Api.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Actor");
+
+                    b.Navigation("Deployment");
+
+                    b.Navigation("MissionRevision");
 
                     b.Navigation("Operation");
 

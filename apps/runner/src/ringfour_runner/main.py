@@ -10,6 +10,7 @@ from .config import Settings
 from .executions import initialize
 from .executions import router as executions_router
 from .health import router as health_router
+from .preparation import router as preparation_router
 
 
 @asynccontextmanager
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
     initialize(app.state.settings)
     app.state.tasks = set()
     app.state.processes = {}
+    app.state.prepare_lock = asyncio.Lock()
     yield
     for proc in list(app.state.processes.values()):
         if proc.returncode is None:
@@ -35,4 +37,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.include_router(health_router)
     app.include_router(executions_router)
+    app.include_router(preparation_router)
     return app

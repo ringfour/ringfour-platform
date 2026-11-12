@@ -13,6 +13,7 @@ import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from . import auth
 from .config import (
@@ -22,9 +23,20 @@ from .config import (
     selected_org,
     update_config,
 )
+from .mission_bundle import build_mission_bundle
 from .script_bundle import build_script_bundle
 
+
+class RingfourGroup(TyperGroup):
+    def parse_args(self, ctx, args):
+        # Support the requested folder-first form without changing normal commands.
+        if len(args) >= 2 and args[1] == "push" and not args[0].startswith("-"):
+            args = ["mission", "push", args[0], *args[2:]]
+        return super().parse_args(ctx, args)
+
+
 app = typer.Typer(
+    cls=RingfourGroup,
     name="ringfour-cli",
     help="Ringfour developer CLI.",
     no_args_is_help=True,
@@ -39,6 +51,8 @@ execution_app = typer.Typer(help="Inspect and stop script executions.", no_args_
 app.add_typer(execution_app, name="execution")
 artifact_app = typer.Typer(help="Download script artifacts.", no_args_is_help=True)
 app.add_typer(artifact_app, name="artifact")
+mission_app = typer.Typer(help="Publish and operate missions.", no_args_is_help=True)
+app.add_typer(mission_app, name="mission")
 console = Console()
 
 # name -> (env var, default base URL)
@@ -246,6 +260,137 @@ def run_script(
         typer.echo(f"Execution {result['state']}", err=True)
         code = result.get("exit_code")
         raise typer.Exit(code if isinstance(code, int) and 1 <= code <= 125 else 1)
+
+
+def _mission_key(key: str | None) -> str:
+    key = key or str(uuid.uuid4())
+    if not key.strip() or len(key) > 180:
+        raise typer.BadParameter("Must be nonblank and at most 180 characters.", param_hint="--idempotency-key")
+    typer.echo(f"Submission key: {key}", err=True)
+    return key
+
+
+def _pages(path: str, settings, store):
+    cursor = None
+    while True:
+        body = _api_request("GET", path, settings, store, params={"cursor": cursor} if cursor else {}).json()
+        yield from body["items"]
+        cursor = body.get("next_cursor")
+        if not cursor:
+            break
+
+
+def _publish_mission(directory: Path, settings, store, org_id: str, key: str) -> dict:
+    try:
+        packaged = build_mission_bundle(directory)
+    except (OSError, ValueError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+    manifest, bundle = packaged.manifest, packaged.bundle
+    missions = _pages(f"/v1/organizations/{org_id}/missions", settings, store)
+    mission = next((item for item in missions if item["name"] == manifest["name"]), None)
+    if mission is None:
+        mission = _api_request("POST", "/v1/missions", settings, store,
+            headers={"Idempotency-Key": key + ":mission"},
+            json={"organization_id": org_id, "name": manifest["name"]}).json()
+    revision = _api_request("POST", "/v1/script-revisions", settings, store,
+        headers={"Idempotency-Key": key + ":source"},
+        json=bundle.revision_request(org_id, manifest["python_requirement"])).json()
+    try:
+        source_id = str(uuid.UUID(revision["id"]))
+        if source_id != revision["id"] or revision["upload_url"] != f"/v1/script-revisions/{source_id}/content":
+            raise ValueError("Unexpected revision upload URL")
+    except (KeyError, ValueError, TypeError, AttributeError) as error:
+        console.print("[red]The Platform returned an invalid revision response.[/red]")
+        raise typer.Exit(1) from error
+    if revision["state"] != "ready":
+        _api_request("PUT", revision["upload_url"], settings, store, content=bundle.archive,
+            headers={"Content-Type": "application/zip"})
+        _api_request("POST", f"/v1/script-revisions/{source_id}/finalize", settings, store)
+    # A retry may follow a successful publish whose response was lost. Reuse its
+    # original expected version so the server can validate the idempotency key.
+    existing = next((item for item in _pages(f"/v1/missions/{mission['id']}/revisions", settings, store)
+        if item["script_revision_id"] == source_id and item["manifest"] == manifest), None)
+    expected = existing["version"] - 1 if existing else mission["latest_version"]
+    return _api_request("POST", f"/v1/missions/{mission['id']}/revisions", settings, store,
+        headers={"Idempotency-Key": key + ":publish"},
+        json={"script_revision_id": source_id, "expected_version": expected, "manifest": manifest}).json()
+
+
+def _target_robot(settings, store, org_id: str, robot: str | None) -> str:
+    if robot or os.environ.get("RINGFOUR_ROBOT_ID"):
+        return robot or os.environ["RINGFOUR_ROBOT_ID"]
+    online = []
+    for item in _pages(f"/v1/organizations/{org_id}/robots", settings, store):
+        if item.get("enrolled_at") and _api_request("GET", f"/v1/robots/{item['id']}/status", settings, store).json()["online"]:
+            online.append(item["id"])
+    if len(online) != 1:
+        console.print("[red]Specify --robot or RINGFOUR_ROBOT_ID; exactly one online enrolled robot is required for automatic selection.[/red]")
+        raise typer.Exit(1)
+    return online[0]
+
+
+@mission_app.command("publish")
+def mission_publish(directory: Path, org: str | None = typer.Option(None, "--org"),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+    """Upload and publish an immutable mission revision."""
+    settings, store = _settings(), auth.TokenStore()
+    body = _publish_mission(directory, settings, store, _resolve_org(settings, org), _mission_key(idempotency_key))
+    console.print_json(data=body)
+
+
+@app.command("deploy")
+def deploy_mission(revision_id: str, robot: str = typer.Option(..., "--robot"),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+    """Prepare and select a published mission revision on a robot."""
+    body = _api_request("POST", f"/v1/robots/{robot}/deployments", _settings(), auth.TokenStore(),
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json={"mission_revision_id": revision_id}).json()
+    console.print_json(data=body)
+
+
+@mission_app.command("push")
+def mission_push(directory: Path, robot: str | None = typer.Option(None, "--robot"),
+    org: str | None = typer.Option(None, "--org"),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+    """Publish and deploy a mission without starting it."""
+    settings, store = _settings(), auth.TokenStore()
+    org_id, key = _resolve_org(settings, org), _mission_key(idempotency_key)
+    target = _target_robot(settings, store, org_id, robot)
+    revision = _publish_mission(directory, settings, store, org_id, key)
+    body = _api_request("POST", f"/v1/robots/{target}/deployments", settings, store,
+        headers={"Idempotency-Key": key + ":deploy"}, json={"mission_revision_id": revision["id"]}).json()
+    console.print_json(data={"mission_revision_id": revision["id"], **body})
+
+
+def _mission_action(deployment_id: str, action: str, key: str | None) -> None:
+    body = _api_request("POST", f"/v1/deployments/{deployment_id}/{action}", _settings(), auth.TokenStore(),
+        headers={"Idempotency-Key": _mission_key(key)}).json()
+    console.print_json(data=body)
+
+
+@mission_app.command("start")
+def mission_start(deployment_id: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+    """Start the selected revision."""
+    _mission_action(deployment_id, "start", idempotency_key)
+
+
+@mission_app.command("stop")
+def mission_stop(deployment_id: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+    """Stop the selected mission."""
+    _mission_action(deployment_id, "stop", idempotency_key)
+
+
+@mission_app.command("restart")
+def mission_restart(deployment_id: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+    """Explicitly restart with a new execution ID."""
+    _mission_action(deployment_id, "restart", idempotency_key)
+
+
+@mission_app.command("status")
+def mission_status(deployment_id: str) -> None:
+    """Inspect the selected revision and lifecycle state."""
+    body = _api_request("GET", f"/v1/deployments/{deployment_id}", _settings(), auth.TokenStore()).json()
+    console.print_json(data=body)
 
 
 @app.command("logs")

@@ -28,7 +28,155 @@ tags:
     description: Local-daemon-facing enrollment, credential verification and the authenticated WebSocket connection; no human token.
   - name: scripts
     description: Script revisions, runs, output and artifacts (new Ringfour design).
+  - name: missions
+    description: Proposed milestone 06 mission revisions and robot deployments (new Ringfour design).
 paths:
+  /v1/missions:
+    post:
+      tags: [missions]
+      operationId: createMission
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/missions/v1/create-mission-request.schema.json }
+      responses:
+        '201':
+          description: Mission created
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/mission.schema.json }
+        '200': { description: Matching idempotent replay }
+        '400': { description: Invalid request }
+        '403': { description: Insufficient role }
+        '404': { description: Organization inaccessible }
+        '409': { description: Duplicate name or conflicting key }
+  /v1/organizations/{organization_id}/missions:
+    parameters:
+      - { name: organization_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: cursor, in: query, required: false, schema: { type: string } }
+      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+    get:
+      tags: [missions]
+      operationId: listMissions
+      responses:
+        '200':
+          description: Organization-scoped mission page
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/mission-page.schema.json }
+        '404': { description: Organization inaccessible }
+  /v1/missions/{mission_id}/revisions:
+    parameters:
+      - { name: mission_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [missions]
+      operationId: listMissionRevisions
+      parameters:
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+      responses:
+        '200':
+          description: Immutable revision page in version order
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/revision-page.schema.json }
+        '404': { description: Mission inaccessible }
+    post:
+      tags: [missions]
+      operationId: publishMissionRevision
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/missions/v1/create-revision-request.schema.json }
+      responses:
+        '201':
+          description: Immutable revision published
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/revision.schema.json }
+        '200': { description: Matching idempotent replay }
+        '400': { description: Invalid manifest or mismatched source }
+        '403': { description: Insufficient role }
+        '404': { description: Mission or source revision inaccessible }
+        '409': { description: Version or idempotency conflict }
+  /v1/robots/{robot_id}/deployments:
+    parameters:
+      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+    post:
+      tags: [missions]
+      operationId: prepareMissionDeployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/missions/v1/create-deployment-request.schema.json }
+      responses:
+        '202':
+          description: Candidate preparation accepted or replayed
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/deployment-accepted.schema.json }
+        '403': { description: Insufficient role }
+        '404': { description: Robot or revision inaccessible }
+        '409': { description: Active execution, pending candidate or conflicting key }
+        '503': { description: Robot unavailable }
+  /v1/deployments/{deployment_id}:
+    parameters:
+      - { name: deployment_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [missions]
+      operationId: getDeployment
+      responses:
+        '200':
+          description: Desired and observed deployment state
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/deployment.schema.json }
+        '404': { description: Deployment inaccessible }
+  /v1/deployments/{deployment_id}/{action}:
+    parameters:
+      - { name: deployment_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: action, in: path, required: true, schema: { enum: [start, stop, restart] } }
+      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+    post:
+      tags: [missions]
+      operationId: controlDeployment
+      responses:
+        '202':
+          description: Durable lifecycle action accepted or replayed
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/action-accepted.schema.json }
+        '403': { description: Insufficient role }
+        '404': { description: Deployment inaccessible }
+        '409': { description: State or idempotency conflict }
+        '503': { description: Robot unavailable for start or restart }
+  /v1/device/deployments/{deployment_id}/candidate:
+    parameters:
+      - { name: deployment_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: operation_id, in: query, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [device, missions]
+      operationId: getDeviceMissionCandidate
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      responses:
+        '200':
+          description: Candidate ZIP bytes for the assigned pending operation
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '401': { description: Invalid machine credential }
+        '404': { description: Candidate inaccessible or no longer pending }
+        '503': { description: Storage unavailable }
   /v1/script-revisions:
     post:
       tags: [scripts]

@@ -6,6 +6,8 @@ public sealed class ScriptExecution
     public Guid RobotId { get; set; }
     public Guid RevisionId { get; set; }
     public Guid ActorUserId { get; set; }
+    public Guid? DeploymentId { get; set; }
+    public Guid? MissionRevisionId { get; set; }
     public required string State { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
@@ -19,6 +21,8 @@ public sealed class ScriptExecution
     public ScriptRevision Revision { get; set; } = null!;
     public User Actor { get; set; } = null!;
     public Operation Operation { get; set; } = null!;
+    public MissionDeployment? Deployment { get; set; }
+    public MissionRevision? MissionRevision { get; set; }
 }
 
 public sealed class ScriptArtifact

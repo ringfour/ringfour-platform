@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/missions/v1/manifest.schema.json",
+  "title": "Published mission manifest",
+  "description": "New Ringfour design; source_digest is the canonical bundle SHA-256.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "entrypoint", "python_requirement", "lock_file", "source_digest"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "name": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "\\S"},
+    "entrypoint": {"type": "string", "minLength": 4, "maxLength": 240, "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\\.py$"},
+    "python_requirement": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+    "lock_file": {"const": "requirements.lock"},
+    "source_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "robot_profile_ref": {"type": "string", "minLength": 1, "maxLength": 240, "pattern": "\\S"}
+  }
+}

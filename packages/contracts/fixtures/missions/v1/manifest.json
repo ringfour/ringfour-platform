@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "name": "hello",
+  "entrypoint": "main.py",
+  "python_requirement": ">=3.13,<3.14",
+  "lock_file": "requirements.lock",
+  "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "robot_profile_ref": "robot-project:base101@1"
+}

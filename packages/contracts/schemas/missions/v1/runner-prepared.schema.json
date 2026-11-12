@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/missions/v1/runner-prepared.schema.json",
+  "title": "Prepared mission revision",
+  "type": "object", "additionalProperties": false,
+  "required": ["revision_digest", "state"],
+  "properties": {
+    "revision_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "state": {"const": "ready"}
+  }
+}

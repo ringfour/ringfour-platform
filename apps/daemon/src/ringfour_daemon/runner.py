@@ -21,10 +21,10 @@ class RunnerRejected(Exception):
 def reject_response(response):
     codes = {400: "invalid_input", 401: "runner_unauthenticated", 404: "not_found", 409: "execution_conflict", 413: "size_limit", 503: "capacity_exceeded"}
     code = codes.get(response.status_code, "runner_error")
-    if response.status_code == 409:
+    if response.status_code in (409, 503):
         try:
             candidate = response.json()["error"]["code"]
-            if candidate in {"conflict", "execution_conflict"}:
+            if candidate in {"conflict", "execution_conflict", "preparation_failed", "capacity_exceeded"}:
                 code = candidate
         except (KeyError, TypeError, ValueError):
             pass

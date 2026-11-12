@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/missions/v1/create-mission-request.schema.json",
+  "title": "Create mission",
+  "type": "object", "additionalProperties": false,
+  "required": ["organization_id", "name"],
+  "properties": {
+    "organization_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "\\S"}
+  }
+}

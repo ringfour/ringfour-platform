@@ -79,6 +79,10 @@ public static class ScriptRunEndpoints
         if (manager.Get(robotId) is null || !OperationEndpoints.ComputeOnline(presence?.LastSeenAt, now,
             configuration.GetValue("Connectivity:OfflineThresholdSeconds", 45)))
             throw new ApiException(503, "robot_unavailable", "The robot is offline.");
+        var deployment = await db.MissionDeployments.SingleOrDefaultAsync(item => item.RobotId == robotId, ct);
+        if (deployment?.CandidateRevisionId is not null || (deployment is not null && await db.DeploymentActions.AnyAsync(
+            item => item.DeploymentId == deployment.Id && (item.State == "pending" || item.State == "starting"), ct)))
+            throw ApiException.Conflict("deployment_in_progress", "A mission deployment or restart is in progress.");
         if (await db.ScriptExecutions.AnyAsync(candidate => candidate.RobotId == robotId &&
             (candidate.State == "queued" || candidate.State == "preparing" || candidate.State == "running"), ct))
             throw ApiException.Conflict("execution_conflict", "Another execution is active.");
@@ -154,6 +158,8 @@ public static class ScriptRunEndpoints
             robot_id = execution.RobotId,
             revision_id = execution.RevisionId,
             actor_user_id = execution.ActorUserId,
+            deployment_id = execution.DeploymentId,
+            mission_revision_id = execution.MissionRevisionId,
             state = execution.State,
             created_at = execution.CreatedAt,
             updated_at = execution.UpdatedAt,

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "robot_unavailable",
+    "message": "The robot is offline.",
+    "request_id": "example-request-id"
+  }
+}

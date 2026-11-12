@@ -6,6 +6,24 @@ info:
 security:
   - runnerBearer: []
 paths:
+  /v1/revisions/prepare:
+    post:
+      summary: Prepare a validated candidate without executing user code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/missions/v1/runner-prepare.schema.json }
+      responses:
+        '200':
+          description: Candidate environment prepared or identical retry
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/runner-prepared.schema.json }
+        '400': { description: Invalid staged bytes or lock }
+        '401': { description: Missing or incorrect Runner credential }
+        '409': { description: Runner is active or preparing another candidate }
+        '503': { description: Preparation or capacity failure }
   /v1/executions:
     post:
       summary: Start or replay an execution by stable ID

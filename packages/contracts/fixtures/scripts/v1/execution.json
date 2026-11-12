@@ -3,6 +3,11 @@
   "robot_id": "9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d",
   "revision_id": "ab0f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
   "actor_user_id": "a50f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
-  "state": "succeeded", "created_at": "2026-11-12T12:00:00Z",
-  "updated_at": "2026-11-12T12:01:00Z", "exit_code": 0, "error": null
+  "state": "succeeded",
+  "created_at": "2026-11-12T12:00:00Z",
+  "updated_at": "2026-11-12T12:01:00Z",
+  "exit_code": 0,
+  "error": null,
+  "deployment_id": null,
+  "mission_revision_id": null
 }

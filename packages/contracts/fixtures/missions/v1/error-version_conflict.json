@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "version_conflict",
+    "message": "Mission version changed; refresh before publishing.",
+    "request_id": "example-request-id"
+  }
+}

@@ -11,6 +11,7 @@ import shutil
 import sqlite3
 import stat
 import tempfile
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -202,6 +203,48 @@ async def stop(settings, operation):
         if response.status_code != 200:
             runner.reject_response(response)
         return {"execution": response.json()}
+
+
+async def prepare_mission(settings, operation):
+    payload = operation.payload
+    expected = {"deployment_id", "mission_revision_id", "revision_id", "archive_sha256", "archive_size", "revision_digest", "entrypoint", "python_requirement", "lock_sha256", "retain_digests"}
+    if not isinstance(payload, dict) or set(payload) != expected or not valid_id(payload["deployment_id"]) or not valid_id(payload["mission_revision_id"]):
+        raise runner.RunnerRejected("invalid_input", "Invalid mission candidate.")
+    validate_start_payload({key: payload[key] for key in ("revision_id", "archive_sha256", "archive_size", "revision_digest", "entrypoint", "python_requirement", "lock_sha256")})
+    retain = payload["retain_digests"]
+    if not isinstance(retain, list) or len(retain) > 2 or any(not isinstance(item, str) or not re.fullmatch(r"[0-9a-f]{64}", item) for item in retain) or len(set(retain)) != len(retain):
+        raise runner.RunnerRejected("invalid_input", "Invalid retained revisions.")
+    identity = load_identity(settings.db_path)
+    if identity is None or credential_error(settings.credential_path):
+        raise runner.RunnerRejected("credential_missing", "Device credential unavailable.")
+    async with httpx.AsyncClient(base_url=identity["platform_url"], headers=machine_headers(settings, identity), timeout=15) as client, \
+            client.stream("GET", f"/v1/device/deployments/{payload['deployment_id']}/candidate", params={"operation_id": operation.operation_id}) as response:
+        response.raise_for_status()
+        chunks = bytearray()
+        async for chunk in response.aiter_bytes():
+            chunks.extend(chunk)
+            if len(chunks) > MAX_ARCHIVE:
+                raise runner.RunnerRejected("invalid_input", "Downloaded revision exceeds its limit.")
+    code_ref = unpack_verified(bytes(chunks), payload, settings.stage_dir)
+    request = {"revision_digest": payload["revision_digest"], "code_ref": code_ref, "entrypoint": payload["entrypoint"],
+               "python_requirement": payload["python_requirement"], "lock_sha256": payload["lock_sha256"], "retain_digests": retain}
+    async with httpx.AsyncClient(base_url=settings.runner_url, headers={"authorization": f"Bearer {settings.runner_auth_token}"}, timeout=600) as client:
+        deadline = time.monotonic() + 600
+        while True:
+            response = await client.post("/v1/revisions/prepare", json=request)
+            try:
+                preparing = response.status_code == 409 and response.json().get("error", {}).get("code") == "preparation_in_progress"
+            except ValueError:
+                preparing = False
+            if not preparing or time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(2)
+        if response.status_code != 200:
+            runner.reject_response(response)
+        result = response.json()
+        if result != {"revision_digest": payload["revision_digest"], "state": "ready"}:
+            raise runner.RunnerRejected("runner_error", "Runner returned an invalid preparation result.")
+        return result
 
 
 def sync_rows(db_path):

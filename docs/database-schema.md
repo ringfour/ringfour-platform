@@ -100,3 +100,16 @@ object storage. `script_execution_events` records actor-attributed observed stat
 changes. Device SQLite `script_sync` records durable output offsets and whether
 Runner accepted the start, so reconnects replay offsets and reconcile stable
 IDs. The complete persistence and retention contract is in `scripts-contract.md`.
+
+### Milestone 06 mission persistence
+
+The initial schema leaves 06 mission tables to the milestone. The implementation
+adds `missions`, immutable `mission_revisions`, one `mission_deployments` row per
+robot, and durable `deployment_actions`. Lifecycle actions use existing
+`operations`; actual process history continues to use `script_executions` and
+`script_execution_events`. The latter have nullable deployment and mission
+revision references, constrained to be either both null (ad hoc scripts) or
+both present (mission runs). A per-robot active execution index remains shared
+by both kinds. Candidate and selected revisions remain separate so failed
+preparation cannot change selection. These are 06 additions, not robot-profile
+ownership or a new scheduler.

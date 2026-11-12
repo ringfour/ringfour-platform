@@ -372,7 +372,7 @@ public static class DeviceSocketEndpoints
         }
 
         var now = DateTimeOffset.UtcNow;
-        if (operation.Kind == "script.execution.start")
+        if (operation.Kind is "script.execution.start" or "mission.prepare")
         {
             await db.Operations.Where(candidate => candidate.Id == operation.Id && candidate.State == OperationState.Queued)
                 .ExecuteUpdateAsync(update => update.SetProperty(candidate => candidate.State, OperationState.Accepted)
@@ -430,6 +430,11 @@ public static class DeviceSocketEndpoints
             return;
         }
 
+        if (operation.Kind == "mission.prepare")
+        {
+            await HandleMissionPrepareStatusAsync(db, manager, session, options, payload, operation, state, metrics, cancellationToken);
+            return;
+        }
         if (operation.Kind == "script.execution.start")
         {
             await HandleScriptStartStatusAsync(db, manager, session, options, payload, operation, state, metrics, cancellationToken);
@@ -505,6 +510,63 @@ public static class DeviceSocketEndpoints
                 }
             }
         }
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
+    }
+
+    private static async Task HandleMissionPrepareStatusAsync(RingfourDbContext db, DeviceConnectionManager manager,
+        DeviceConnection session, JsonSerializerOptions options, JsonObject payload, Operation operation,
+        OperationState state, ConnectivityMetrics metrics, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM operations WHERE id = {operation.Id} FOR UPDATE", ct);
+        await db.Entry(operation).ReloadAsync(ct);
+        if (OperationStates.IsTerminal(operation.State))
+        {
+            if (operation.State != state)
+                await SendOperationErrorAsync(manager, session, options, "state_conflict", $"The operation is already in the terminal state {operation.State}.");
+            await transaction.CommitAsync(ct);
+            return;
+        }
+        var now = DateTimeOffset.UtcNow;
+        if (OperationStates.IsTerminal(state))
+        {
+            var deploymentId = await db.MissionDeployments.Where(item => item.CandidateOperationId == operation.Id)
+                .Select(item => (Guid?)item.Id).SingleOrDefaultAsync(ct);
+            if (deploymentId is not null)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM mission_deployments WHERE id = {deploymentId.Value} FOR UPDATE", ct);
+                var deployment = await db.MissionDeployments.SingleAsync(item => item.Id == deploymentId, ct);
+                await db.Entry(deployment).ReloadAsync(ct);
+                if (deployment.CandidateOperationId == operation.Id && deployment.CandidateRevisionId is Guid candidateId)
+                {
+                    var digest = await db.MissionRevisions.Where(item => item.Id == candidateId)
+                        .Select(item => item.ScriptRevision.RevisionDigest).SingleAsync(ct);
+                    var prepared = payload["result"] as JsonObject;
+                    if (state == OperationState.Succeeded && (prepared?["state"]?.ToString() != "ready" || prepared["revision_digest"]?.ToString() != digest))
+                        state = OperationState.Failed;
+                    if (state == OperationState.Succeeded)
+                    {
+                        deployment.SelectedRevisionId = candidateId;
+                        deployment.ObservedState = "ready";
+                        deployment.LastError = null;
+                    }
+                    else
+                    {
+                        deployment.ObservedState = deployment.SelectedRevisionId is null ? "failed" : "ready";
+                        deployment.LastError = """{"code":"preparation_failed","message":"The candidate revision could not be prepared."}""";
+                    }
+                    deployment.CandidateRevisionId = null;
+                    deployment.CandidateOperationId = null;
+                    deployment.UpdatedAt = now;
+                }
+            }
+            operation.Result = state == OperationState.Succeeded ? payload["result"]?.ToJsonString(options) ?? "{}" :
+                """{"error":{"code":"preparation_failed","message":"The candidate revision could not be prepared."}}""";
+        }
+        operation.State = state;
+        operation.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());

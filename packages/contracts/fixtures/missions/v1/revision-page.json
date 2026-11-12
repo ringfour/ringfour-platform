@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      "mission_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      "version": 1,
+      "script_revision_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      "manifest": {
+        "schema_version": 1,
+        "name": "hello",
+        "entrypoint": "main.py",
+        "python_requirement": ">=3.13,<3.14",
+        "lock_file": "requirements.lock",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "robot_profile_ref": "robot-project:base101@1"
+      },
+      "created_by_user_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+      "created_at": "2026-11-12T12:00:00Z"
+    }
+  ],
+  "next_cursor": null
+}

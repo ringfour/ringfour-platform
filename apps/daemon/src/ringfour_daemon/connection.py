@@ -247,7 +247,7 @@ class ConnectionManager:
                 logger.info("operation %s replaying terminal state %s", operation.operation_id, operation.state)
                 await self._report(outbound, state, operation)
                 return
-            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")):
+            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")) and operation.kind != "mission.prepare":
                 # The effect may have happened before a crash. Never repeat it.
                 finished = operations.apply_status(
                     self._settings.db_path,
@@ -275,7 +275,7 @@ class ConnectionManager:
                 await self._report(outbound, state, finished)
                 return
 
-        if operations.is_expired(operation.deadline_at, self._now()):
+        if operations.is_expired(operation.deadline_at, self._now()) and not (not created and operation.state == "running" and operation.kind == "mission.prepare"):
             if operation.kind == "script.execution.start":
                 scripts.complete_sync(self._settings.db_path, operation.operation_id)
             finished = operations.apply_status(
@@ -301,6 +301,8 @@ class ConnectionManager:
                 result = await scripts.start(self._settings, operation)
             elif operation.kind == "script.execution.stop":
                 result = await scripts.stop(self._settings, operation)
+            elif operation.kind == "mission.prepare":
+                result = await scripts.prepare_mission(self._settings, operation)
             else:
                 result = self._execute(operation)
             self.effects += 1

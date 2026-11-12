@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "execution_conflict",
+    "message": "Another execution is active.",
+    "request_id": "example-request-id"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/missions/v1/create-deployment-request.schema.json",
+  "title": "Prepare a mission deployment",
+  "type": "object", "additionalProperties": false,
+  "required": ["mission_revision_id"],
+  "properties": {
+    "mission_revision_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}
+  }
+}

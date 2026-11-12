@@ -35,6 +35,28 @@ class ScriptBundle:
         }
 
 
+def pack_bundle(files: dict[str, bytes], entrypoint: str) -> ScriptBundle:
+    lock = files["requirements.lock"]
+    try:
+        lock.decode("utf-8")
+    except UnicodeError as exc:
+        raise ValueError("Dependency lock must be UTF-8.") from exc
+    manifest = [[path, _sha256(data)] for path, data in sorted(files.items())]
+    digest = _sha256(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")).encode())
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path, data in sorted(files.items()):
+            # Stable metadata gives matching retries the same archive digest.
+            info = zipfile.ZipInfo(path, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, data)
+    value = stream.getvalue()
+    if len(value) > MAX_ARCHIVE_BYTES:
+        raise ValueError("Compressed archive exceeds 1 MiB.")
+    return ScriptBundle(value, _sha256(value), digest, entrypoint, _sha256(lock))
+
+
 def build_script_bundle(script: Path, lockfile: Path | None = None) -> ScriptBundle:
     name = script.name
     if not re.fullmatch(r"[A-Za-z0-9_.-]+\.py", name) or len(name) > 240:
@@ -52,22 +74,4 @@ def build_script_bundle(script: Path, lockfile: Path | None = None) -> ScriptBun
         lock = b""
     if len(code) > MAX_FILE_BYTES or len(lock) > MAX_FILE_BYTES:
         raise ValueError("Script or lock exceeds 256 KiB.")
-    try:
-        lock.decode("utf-8")
-    except UnicodeError as exc:
-        raise ValueError("Dependency lock must be UTF-8.") from exc
-    files = {name: code, "requirements.lock": lock}
-    manifest = [[path, _sha256(data)] for path, data in sorted(files.items())]
-    digest = _sha256(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")).encode())
-    stream = io.BytesIO()
-    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path, data in sorted(files.items()):
-            # Stable metadata gives matching retries the same archive digest.
-            info = zipfile.ZipInfo(path, date_time=(1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o100644 << 16
-            archive.writestr(info, data)
-    value = stream.getvalue()
-    if len(value) > MAX_ARCHIVE_BYTES:
-        raise ValueError("Compressed archive exceeds 1 MiB.")
-    return ScriptBundle(value, _sha256(value), digest, name, _sha256(lock))
+    return pack_bundle({name: code, "requirements.lock": lock}, name)

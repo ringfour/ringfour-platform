@@ -66,7 +66,7 @@ public sealed class OperationSweeper(
                 (operation.State == OperationState.Queued ||
                  operation.State == OperationState.Accepted ||
                  operation.State == OperationState.Running) &&
-                operation.Kind != "script.execution.start" &&
+                operation.Kind != "script.execution.start" && operation.Kind != "mission.prepare" && operation.Kind != "mission.lifecycle" &&
                 operation.DeadlineAt < now)
             .ToListAsync(cancellationToken);
         foreach (var operation in expired)
@@ -81,7 +81,8 @@ public sealed class OperationSweeper(
             foreach (var _ in expired) metrics?.Terminal("failed");
         }
 
-        var scriptIds = await db.Operations.AsNoTracking().Where(operation => operation.Kind == "script.execution.start" &&
+        var scriptIds = await db.Operations.AsNoTracking().Where(operation =>
+            (operation.Kind == "script.execution.start" || operation.Kind == "mission.prepare") &&
             operation.State == OperationState.Queued && operation.DeadlineAt < now).Select(operation => operation.Id).ToListAsync(cancellationToken);
         foreach (var id in scriptIds)
         {
@@ -94,24 +95,44 @@ public sealed class OperationSweeper(
                 await transaction.CommitAsync(cancellationToken);
                 continue;
             }
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM script_executions WHERE id = {id} FOR UPDATE", cancellationToken);
-            var execution = await db.ScriptExecutions.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
             operation.State = OperationState.Failed;
             operation.UpdatedAt = now;
             operation.Result = """{"error":{"code":"deadline_exceeded","message":"The operation deadline passed before completion."}}""";
-            if (execution is not null && execution.State == "queued")
+            if (operation.Kind == "script.execution.start")
             {
-                execution.State = "failed";
-                execution.UpdatedAt = now;
-                execution.Error = """{"code":"interrupted_unknown_outcome","message":"The device did not confirm the execution start before the deadline."}""";
-                db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM script_executions WHERE id = {id} FOR UPDATE", cancellationToken);
+                var execution = await db.ScriptExecutions.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+                if (execution is not null && execution.State == "queued")
                 {
-                    Id = Guid.NewGuid(),
-                    ExecutionId = execution.Id,
-                    ActorUserId = execution.ActorUserId,
-                    State = "failed",
-                    OccurredAt = now
-                });
+                    execution.State = "failed";
+                    execution.UpdatedAt = now;
+                    execution.Error = """{"code":"interrupted_unknown_outcome","message":"The device did not confirm the execution start before the deadline."}""";
+                    db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = execution.Id,
+                        ActorUserId = execution.ActorUserId,
+                        State = "failed",
+                        OccurredAt = now
+                    });
+                }
+            }
+            else
+            {
+                var deploymentId = await db.MissionDeployments.Where(item => item.CandidateOperationId == id).Select(item => (Guid?)item.Id).SingleOrDefaultAsync(cancellationToken);
+                if (deploymentId is not null)
+                {
+                    await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM mission_deployments WHERE id = {deploymentId.Value} FOR UPDATE", cancellationToken);
+                    var deployment = await db.MissionDeployments.SingleAsync(item => item.Id == deploymentId, cancellationToken);
+                    if (deployment.CandidateOperationId == id)
+                    {
+                        deployment.CandidateRevisionId = null;
+                        deployment.CandidateOperationId = null;
+                        deployment.ObservedState = deployment.SelectedRevisionId is null ? "failed" : "ready";
+                        deployment.LastError = """{"code":"deadline_exceeded","message":"Candidate preparation did not start before the deadline."}""";
+                        deployment.UpdatedAt = now;
+                    }
+                }
             }
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

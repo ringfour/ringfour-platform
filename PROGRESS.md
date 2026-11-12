@@ -199,3 +199,15 @@ or tokens in this file.
 - Setup, component results, limits, cleanup and device scope are in
   `docs/evidence/05.md` and `docs/human-testing/05.md`. Milestone 05 has not
   been deployed to the Balena robot; no physical 05 result is claimed.
+
+## 2026-11-12 — milestone 06 missions
+
+- Implemented immutable mission publication, candidate preparation and atomic
+  selection; durable start/stop/restart, attribution, and folder-first CLI
+  `push`. A failed candidate preserves the selected revision; no automatic
+  restart policy was added.
+- Isolated actual-process acceptance, 05 filesystem regression, prior-schema
+  upgrade, contract and affected component tests passed. Exact commands and
+  results: `docs/evidence/06.md`; human guide: `docs/human-testing/06.md`.
+- Physical Balena 06 testing and deployment remain unperformed; the user's
+  empty `../missions/hello` folder and live stack were not modified.
