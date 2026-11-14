@@ -27,7 +27,7 @@ set -a
 set +a
 export RINGFOUR_AUTH0_DOMAIN="$AUTH0_DOMAIN" RINGFOUR_AUTH0_CLIENT_ID="$AUTH0_CLI_CLIENT_ID" RINGFOUR_AUTH0_AUDIENCE="$AUTH0_AUDIENCE"
 export RINGFOUR_API_URL="http://127.0.0.1:18095"
-cli=(uv run --project apps/cli ringfour-cli)
+cli=(uv run --project "$PWD/apps/cli" ringfour-cli)
 secret=$(openssl rand -hex 32)
 docker build -q -t ringfour-api:06-test apps/api >/dev/null
 docker build -q -t ringfour-daemon:06-test apps/daemon >/dev/null
@@ -145,9 +145,17 @@ wait_execution() {
 }
 wait_deployment ready
 python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["selected_revision_id"]==sys.argv[1]' "$revision_a" <<<"$body"
-"${cli[@]}" mission start "$deployment" --idempotency-key smoke-start >"$test_dir/start.json"
+(cd "$test_dir/hello" && "${cli[@]}" start --org "$org" --idempotency-key smoke-start) >"$test_dir/start.json"
 execution_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_id"])' "$test_dir/start.json")
 wait_execution "$execution_a" running
+for _ in $(seq 1 30); do
+  if (cd "$test_dir/hello" && "${cli[@]}" logs --org "$org") >"$test_dir/context-logs.txt"; then
+    grep -q "mission running" "$test_dir/context-logs.txt" && break
+  fi
+  sleep 1
+done
+grep -q "mission running" "$test_dir/context-logs.txt"
+(cd "$test_dir/hello" && "${cli[@]}" status --org "$org") >"$test_dir/context-status.json"
 for _ in $(seq 1 30); do
   page=$(curl -fsS http://127.0.0.1:18098/)
   if [[ "$page" == *"Mission prepared"* && "$page" == *"mission running"* && "$page" == *"Mission active"* && "$page" == *"main.py"* ]]; then break; fi
@@ -188,6 +196,14 @@ docker restart "$api" >/dev/null
 for _ in $(seq 1 60); do curl -sf "$RINGFOUR_API_URL/health/ready" >/dev/null && break; sleep 1; done
 docker start "$daemon" >/dev/null
 wait_execution "$execution_b" cancelled
+stop_op=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["operation_id"])' "$test_dir/stop.json")
+for _ in $(seq 1 60); do
+  action_state=$(api_curl "$RINGFOUR_API_URL/v1/robots/$robot/operations/$stop_op" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+  [ "$action_state" = succeeded ] && break
+  [ "$action_state" != failed ] || { echo 'offline stop failed' >&2; exit 1; }
+  sleep 1
+done
+[ "$action_state" = succeeded ]
 echo 'PASS: real publish, prepare, start, conflict, restart, idempotency and offline stop after API restart'
 printf 'nonexistent-ringfour-package==1.0 --hash=sha256:%064d\n' 0 >"$test_dir/hello/requirements.txt"
 "${cli[@]}" "$test_dir/hello" push --org "$org" --robot "$robot" --idempotency-key smoke-invalid >"$test_dir/bad.json"
@@ -258,3 +274,32 @@ done
 active=$(docker exec "$postgres" psql -At -U ringfour -d ringfour -c "SELECT count(*) FROM script_executions WHERE robot_id='$robot' AND state IN ('queued','preparing','running')")
 [ "$active" = 0 ]
 echo 'PASS: immediate stop supersedes start and its idempotent replay preserves the action'
+# Exercise the opt-in shortcut on a short mission without touching a real robot.
+printf 'print("context shortcut complete", flush=True)\n' >"$test_dir/hello/main.py"
+(cd "$test_dir/hello" && "${cli[@]}" . push --org "$org" --robot "$robot" --idempotency-key shortcut --start --follow) >"$test_dir/shortcut.txt"
+grep -q 'context shortcut complete' "$test_dir/shortcut.txt"
+rm "$test_dir/hello/ringfour.context.json"
+(cd "$test_dir/hello" && "${cli[@]}" logs --org "$org") >"$test_dir/recovered-logs.txt"
+grep -q 'context shortcut complete' "$test_dir/recovered-logs.txt"
+test -f "$test_dir/hello/ringfour.context.json"
+echo 'PASS: push/start/follow and recovery of deleted mission context'
+
+# Re-preparing a revision after its terminal execution must remain ready, even
+# after multiple lifecycle projection cycles.
+body=$(api_curl "$RINGFOUR_API_URL/v1/deployments/$deployment")
+same_revision=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["selected_revision_id"])' <<<"$body")
+"${cli[@]}" deploy "$same_revision" --robot "$robot" --idempotency-key same-revision-prepare >"$test_dir/same-revision.json"
+prepare_op=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["operation_id"])' "$test_dir/same-revision.json")
+for _ in $(seq 1 90); do
+  action_state=$(api_curl "$RINGFOUR_API_URL/v1/robots/$robot/operations/$prepare_op" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+  [ "$action_state" = succeeded ] && break
+  [ "$action_state" != failed ] || { echo 'same revision preparation failed' >&2; exit 1; }
+  sleep 1
+done
+[ "$action_state" = succeeded ]
+for _ in $(seq 1 5); do
+  body=$(api_curl "$RINGFOUR_API_URL/v1/deployments/$deployment")
+  python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["selected_revision_id"]==sys.argv[1] and x["candidate_revision_id"] is None and x["observed_state"]=="ready", x' "$same_revision" <<<"$body"
+  sleep 1
+done
+echo 'PASS: same revision remains ready after preparation and terminal execution'

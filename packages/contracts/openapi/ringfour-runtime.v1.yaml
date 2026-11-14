@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: Ringfour mission runtime API
+  version: '0.1.0'
+  description: |
+    New Ringfour-local design, separate from the Agent API. The daemon control
+    listener accepts execution-scoped credentials, separate from human and LAN grants.
+paths:
+  /v1/runtime/logbook/entries:
+    post:
+      operationId: recordMissionLogbookEntry
+      summary: Record a mission-authored structured entry
+      description: |
+        Private local endpoint. Derive execution context from the
+        runtime credential and persist the entry before acknowledging. The
+        entry ID provides replay; payloads must not supply execution identity.
+        Maximum request body is 8192 UTF-8 bytes.
+      security:
+        - ExecutionCredential: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/logbook/v1/runtime-entry-request.schema.json }
+      responses:
+        '200':
+          description: Entry durably recorded or identical replay
+          content:
+            application/json:
+              schema: { $ref: ../schemas/logbook/v1/runtime-entry-accepted.schema.json }
+        '400': { description: Invalid entry }
+        '401': { description: Missing, invalid or expired execution credential }
+        '409': { description: Entry ID reused with different input }
+        '413': { description: Entry exceeds the request size limit }
+        '503': { description: Entry storage or outbox unavailable or full }
+components:
+  securitySchemes:
+    ExecutionCredential:
+      type: http
+      scheme: bearer
+      description: Per-execution bearer verified against Runner state; no human token.

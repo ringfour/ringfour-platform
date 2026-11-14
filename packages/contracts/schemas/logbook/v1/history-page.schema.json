@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/logbook/v1/history-page.schema.json",
+  "title": "Proposed organization Logbook history page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items",
+    "next_cursor"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "robot_id",
+          "local_sequence",
+          "operation_id",
+          "execution_id",
+          "actor_user_id",
+          "type",
+          "schema_version",
+          "occurred_at",
+          "received_at",
+          "payload"
+        ],
+        "properties": {
+          "event_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "robot_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "local_sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "operation_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "enum": [
+              "mission.logbook.entry",
+              "device.operation.state_changed",
+              "agent.motion.event"
+            ]
+          },
+          "schema_version": {
+            "const": 1
+          },
+          "occurred_at": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 32
+          },
+          "received_at": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 32
+          },
+          "payload": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

@@ -1,0 +1,130 @@
+openapi: 3.1.0
+info:
+  title: Ringfour daemon LAN development API
+  version: '0.1.0'
+  description: Local-only data plane. Session, source sync, execution status and output are behind an opt-in listener; artifact endpoints remain proposed.
+servers:
+  - url: https://robot-lan-address:8084
+security:
+  - LocalGrant: []
+paths:
+  /v1/local/dev-sessions/{session_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLocalSession
+      description: Confirms the local grant and reports the committed local generation and number of pending Platform reports; does not report execution state.
+      responses:
+        '200':
+          description: Authorized local session
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/local-status.schema.json }
+        '401': { description: Invalid or expired local grant }
+  /v1/local/dev-sessions/{session_id}/source:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLocalSourceState
+      description: Current local generation and file paths used to construct explicit deletions.
+      responses:
+        '200':
+          description: Locally committed source state
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/local-source-state.schema.json }
+        '401': { description: Invalid or expired local grant }
+    put:
+      operationId: syncLocalSource
+      description: Direct LAN transfer; 200 means Runner committed the complete generation. Platform reporting follows asynchronously. Retry 503 with the same key and body.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/source-request.schema.json }
+      responses:
+        '200':
+          description: Committed session generation and archive digest
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/sync-result.schema.json }
+        '400': { description: Invalid source archive or manifest }
+        '401': { description: Invalid or expired local grant }
+        '404': { description: Session inaccessible }
+        '409': { description: Stale generation, sync in progress, or conflicting key }
+        '413': { description: Source exceeds limits }
+        '503': { description: Runner or local storage unavailable }
+  /v1/local/dev-sessions/{session_id}/executions/{execution_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getLocalExecution
+      responses:
+        '200':
+          description: Runner execution state for this session
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/execution.schema.json }
+        '401': { description: Invalid or expired local grant }
+        '404': { description: Session or execution inaccessible }
+        '503': { description: Runner unavailable }
+  /v1/local/dev-sessions/{session_id}/executions/{execution_id}/output:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: stream, in: query, required: true, schema: { type: string, enum: [stdout, stderr] } }
+      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 65536 } }
+      - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 16384 } }
+    get:
+      operationId: getLocalExecutionOutput
+      responses:
+        '200':
+          description: Bounded local output chunk
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/output.schema.json }
+        '401': { description: Invalid or expired local grant }
+        '404': { description: Session or execution inaccessible }
+        '503': { description: Runner unavailable }
+  /v1/local/dev-sessions/{session_id}/executions/{execution_id}/artifacts:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: listLocalExecutionArtifacts
+      responses:
+        '200':
+          description: Locally retained artifact metadata
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/artifact-list.schema.json }
+        '401': { description: Invalid or expired local grant }
+        '404': { description: Session or execution inaccessible }
+        '409': { description: Execution not terminal }
+  /v1/local/dev-sessions/{session_id}/executions/{execution_id}/artifacts/content:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
+      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 262144 } }
+      - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 16384 } }
+    get:
+      operationId: getLocalExecutionArtifact
+      responses:
+        '200':
+          description: Bounded local artifact chunk
+          content:
+            application/json:
+              schema: { $ref: ../schemas/runner/v1/artifact-chunk.schema.json }
+        '401': { description: Invalid or expired local grant }
+        '404': { description: Session, execution or artifact inaccessible }
+        '409': { description: Execution not terminal }
+components:
+  securitySchemes:
+    LocalGrant:
+      type: http
+      scheme: bearer
+      description: Short-lived session-scoped local grant, distinct from the human and Runner credentials.

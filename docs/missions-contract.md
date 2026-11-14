@@ -1,7 +1,7 @@
 # Mission v1 — new Ringfour design
 
 Status: **locally verified**. These interfaces are new Ringfour design and do not describe
-existing RoboCore SDK or Agent APIs. Physical Balena verification remains pending.
+existing SDK or Agent APIs. Physical Balena verification remains pending.
 
 ## Local project and immutable revisions
 
@@ -16,7 +16,7 @@ authoring in this contract.
 Paths are relative, normalized POSIX paths using ASCII letters, digits, `_`,
 `-`, `.`, and `/`. Reject absolute paths, empty/`.`/`..` components, symlinks
 and special files. The entrypoint ends in `.py`. The CLI packages regular files
-from the mission directory, excluding `mission.toml`, hidden entries and the
+from the mission directory, excluding `mission.toml`, `ringfour.context.json`, hidden entries and the
 specified lock source; it places the lock at `requirements.lock` in the bundle.
 An existing source file named `requirements.lock` is only accepted when it is
 the selected lock file. The generated manifest's `lock_file` is therefore
@@ -160,14 +160,36 @@ locally persisted activity. This page introduces no new control API or persisten
 data store. It is unauthenticated: anyone able to reach its configured LAN
 listener can read displayed program output, which may contain sensitive data.
 
-The Runner image also carries the unchanged RoboCore C-preview SDK wheel at
-`/opt/ringfour/sdk/robocore-0.1.0.dev20261111114406+c.799c8afa-py3-none-any.whl`
-(SHA-256 `2c41f42c81ee82d8b8fe13535c1feb48de8dd19df7bf126a650bdda2a5592a00`).
-A mission that uses it explicitly pins that wheel and its dependencies in its
-hash-checked requirements lock; uv installs it into that mission's separate
-environment. The wheel comes from the SDK project's frozen C-preview artifact,
-including its recorded dirty-tree snapshot, rather than an inferred API. The
-SDK connects to the separately deployed Agent; a Runner-side
-`ROBOCORE_AGENT_URL` must address that Agent from inside the Runner container.
-The `base101` deployment sets this automatically to its shared local Unix socket;
-operators need not configure a robot LAN IP for missions.
+The Runner image carries the Ringfour SDK `0.1.0.dev0` wheel at
+`/opt/ringfour/sdk/ringfour_sdk-0.1.0.dev0-py3-none-any.whl`
+(SHA-256 `f6f1519e5fb72c6cd05367fc2fff1afa824e287a78a72a33636609dafaf8e459`).
+Missions pin the wheel and dependencies in a hash-checked lock, and uv installs
+them into a separate mission environment. The previous RoboCore wheel remains
+available for existing revisions. The Agent and profile remain independently
+managed. The supplied missions use `RINGFOUR_AGENT_URL`, falling back to
+`ROBOCORE_AGENT_URL` for existing robot configurations.
+
+## Local CLI context — new Ringfour design
+
+A successful folder-first mission push stores local convenience context in
+`ringfour.context.json` under that mission directory. It is not a source of
+truth or a credential store and is excluded from mission bundles. Version 1
+contains `version` and `targets`, with each target recording API URL,
+organization ID, mission name and ID, robot ID and name, deployment ID and
+published revision ID. Targets are keyed by API, organization and robot; push
+updates only the matching target. Save atomically after deployment acceptance;
+a failed local write is reported without claiming the accepted push failed.
+Users can ignore `ringfour.context.json` in version control and can delete it safely.
+
+Within a mission directory (or its subdirectories), lifecycle commands may
+resolve an omitted deployment ID from the context for the selected API and
+organization. Multiple robots require an explicit `--robot`; explicit IDs keep
+their existing behavior. Before context-based lifecycle actions, fetch the
+current deployment and ensure the selected revision is the one last pushed by
+this directory; reject stale or pending context rather than operating a different
+mission. Context-based logs retrieve the deployment's current last execution
+from the Platform and verify its revision attribution. Explicit IDs override
+context. If no matching entry exists, the CLI can recover an unambiguous matching
+mission and deployment from the selected organization; ambiguous matches require
+`--robot`. Malformed context fails clearly; secrets and bearer tokens are never stored. These are CLI-local behavior
+changes; the Platform API and authorization remain unchanged.

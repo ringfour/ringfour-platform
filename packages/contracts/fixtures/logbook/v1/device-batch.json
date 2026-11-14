@@ -1,0 +1,1 @@
+{"events":[{"event_id":"0f5f756e-63bc-4d12-b215-d9d8b8985212","robot_id":"5b895c0b-43a5-4052-9e9c-1b7d2d9176ea","local_sequence":1,"occurred_at":"2026-11-13T12:00:00Z","type":"device.operation.state_changed","schema_version":1,"operation_id":"97a25df2-bef3-4164-974a-338c28c4934c","payload":{"state":"accepted"}}]}

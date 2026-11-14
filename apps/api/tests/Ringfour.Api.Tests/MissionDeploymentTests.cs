@@ -73,6 +73,11 @@ public sealed class MissionDeploymentTests(PostgresFixture postgres)
             var document = JsonDocument.Parse(acceptedBody).RootElement;
             var deploymentId = document.GetProperty("deployment_id").GetGuid();
             var operationId = document.GetProperty("operation_id").GetGuid();
+            var deploymentPage = await owner.GetStringAsync($"/v1/organizations/{org}/deployments?limit=1");
+            ContractSchema.AssertValid("missions/v1/deployment-page.schema.json", deploymentPage);
+            Assert.Equal(deploymentId, JsonDocument.Parse(deploymentPage).RootElement.GetProperty("items")[0].GetProperty("id").GetGuid());
+            Assert.Equal(HttpStatusCode.NotFound, (await outsider.GetAsync($"/v1/organizations/{org}/deployments")).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await owner.GetAsync($"/v1/organizations/{org}/deployments?cursor=invalid")).StatusCode);
             using var command = await DeviceSocket.ReceiveAsync(socket);
             Assert.Equal("mission.prepare", command.Payload().GetProperty("kind").GetString());
             var pending = JsonDocument.Parse(await owner.GetStringAsync($"/v1/deployments/{deploymentId}")).RootElement;
@@ -160,6 +165,11 @@ public sealed class MissionDeploymentTests(PostgresFixture postgres)
             var executionJson = JsonDocument.Parse(await owner.GetStringAsync($"/v1/executions/{execution}")).RootElement;
             Assert.Equal(deploymentId, executionJson.GetProperty("deployment_id").GetGuid());
             Assert.Equal(firstRevision, executionJson.GetProperty("mission_revision_id").GetGuid());
+            var history = await owner.GetStringAsync($"/v1/robots/{robot}/executions?limit=1");
+            ContractSchema.AssertValid("scripts/v1/execution-page.schema.json", history);
+            Assert.Equal(execution, JsonDocument.Parse(history).RootElement.GetProperty("items")[0].GetProperty("id").GetGuid());
+            Assert.Equal(HttpStatusCode.NotFound, (await outsider.GetAsync($"/v1/robots/{robot}/executions")).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await owner.GetAsync($"/v1/robots/{robot}/executions?cursor=invalid")).StatusCode);
             owner.DefaultRequestHeaders.Remove("Idempotency-Key");
             owner.DefaultRequestHeaders.Add("Idempotency-Key", "restart-once");
             var restarted = await owner.PostAsync($"/v1/deployments/{deploymentId}/restart", null);

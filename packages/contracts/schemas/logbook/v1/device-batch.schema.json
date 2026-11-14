@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/logbook/v1/device-batch.schema.json",
+  "title": "Proposed device event batch",
+  "type": "object", "additionalProperties": false,
+  "required": ["events"],
+  "properties": {
+    "events": {"type": "array", "minItems": 1, "maxItems": 100,
+      "items": {"$ref": "https://contracts.ringfour.dev/logbook/v1/device-event.schema.json"}}
+  }
+}

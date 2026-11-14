@@ -6,6 +6,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .mission_context import CONTEXT_FILE
 from .script_bundle import MAX_ARCHIVE_BYTES, MAX_FILE_BYTES, ScriptBundle, pack_bundle
 
 
@@ -67,7 +68,7 @@ def build_mission_bundle(directory: Path) -> MissionBundle:
         raise ValueError("Mission python_requirement must contain 1–128 characters.")
     if not _valid_relative(entrypoint) or not entrypoint.endswith(".py"):
         raise ValueError("Mission entrypoint must be a relative ASCII .py path.")
-    if not _valid_relative(lock_path) or lock_path == "mission.toml" or any(part.startswith(".") for part in lock_path.split("/")):
+    if not _valid_relative(lock_path) or lock_path in ("mission.toml", CONTEXT_FILE) or any(part.startswith(".") for part in lock_path.split("/")):
         raise ValueError("Mission lock_file must be a visible relative ASCII path.")
     profile = local.get("robot_profile_ref")
     if profile is not None and (not isinstance(profile, str) or not profile.strip() or len(profile) > 240):
@@ -87,7 +88,7 @@ def build_mission_bundle(directory: Path) -> MissionBundle:
                     continue
                 path = Path(current) / name
                 relative = path.relative_to(directory).as_posix()
-                if relative in ("mission.toml", lock_path):
+                if relative in ("mission.toml", CONTEXT_FILE, lock_path):
                     continue
                 if relative == "requirements.lock":
                     raise ValueError("requirements.lock conflicts with the selected lock_file.")
@@ -102,6 +103,8 @@ def build_mission_bundle(directory: Path) -> MissionBundle:
                 files[relative] = content
     except (OSError, UnicodeError) as exc:
         raise ValueError("Mission source or lock is unreadable or invalid UTF-8.") from exc
+    if entrypoint == CONTEXT_FILE:
+        raise ValueError("Mission entrypoint cannot be the local context file.")
     if entrypoint not in files:
         raise ValueError("Mission entrypoint is missing or excluded.")
     bundle = pack_bundle(files, entrypoint)

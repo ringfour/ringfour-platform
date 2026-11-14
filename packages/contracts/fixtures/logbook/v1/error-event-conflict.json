@@ -1,0 +1,1 @@
+{"error":{"code":"event_conflict","message":"An event ID or sequence was reused with different content.","request_id":"example-request-id"}}

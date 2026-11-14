@@ -31,10 +31,12 @@ injected at runtime. Local mode has different variable behavior; consult the
 before testing. Actual device version, Supervisor version, commands, results and
 cleanup must be recorded in `docs/evidence/04.md` before marking that gate passed.
 
-The Runner build includes the pinned RoboCore C-preview SDK wheel. For a
-mission that uses the Agent, set `ROBOCORE_AGENT_URL` on the Runner service to
+The Runner build includes the pinned Ringfour SDK wheel. For a
+mission that uses the Agent, set `RINGFOUR_AGENT_URL` on the Runner service to
 the Agent's WebSocket URL as reachable **from the Runner container**. The
 mission must list the matching wheel and hash in its requirements lock; the
 Runner installs it into that mission's separate uv environment. A host-networked
 Agent is not at the Runner container's `127.0.0.1`. The existing Agent still
 owns the profile and ROS integration.
+
+The supplied sample missions also accept the existing `ROBOCORE_AGENT_URL` during migration. Preserve the Agent state volume and follow the Agent migration notes when updating a device.

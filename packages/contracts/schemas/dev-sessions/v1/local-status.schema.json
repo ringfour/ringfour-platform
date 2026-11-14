@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/dev-sessions/v1/local-status.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "state",
+    "generation",
+    "report_pending"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "state": {
+      "const": "ready"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20
+    },
+    "report_pending": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20
+    }
+  }
+}

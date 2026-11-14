@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/logbook/v1/agent-motion-event.schema.json",
+  "title": "Proposed Agent motion lifecycle event",
+  "description": "New Ringfour integration design, not an existing Agent API. Physical stop confirmation must only come from Agent evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "stream_id",
+    "sequence",
+    "occurred_at",
+    "event_type",
+    "operation_id",
+    "session_id",
+    "owner",
+    "stop_verified"
+  ],
+  "properties": {
+    "event_id": {
+      "$ref": "#/$defs/uuid"
+    },
+    "stream_id": {
+      "$ref": "#/$defs/uuid"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "occurred_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "event_type": {
+      "enum": [
+        "motion.accepted",
+        "motion.refused",
+        "motion.completed",
+        "motion.cancelled",
+        "motion.stop_verified",
+        "motion.guard_tripped",
+        "motion.failed",
+        "motion.history_incomplete"
+      ]
+    },
+    "operation_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 200,
+      "not": {
+        "type": "string",
+        "pattern": "\\u0000"
+      }
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 200,
+      "not": {
+        "type": "string",
+        "pattern": "\\u0000"
+      }
+    },
+    "owner": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 200,
+      "not": {
+        "type": "string",
+        "pattern": "\\u0000"
+      }
+    },
+    "stop_verified": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "motion.stop_verified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stop_verified": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "motion.accepted",
+              "motion.refused",
+              "motion.completed",
+              "motion.cancelled",
+              "motion.guard_tripped",
+              "motion.failed",
+              "motion.history_incomplete"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stop_verified": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

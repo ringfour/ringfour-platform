@@ -2,7 +2,9 @@ import base64
 import codecs
 import hashlib
 import os
+import secrets
 import time
+import tomllib
 import uuid
 import webbrowser
 from collections.abc import Callable
@@ -23,14 +25,24 @@ from .config import (
     selected_org,
     update_config,
 )
+from .dev_sync import LocalTransportError, build_snapshot, local_request
+from .dev_sync import daemon_url as validate_daemon_url
 from .mission_bundle import build_mission_bundle
+from .mission_context import (
+    CONTEXT_FILE,
+    context_api_url,
+    mission_directory,
+    read_context,
+    save_dev_session,
+    save_target,
+)
 from .script_bundle import build_script_bundle
 
 
 class RingfourGroup(TyperGroup):
     def parse_args(self, ctx, args):
         # Support the requested folder-first form without changing normal commands.
-        if len(args) >= 2 and args[1] == "push" and not args[0].startswith("-"):
+        if len(args) >= 2 and args[1] == "push" and not args[0].startswith("-") and args[0] not in self.commands:
             args = ["mission", "push", args[0], *args[2:]]
         return super().parse_args(ctx, args)
 
@@ -51,6 +63,8 @@ execution_app = typer.Typer(help="Inspect and stop script executions.", no_args_
 app.add_typer(execution_app, name="execution")
 artifact_app = typer.Typer(help="Download script artifacts.", no_args_is_help=True)
 app.add_typer(artifact_app, name="artifact")
+dev_app = typer.Typer(help="Work on a robot over the local network.", no_args_is_help=True)
+app.add_typer(dev_app, name="dev")
 mission_app = typer.Typer(help="Publish and operate missions.", no_args_is_help=True)
 app.add_typer(mission_app, name="mission")
 console = Console()
@@ -317,17 +331,80 @@ def _publish_mission(directory: Path, settings, store, org_id: str, key: str) ->
         json={"script_revision_id": source_id, "expected_version": expected, "manifest": manifest}).json()
 
 
-def _target_robot(settings, store, org_id: str, robot: str | None) -> str:
-    if robot or os.environ.get("RINGFOUR_ROBOT_ID"):
-        return robot or os.environ["RINGFOUR_ROBOT_ID"]
+def _target_robot(settings, store, org_id: str, robot: str | None) -> tuple[str, str | None]:
+    requested = robot or os.environ.get("RINGFOUR_ROBOT_ID")
+    if requested:
+        try:
+            return str(uuid.UUID(requested)), None
+        except ValueError:
+            matches = [item for item in _pages(f"/v1/organizations/{org_id}/robots", settings, store) if item.get("name") == requested or item.get("id") == requested]
+            if len(matches) != 1:
+                console.print("[red]Robot name not found or ambiguous in this organization; use its ID.[/red]")
+                raise typer.Exit(1)
+            return matches[0]["id"], matches[0].get("name")
     online = []
     for item in _pages(f"/v1/organizations/{org_id}/robots", settings, store):
         if item.get("enrolled_at") and _api_request("GET", f"/v1/robots/{item['id']}/status", settings, store).json()["online"]:
-            online.append(item["id"])
+            online.append(item)
     if len(online) != 1:
         console.print("[red]Specify --robot or RINGFOUR_ROBOT_ID; exactly one online enrolled robot is required for automatic selection.[/red]")
         raise typer.Exit(1)
-    return online[0]
+    return online[0]["id"], online[0].get("name")
+
+
+def _context_target(settings, store, org: str | None, robot: str | None) -> dict:
+    try:
+        api_url = context_api_url(settings.api_url)
+        directory = mission_directory(Path.cwd())
+        document = read_context(directory)
+        manifest = tomllib.loads((directory / "mission.toml").read_text(encoding="utf-8"))
+        name = manifest.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Mission manifest has no valid name.")
+    except (OSError, UnicodeError, ValueError, tomllib.TOMLDecodeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+    org_id = _resolve_org(settings, org)
+    targets = [item for item in document["targets"] if item["api_url"] == api_url and item["organization_id"] == org_id and item["mission_name"] == name]
+    if robot:
+        targets = [item for item in targets if item["robot_id"] == robot or item["robot_name"] == robot]
+    if not targets:
+        missions = [item for item in _pages(f"/v1/organizations/{org_id}/missions", settings, store) if item["name"] == name]
+        if len(missions) == 1:
+            mission = missions[0]
+            revisions = {item["id"] for item in _pages(f"/v1/missions/{mission['id']}/revisions", settings, store)}
+            robots = {item["id"]: item for item in _pages(f"/v1/organizations/{org_id}/robots", settings, store)}
+            for item in _pages(f"/v1/organizations/{org_id}/deployments", settings, store):
+                revision_id = item.get("candidate_revision_id") or item.get("selected_revision_id")
+                device = robots.get(item["robot_id"], {})
+                if revision_id in revisions and (not robot or robot in (item["robot_id"], device.get("name"))):
+                    targets.append({"api_url": api_url, "organization_id": org_id, "mission_name": name,
+                        "mission_id": mission["id"], "robot_id": item["robot_id"], "robot_name": device.get("name"),
+                        "deployment_id": item["id"], "revision_id": revision_id})
+            if len(targets) == 1:
+                try:
+                    save_target(directory, targets[0])
+                    typer.echo(f"Recovered {CONTEXT_FILE} from the Platform.", err=True)
+                except (OSError, ValueError) as error:
+                    typer.echo(f"Could not save {CONTEXT_FILE}: {error}", err=True)
+    if len(targets) != 1:
+        console.print(f"[red]{'No matching mission context or deployment. Push this mission first.' if not targets else 'Multiple matching robots; specify --robot by name or ID.'}[/red]")
+        raise typer.Exit(1)
+    target = targets[0]
+    typer.echo(f"Mission {name} → robot {target['robot_name'] or target['robot_id']} ({target['robot_id']})", err=True)
+    return target
+
+
+def _context_deployment(settings, store, org: str | None, robot: str | None) -> tuple[dict, dict]:
+    target = _context_target(settings, store, org, robot)
+    deployment = _api_request("GET", f"/v1/deployments/{target['deployment_id']}", settings, store).json()
+    if deployment.get("robot_id") != target["robot_id"]:
+        console.print("[red]Stored deployment no longer belongs to this robot; push again.[/red]")
+        raise typer.Exit(1)
+    if deployment.get("candidate_revision_id") is not None or deployment.get("selected_revision_id") != target["revision_id"]:
+        console.print("[red]The last pushed revision is not selected or is still preparing; check deployment status before acting.[/red]")
+        raise typer.Exit(1)
+    return target, deployment
 
 
 @mission_app.command("publish")
@@ -351,53 +428,160 @@ def deploy_mission(revision_id: str, robot: str = typer.Option(..., "--robot"),
 @mission_app.command("push")
 def mission_push(directory: Path, robot: str | None = typer.Option(None, "--robot"),
     org: str | None = typer.Option(None, "--org"),
-    idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
-    """Publish and deploy a mission without starting it."""
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key"),
+    start: bool = typer.Option(False, "--start", help="Wait for preparation, then start the revision."),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Follow output after --start.")) -> None:
+    """Publish and deploy a mission; optionally start and follow it."""
+    if follow and not start:
+        raise typer.BadParameter("--follow requires --start.")
     settings, store = _settings(), auth.TokenStore()
     org_id, key = _resolve_org(settings, org), _mission_key(idempotency_key)
-    target = _target_robot(settings, store, org_id, robot)
+    try:
+        api_url = context_api_url(settings.api_url)
+        document = read_context(directory)
+        project = tomllib.loads((directory / "mission.toml").read_text(encoding="utf-8"))
+        remembered = [item for item in document["targets"] if item["api_url"] == api_url and item["organization_id"] == org_id and item["mission_name"] == project.get("name")]
+        if not robot and not os.environ.get("RINGFOUR_ROBOT_ID"):
+            if len(remembered) > 1:
+                raise ValueError("Multiple remembered robots; specify --robot by name or ID.")
+            if remembered:
+                robot = remembered[0]["robot_id"]
+    except (ValueError, OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+    target, robot_name = _target_robot(settings, store, org_id, robot)
     revision = _publish_mission(directory, settings, store, org_id, key)
     body = _api_request("POST", f"/v1/robots/{target}/deployments", settings, store,
         headers={"Idempotency-Key": key + ":deploy"}, json={"mission_revision_id": revision["id"]}).json()
+    try:
+        mission = tomllib.loads((directory / "mission.toml").read_text(encoding="utf-8"))
+        save_target(directory, {"api_url": api_url, "organization_id": org_id,
+            "mission_name": mission["name"], "mission_id": revision["mission_id"], "robot_id": target,
+            "robot_name": robot_name, "deployment_id": body["deployment_id"], "revision_id": revision["id"]})
+    except (OSError, ValueError, KeyError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        typer.echo(f"Deployment accepted, but could not save {CONTEXT_FILE}: {error}", err=True)
     console.print_json(data={"mission_revision_id": revision["id"], **body})
+    if start:
+        typer.echo(f"Waiting for preparation on {robot_name or target}…", err=True)
+        deadline = time.monotonic() + 600
+        while time.monotonic() < deadline:
+            current = _api_request("GET", f"/v1/deployments/{body['deployment_id']}", settings, store).json()
+            if current.get("candidate_revision_id") is None:
+                if current.get("last_error") or current.get("selected_revision_id") != revision["id"] or current.get("last_operation_id") != body["operation_id"]:
+                    error = current.get("last_error") or {}
+                    console.print(f"[red]Preparation did not select this revision: {error.get('message', 'check deployment status')}[/red]")
+                    raise typer.Exit(1)
+                break
+            time.sleep(1)
+        else:
+            console.print("[red]Preparation is still pending; use status to check it. The mission was not started.[/red]")
+            raise typer.Exit(1)
+        accepted = _api_request("POST", f"/v1/deployments/{body['deployment_id']}/start", settings, store,
+            headers={"Idempotency-Key": key + ":start"}).json()
+        console.print_json(data=accepted)
+        if follow:
+            execution_id = accepted["execution_id"]
+            typer.echo(f"Waiting for execution {execution_id}…", err=True)
+            deadline = time.monotonic() + 600
+            while time.monotonic() < deadline:
+                current = _api_request("GET", f"/v1/deployments/{body['deployment_id']}", settings, store).json()
+                if current.get("last_execution_id") == execution_id:
+                    break
+                if current.get("last_error"):
+                    console.print(f"[red]Start failed: {current['last_error']['message']}[/red]")
+                    raise typer.Exit(1)
+                time.sleep(1)
+            else:
+                console.print("[red]Start was accepted but execution is not available yet; check status.[/red]")
+                raise typer.Exit(1)
+            try:
+                result = _execution_logs(settings, store, execution_id, True)
+            except KeyboardInterrupt:
+                typer.echo("Interrupted; the execution continues.", err=True)
+                raise typer.Exit(130) from None
+            if result["state"] != "succeeded":
+                typer.echo(f"Execution {result['state']}", err=True)
+                code = result.get("exit_code")
+                raise typer.Exit(code if isinstance(code, int) and 1 <= code <= 125 else 1)
 
 
-def _mission_action(deployment_id: str, action: str, key: str | None) -> None:
-    body = _api_request("POST", f"/v1/deployments/{deployment_id}/{action}", _settings(), auth.TokenStore(),
+def _mission_action(deployment_id: str | None, action: str, key: str | None, robot: str | None, org: str | None) -> None:
+    settings, store = _settings(), auth.TokenStore()
+    if deployment_id is None:
+        target, _ = _context_deployment(settings, store, org, robot)
+        deployment_id = target["deployment_id"]
+    elif robot or org:
+        raise typer.BadParameter("--robot and --org are only used when no deployment ID is supplied.")
+    body = _api_request("POST", f"/v1/deployments/{deployment_id}/{action}", settings, store,
         headers={"Idempotency-Key": _mission_key(key)}).json()
     console.print_json(data=body)
 
 
 @mission_app.command("start")
-def mission_start(deployment_id: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+def mission_start(deployment_id: str | None = typer.Argument(None), robot: str | None = typer.Option(None, "--robot"), org: str | None = typer.Option(None, "--org"), idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
     """Start the selected revision."""
-    _mission_action(deployment_id, "start", idempotency_key)
+    _mission_action(deployment_id, "start", idempotency_key, robot, org)
 
 
 @mission_app.command("stop")
-def mission_stop(deployment_id: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+def mission_stop(deployment_id: str | None = typer.Argument(None), robot: str | None = typer.Option(None, "--robot"), org: str | None = typer.Option(None, "--org"), idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
     """Stop the selected mission."""
-    _mission_action(deployment_id, "stop", idempotency_key)
+    _mission_action(deployment_id, "stop", idempotency_key, robot, org)
 
 
 @mission_app.command("restart")
-def mission_restart(deployment_id: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
+def mission_restart(deployment_id: str | None = typer.Argument(None), robot: str | None = typer.Option(None, "--robot"), org: str | None = typer.Option(None, "--org"), idempotency_key: str | None = typer.Option(None, "--idempotency-key")) -> None:
     """Explicitly restart with a new execution ID."""
-    _mission_action(deployment_id, "restart", idempotency_key)
+    _mission_action(deployment_id, "restart", idempotency_key, robot, org)
 
 
 @mission_app.command("status")
-def mission_status(deployment_id: str) -> None:
+def mission_status(deployment_id: str | None = typer.Argument(None), robot: str | None = typer.Option(None, "--robot"), org: str | None = typer.Option(None, "--org")) -> None:
     """Inspect the selected revision and lifecycle state."""
-    body = _api_request("GET", f"/v1/deployments/{deployment_id}", _settings(), auth.TokenStore()).json()
+    settings, store = _settings(), auth.TokenStore()
+    if deployment_id is None:
+        target = _context_target(settings, store, org, robot)
+        deployment_id = target["deployment_id"]
+    elif robot or org:
+        raise typer.BadParameter("--robot and --org are only used when no deployment ID is supplied.")
+    body = _api_request("GET", f"/v1/deployments/{deployment_id}", settings, store).json()
     console.print_json(data=body)
 
 
+# Expose the same commands at the top level for working inside a mission.
+app.command("start")(mission_start)
+app.command("stop")(mission_stop)
+app.command("restart")(mission_restart)
+app.command("status")(mission_status)
+
+
 @app.command("logs")
-def script_logs(execution_id: str, follow: bool = typer.Option(False, "--follow", "-f")) -> None:
+def script_logs(execution_id: str | None = typer.Argument(None), follow: bool = typer.Option(False, "--follow", "-f"), robot: str | None = typer.Option(None, "--robot"), org: str | None = typer.Option(None, "--org")) -> None:
     """Read stdout and stderr; optionally follow until the execution finishes."""
+    settings, store = _settings(), auth.TokenStore()
+    if execution_id is None:
+        target, deployment = _context_deployment(settings, store, org, robot)
+        if follow and deployment.get("observed_state") == "starting":
+            typer.echo("Waiting for the execution to start…", err=True)
+            deadline = time.monotonic() + 60
+            while deployment.get("observed_state") == "starting" and time.monotonic() < deadline:
+                time.sleep(1)
+                _, deployment = _context_deployment(settings, store, org, robot)
+        if deployment.get("observed_state") in ("starting", "preparing"):
+            console.print("[red]The latest execution is still starting; check status and retry logs.[/red]")
+            raise typer.Exit(1)
+        execution_id = deployment.get("last_execution_id")
+        if not execution_id:
+            console.print("[red]This deployment has no execution yet.[/red]")
+            raise typer.Exit(1)
+        execution = _api_request("GET", f"/v1/executions/{execution_id}", settings, store).json()
+        if execution.get("mission_revision_id") != target["revision_id"] or execution.get("deployment_id") != target["deployment_id"]:
+            console.print("[red]The latest execution belongs to a different revision; start this mission first.[/red]")
+            raise typer.Exit(1)
+    elif robot or org:
+        raise typer.BadParameter("--robot and --org are only used when no execution ID is supplied.")
     try:
-        _execution_logs(_settings(), auth.TokenStore(), execution_id, follow)
+        _execution_logs(settings, store, execution_id, follow)
     except KeyboardInterrupt:
         raise typer.Exit(130) from None
 
@@ -785,3 +969,325 @@ def daemon_identity() -> None:
     console.print(f"Credential:    {body['credential_id']}")
     if body.get("error"):
         console.print(f"[red]Error: {body['error']}[/red]")
+
+
+def _dev_project(directory: Path | None = None) -> Path:
+    try:
+        start = directory or Path.cwd()
+        if start.is_symlink():
+            raise ValueError("Mission directory must not be a symlink.")
+        return mission_directory(start)
+    except (OSError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+
+
+def _dev_target(settings, org: str | None, robot: str | None, session: str | None, directory: Path):
+    org_id = _resolve_org(settings, org)
+    try:
+        api = context_api_url(settings.api_url)
+        document = read_context(directory)
+        matches = [item for item in document.get("dev_sessions", []) if item["api_url"] == api and item["organization_id"] == org_id]
+        if robot:
+            matches = [item for item in matches if robot in (item["robot_id"], item["robot_name"])]
+        if session:
+            matches = [item for item in matches if item["session_id"] == session]
+        if len(matches) != 1:
+            raise ValueError("No unique development session in this project; use --robot or run `dev start`.")
+        return matches[0]
+    except (OSError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+
+
+def _wait_dev_operation(settings, store, robot_id: str, operation_id: str, *, attempts: int = 60):
+    for _ in range(attempts):
+        operation = _api_request("GET", f"/v1/robots/{robot_id}/operations/{operation_id}", settings, store).json()
+        if operation.get("state") == "succeeded":
+            return
+        if operation.get("state") in ("failed", "cancelled"):
+            typer.echo("The device could not authorize the local connection.", err=True)
+            raise typer.Exit(1)
+        time.sleep(1)
+    typer.echo("Timed out waiting for the device; try again.", err=True)
+    raise typer.Exit(1)
+
+
+def _local_grant(settings, store, target, daemon_url=None):
+    session_id, robot_id = target["session_id"], target["robot_id"]
+    chosen_url = daemon_url or target["daemon_url"]
+    try:
+        if chosen_url:
+            chosen_url = validate_daemon_url(chosen_url)
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    raw_token = secrets.token_bytes(32)
+    token = base64.urlsafe_b64encode(raw_token).decode().rstrip("=")
+    grant_id = str(uuid.uuid4())
+    grant = _api_request("POST", f"/v1/dev-sessions/{session_id}/local-grants", settings, store,
+        headers={"Idempotency-Key": str(uuid.uuid4())},
+        json={"grant_id": grant_id, "token_sha256": hashlib.sha256(raw_token).hexdigest()}).json()
+    try:
+        if grant["grant_id"] != grant_id or str(uuid.UUID(grant["operation_id"])) != grant["operation_id"]:
+            raise ValueError("Platform returned an invalid grant.")
+        chosen_url = validate_daemon_url(chosen_url or grant.get("daemon_url"))
+        pin = grant["certificate_sha256"]
+    except (KeyError, ValueError, TypeError) as error:
+        typer.echo(f"Local connection is not configured: {error}. Use --daemon-url if needed.", err=True)
+        raise typer.Exit(1) from error
+    _wait_dev_operation(settings, store, robot_id, grant["operation_id"])
+    return chosen_url, pin, token
+
+
+@dev_app.command("start")
+def dev_start(
+    directory: Path = typer.Argument(Path("."), help="Mission directory."),  # noqa: B008
+    robot: str | None = typer.Option(None, "--robot", help="Robot name or ID."),
+    org: str | None = typer.Option(None, "--org", help="Organization ID."),
+    daemon_url: str | None = typer.Option(None, "--daemon-url", help="HTTPS LAN address if not advertised."),
+    ttl: int = typer.Option(3600, "--ttl", min=300, max=28800, help="Session lifetime in seconds."),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key"),
+) -> None:
+    """Create an empty development workspace on a robot."""
+    directory = _dev_project(directory)
+    settings, store = _settings(), auth.TokenStore()
+    org_id = _resolve_org(settings, org)
+    try:
+        api = context_api_url(settings.api_url)
+        read_context(directory)
+        build_snapshot(directory, [], 0)
+        if daemon_url:
+            daemon_url = validate_daemon_url(daemon_url)
+    except (OSError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    robot_id, robot_name = _target_robot(settings, store, org_id, robot)
+    key = _mission_key(idempotency_key)
+    result = _api_request("POST", f"/v1/robots/{robot_id}/dev-sessions", settings, store,
+        headers={"Idempotency-Key": key}, json={"ttl_seconds": ttl}).json()
+    try:
+        session = str(uuid.UUID(result["session_id"]))
+        if session != result["session_id"]:
+            raise ValueError
+        target = {"api_url": api, "organization_id": org_id, "robot_id": robot_id, "robot_name": robot_name,
+                  "session_id": session, "daemon_url": daemon_url}
+        save_dev_session(directory, target)
+    except (KeyError, OSError, TypeError, ValueError) as error:
+        typer.echo(f"Session was accepted but its context could not be saved: {error}", err=True)
+        typer.echo(f"Session ID: {result.get('session_id', 'unknown')}", err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"Session {session} created; waiting for the robot…", err=True)
+    for _ in range(60):
+        status = _api_request("GET", f"/v1/dev-sessions/{session}", settings, store).json()
+        if status.get("state") == "ready":
+            typer.echo("Development workspace ready. Run `ringfour-cli dev sync` to copy source.")
+            return
+        if status.get("state") in ("failed", "closed", "expired"):
+            typer.echo(f"Session entered {status['state']}.", err=True)
+            raise typer.Exit(1)
+        time.sleep(1)
+    typer.echo("Session creation is still pending; use `ringfour-cli dev status` to check it.", err=True)
+    raise typer.Exit(1)
+
+
+@dev_app.command("sync")
+def dev_sync(
+    robot: str | None = typer.Option(None, "--robot", help="Robot name or ID."),
+    org: str | None = typer.Option(None, "--org", help="Organization ID."),
+    session: str | None = typer.Option(None, "--session", help="Remembered session ID."),
+    daemon_url: str | None = typer.Option(None, "--daemon-url", help="HTTPS LAN address override."),
+) -> None:
+    """Sync this project's source directly to the robot over HTTPS."""
+    directory = _dev_project()
+    settings, store = _settings(), auth.TokenStore()
+    target = _dev_target(settings, org, robot, session, directory)
+    session_id, robot_id = target["session_id"], target["robot_id"]
+    state = _api_request("GET", f"/v1/dev-sessions/{session_id}", settings, store).json()
+    if state.get("robot_id") != robot_id or state.get("state") not in ("ready", "running"):
+        typer.echo("The remembered development session is not ready on this robot.", err=True)
+        raise typer.Exit(1)
+    chosen_url, pin, token = _local_grant(settings, store, target, daemon_url)
+    path = f"/v1/local/dev-sessions/{session_id}/source"
+    try:
+        status, current = local_request(chosen_url, pin, token, "GET", path)
+        if status != 200 or not isinstance(current, dict) or set(current) != {"generation", "paths", "archive_sha256"}:
+            raise ValueError("Could not read source state from the local daemon.")
+        remote_hash = current["archive_sha256"]
+        if ((current["generation"] == 0 and remote_hash is not None) or
+                (current["generation"] != 0 and (not isinstance(remote_hash, str) or len(remote_hash) != 64 or any(char not in "0123456789abcdef" for char in remote_hash)))):
+            raise ValueError("Daemon returned invalid source state.")
+        body = build_snapshot(directory, current["paths"], current["generation"])
+        if remote_hash == body["archive_sha256"]:
+            typer.echo(f"Source is already up to date (generation {current['generation']}).")
+            return
+        key = str(uuid.uuid4())
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            try:
+                status, response = local_request(chosen_url, pin, token, "PUT", path, body=body, key=key)
+                if status == 503 and response.get("error", {}).get("code") == "sync_pending":
+                    time.sleep(1)
+                    continue
+                break
+            except LocalTransportError:
+                time.sleep(1)
+        else:
+            raise ValueError("Local sync is still pending; run `dev sync` again to reconcile it.")
+        if status != 200:
+            code = response.get("error", {}).get("code", "local_error") if isinstance(response, dict) else "local_error"
+            raise ValueError(f"Local sync failed: {code}.")
+        if (not isinstance(response, dict) or response.get("session_id") != session_id or
+                response.get("generation") != body["base_generation"] + 1 or response.get("archive_sha256") != body["archive_sha256"]):
+            raise ValueError("Daemon returned an inconsistent sync result.")
+        typer.echo(f"Source synced to the robot (generation {response['generation']}).")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+
+
+@dev_app.command("status")
+def dev_status(robot: str | None = typer.Option(None, "--robot"), org: str | None = typer.Option(None, "--org")) -> None:
+    """Show the remembered development session's Platform state."""
+    directory = _dev_project()
+    settings, store = _settings(), auth.TokenStore()
+    target = _dev_target(settings, org, robot, None, directory)
+    console.print_json(data=_api_request("GET", f"/v1/dev-sessions/{target['session_id']}", settings, store).json())
+
+
+@dev_app.command("stop")
+def dev_stop(robot: str | None = typer.Option(None, "--robot"), org: str | None = typer.Option(None, "--org")) -> None:
+    """Close the remembered development session and clean up its workspace."""
+    directory = _dev_project()
+    settings, store = _settings(), auth.TokenStore()
+    target = _dev_target(settings, org, robot, None, directory)
+    result = _api_request("DELETE", f"/v1/dev-sessions/{target['session_id']}", settings, store,
+        headers={"Idempotency-Key": str(uuid.uuid4())}).json()
+    console.print_json(data=result)
+    typer.echo("Closure requested; use `dev status` to check cleanup.", err=True)
+
+
+def _dev_output(settings, store, target, execution_id, connection, *, follow):
+    session_id = target["session_id"]
+    base = f"/v1/local/dev-sessions/{session_id}/executions/{execution_id}"
+    offsets = {"stdout": 0, "stderr": 0}
+    decoders = {stream: codecs.getincrementaldecoder("utf-8")("replace") for stream in offsets}
+    deadline = time.monotonic() + 60
+    warned, ended = set(), set()
+    while True:
+        waiting = False
+        more = False
+        for stream, offset in offsets.items():
+            if stream in ended:
+                continue
+            url, pin, token = connection
+            status, body = local_request(url, pin, token, "GET", f"{base}/output?stream={stream}&offset={offset}&limit=16384")
+            if status == 401:
+                connection = _local_grant(settings, store, target, url)
+                waiting = True
+                break
+            if status in (404, 503) and time.monotonic() < deadline:
+                waiting = True
+                break
+            if status != 200 or not isinstance(body, dict):
+                raise ValueError("Could not read execution output from the local daemon.")
+            try:
+                data = base64.b64decode(body["data_base64"], validate=True)
+                if (body["execution_id"] != execution_id or body["stream"] != stream or
+                        body["offset"] != offset or body["next_offset"] != offset + len(data) or
+                        len(data) > 16384 or type(body["eof"]) is not bool):
+                    raise ValueError
+            except (KeyError, ValueError, TypeError):
+                raise ValueError("Daemon returned invalid execution output.") from None
+            offsets[stream] = body["next_offset"]
+            more = more or len(data) == 16384
+            output = decoders[stream].decode(data, final=body["eof"])
+            if output:
+                typer.echo(output, nl=False, err=stream == "stderr")
+            if body["eof"]:
+                ended.add(stream)
+            if body.get("truncated") and stream not in warned:
+                typer.echo(f"\n{stream} output was truncated on the robot.", err=True)
+                warned.add(stream)
+        if len(ended) == 2:
+            if follow:
+                status, execution = local_request(*connection, "GET", base)
+                if status != 200 or not isinstance(execution, dict) or execution.get("execution_id") != execution_id:
+                    raise ValueError("Could not read the final execution state from the local daemon.")
+                if execution.get("state") in ("failed", "cancelled"):
+                    raise ValueError(f"Development execution {execution['state']}.")
+                if execution.get("state") != "succeeded":
+                    raise ValueError("Daemon returned an invalid final execution state.")
+            return
+        if not follow and not waiting and not more:
+            return
+        time.sleep(0.5)
+
+
+@dev_app.command("restart")
+def dev_restart(
+    robot: str | None = typer.Option(None, "--robot"),
+    org: str | None = typer.Option(None, "--org"),
+    daemon_url: str | None = typer.Option(None, "--daemon-url"),
+    follow: bool = typer.Option(False, "--follow", "-f"),
+) -> None:
+    """Restart the synced code on the robot; optionally follow its local output."""
+    settings, store = _settings(), auth.TokenStore()
+    target = _dev_target(settings, org, robot, None, _dev_project())
+    session_id = target["session_id"]
+    connection = _local_grant(settings, store, target, daemon_url)
+    try:
+        status, source = local_request(*connection, "GET", f"/v1/local/dev-sessions/{session_id}/source")
+        generation = source.get("generation") if isinstance(source, dict) else None
+        if status != 200 or type(generation) is not int or not 1 <= generation <= 20:
+            raise ValueError("No synced source is available; run `dev sync` first.")
+        for _ in range(60):
+            state = _api_request("GET", f"/v1/dev-sessions/{session_id}", settings, store).json()
+            if state.get("robot_id") != target["robot_id"] or state.get("state") in ("closed", "closing", "expired", "failed"):
+                raise ValueError("The development session is unavailable.")
+            if state.get("generation") == generation and state.get("state") in ("ready", "running"):
+                break
+            if type(state.get("generation")) is int and state["generation"] > generation:
+                raise ValueError("Local and Platform source generations do not match.")
+            time.sleep(1)
+        else:
+            raise ValueError("Timed out waiting for the Platform to confirm the local source generation.")
+        result = _api_request("POST", f"/v1/dev-sessions/{session_id}/restart", settings, store,
+            headers={"Idempotency-Key": str(uuid.uuid4())}, json={"generation": generation}).json()
+        execution_id = result["execution_id"]
+        if str(uuid.UUID(execution_id)) != execution_id or result.get("session_id") != session_id:
+            raise ValueError("Platform returned an invalid execution.")
+        typer.echo(f"Development execution {execution_id} requested.", err=True)
+        if follow:
+            _dev_output(settings, store, target, execution_id, connection, follow=True)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    except KeyboardInterrupt:
+        typer.echo("Stopped following output; execution continues on the robot.", err=True)
+        raise typer.Exit(130) from None
+
+
+@dev_app.command("logs")
+def dev_logs(
+    robot: str | None = typer.Option(None, "--robot"),
+    org: str | None = typer.Option(None, "--org"),
+    daemon_url: str | None = typer.Option(None, "--daemon-url"),
+    follow: bool = typer.Option(False, "--follow", "-f"),
+) -> None:
+    """Read the latest development execution's output directly from the robot."""
+    settings, store = _settings(), auth.TokenStore()
+    target = _dev_target(settings, org, robot, None, _dev_project())
+    state = _api_request("GET", f"/v1/dev-sessions/{target['session_id']}", settings, store).json()
+    try:
+        execution_id = state["last_execution_id"]
+        if str(uuid.UUID(execution_id)) != execution_id or state.get("robot_id") != target["robot_id"]:
+            raise ValueError("No development execution is available.")
+        connection = _local_grant(settings, store, target, daemon_url)
+        _dev_output(settings, store, target, execution_id, connection, follow=follow)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    except KeyboardInterrupt:
+        typer.echo("Stopped following output; execution continues on the robot.", err=True)
+        raise typer.Exit(130) from None

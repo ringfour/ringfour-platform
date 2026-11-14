@@ -21,6 +21,7 @@ public static class ScriptRunEndpoints
         var group = endpoints.MapGroup("/v1").RequireAuthorization();
         group.MapPost("/robots/{robotId:guid}/script-runs", Start);
         group.MapGet("/executions/{executionId:guid}", Get);
+        group.MapGet("/robots/{robotId:guid}/executions", List);
         group.MapGet("/executions/{executionId:guid}/output", GetOutput);
         group.MapGet("/executions/{executionId:guid}/artifacts", ListArtifacts);
         group.MapGet("/executions/{executionId:guid}/artifacts/content", DownloadArtifact);
@@ -83,6 +84,8 @@ public static class ScriptRunEndpoints
         if (deployment?.CandidateRevisionId is not null || (deployment is not null && await db.DeploymentActions.AnyAsync(
             item => item.DeploymentId == deployment.Id && (item.State == "pending" || item.State == "starting"), ct)))
             throw ApiException.Conflict("deployment_in_progress", "A mission deployment or restart is in progress.");
+        if (await db.DevSessionRuns.AnyAsync(item => item.RobotId == robotId && (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct))
+            throw ApiException.Conflict("execution_conflict", "A development execution is active.");
         if (await db.ScriptExecutions.AnyAsync(candidate => candidate.RobotId == robotId &&
             (candidate.State == "queued" || candidate.State == "preparing" || candidate.State == "running"), ct))
             throw ApiException.Conflict("execution_conflict", "Another execution is active.");
@@ -152,20 +155,35 @@ public static class ScriptRunEndpoints
     private static async Task<IResult> Get(HttpContext context, RingfourDbContext db, Guid executionId, CancellationToken ct)
     {
         var execution = await RequireExecution(context, db, executionId, OrgRole.Operator, ct);
-        return Results.Ok(new
-        {
-            id = execution.Id,
-            robot_id = execution.RobotId,
-            revision_id = execution.RevisionId,
-            actor_user_id = execution.ActorUserId,
-            deployment_id = execution.DeploymentId,
-            mission_revision_id = execution.MissionRevisionId,
-            state = execution.State,
-            created_at = execution.CreatedAt,
-            updated_at = execution.UpdatedAt,
-            exit_code = execution.ExitCode,
-            error = execution.Error is null ? null : JsonNode.Parse(execution.Error)
-        });
+        return Results.Ok(Response(execution));
+    }
+
+    private static object Response(ScriptExecution execution) => new
+    {
+        id = execution.Id,
+        robot_id = execution.RobotId,
+        revision_id = execution.RevisionId,
+        actor_user_id = execution.ActorUserId,
+        deployment_id = execution.DeploymentId,
+        mission_revision_id = execution.MissionRevisionId,
+        state = execution.State,
+        created_at = execution.CreatedAt,
+        updated_at = execution.UpdatedAt,
+        exit_code = execution.ExitCode,
+        error = execution.Error is null ? null : JsonNode.Parse(execution.Error)
+    };
+
+    private static async Task<IResult> List(HttpContext context, RingfourDbContext db, Guid robotId, string? cursor, int? limit, CancellationToken ct)
+    {
+        await RobotAccess.RequireRobotAccess(context, db, robotId, OrgRole.Operator, ct);
+        var (createdAfter, idAfter) = Pagination.DecodeCursor(cursor);
+        var pageSize = Pagination.ClampLimit(limit);
+        var query = db.ScriptExecutions.Where(item => item.RobotId == robotId);
+        if (createdAfter is not null)
+            query = query.Where(item => item.CreatedAt > createdAfter || (item.CreatedAt == createdAfter && item.Id.CompareTo(idAfter!.Value) > 0));
+        var values = await query.OrderBy(item => item.CreatedAt).ThenBy(item => item.Id).Take(pageSize + 1).ToListAsync(ct);
+        var page = values.Take(pageSize).ToList();
+        return Results.Ok(new { items = page.Select(Response), next_cursor = Pagination.NextCursor(values.Count > pageSize, page, item => item.CreatedAt, item => item.Id) });
     }
 
     private static async Task<IResult> GetOutput(HttpContext context, RingfourDbContext db, Guid executionId,

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import random
+import sqlite3
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from typing import Any
 import httpx
 import websockets
 
-from . import __version__, operations, runner, scripts
+from . import __version__, local_execution, local_grants, operations, runner, scripts
 from .enrollment import credential_error, load_identity
 
 logger = logging.getLogger(__name__)
@@ -247,7 +248,7 @@ class ConnectionManager:
                 logger.info("operation %s replaying terminal state %s", operation.operation_id, operation.state)
                 await self._report(outbound, state, operation)
                 return
-            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")) and operation.kind != "mission.prepare":
+            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")) and operation.kind != "mission.prepare" and operation.kind not in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.restart"):
                 # The effect may have happened before a crash. Never repeat it.
                 finished = operations.apply_status(
                     self._settings.db_path,
@@ -275,7 +276,7 @@ class ConnectionManager:
                 await self._report(outbound, state, finished)
                 return
 
-        if operations.is_expired(operation.deadline_at, self._now()) and not (not created and operation.state == "running" and operation.kind == "mission.prepare"):
+        if operations.is_expired(operation.deadline_at, self._now()) and not (not created and operation.state == "running" and (operation.kind == "mission.prepare" or operation.kind in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.restart"))):
             if operation.kind == "script.execution.start":
                 scripts.complete_sync(self._settings.db_path, operation.operation_id)
             finished = operations.apply_status(
@@ -301,6 +302,22 @@ class ConnectionManager:
                 result = await scripts.start(self._settings, operation)
             elif operation.kind == "script.execution.stop":
                 result = await scripts.stop(self._settings, operation)
+            elif operation.kind == "dev.session.restart":
+                result = await local_execution.restart(self._settings, operation)
+            elif operation.kind == "dev.session.grant":
+                if operation.payload.get("operation_id") != operation.operation_id:
+                    raise local_grants.GrantRejected("Operation ID mismatch.")
+                result = local_grants.install(self._settings.db_path, operation.payload, now=self._now())
+            elif operation.kind in ("dev.session.create", "dev.session.close", "dev.session.expire"):
+                if (operation.payload.get("reason") != operation.kind.removeprefix("dev.session.")
+                        or operation.payload.get("operation_id") != operation.operation_id
+                        or set(operation.payload) != {"operation_id", "session_id", "expires_at", "reason"}):
+                    raise local_grants.GrantRejected("Invalid lifecycle operation.")
+                if operation.kind != "dev.session.create":
+                    local_grants.record_session(self._settings.db_path, operation.payload["session_id"], operation.payload["expires_at"], operation.payload["reason"])
+                result = await runner.dev_session_lifecycle(self._settings, operation)
+                if operation.kind == "dev.session.create":
+                    local_grants.record_session(self._settings.db_path, operation.payload["session_id"], operation.payload["expires_at"], operation.payload["reason"])
             elif operation.kind == "mission.prepare":
                 result = await scripts.prepare_mission(self._settings, operation)
             else:
@@ -309,10 +326,17 @@ class ConnectionManager:
             finished = operations.apply_status(
                 self._settings.db_path, operation.operation_id, "succeeded", result
             )
-        except httpx.HTTPError:
+        except (httpx.HTTPError, sqlite3.Error):
             # Runner may have received the request; replay with the same ID.
             raise ProtocolError("Runner unreachable; reconcile on reconnect") from None
+        except local_grants.GrantRejected:
+            finished = operations.apply_status(
+                self._settings.db_path, operation.operation_id, "failed",
+                {"error": {"code": "invalid_grant", "message": "Local session or grant is invalid."}},
+            )
         except runner.RunnerRejected as failure:
+            if operation.kind == "dev.session.restart":
+                local_execution.fail_unstarted(self._settings.db_path, operation.operation_id)
             finished = operations.apply_status(
                 self._settings.db_path, operation.operation_id, "failed",
                 {"error": {"code": failure.code, "message": failure.message}},

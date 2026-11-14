@@ -1,0 +1,20 @@
+{
+  "event_id": "76b2c1ef-9f69-4763-884b-7cc7d6510db3",
+  "robot_id": "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
+  "local_sequence": 1,
+  "occurred_at": "2026-11-13T12:00:00Z",
+  "type": "agent.motion.event",
+  "schema_version": 1,
+  "operation_id": null,
+  "payload": {
+    "event_id": "76b2c1ef-9f69-4763-884b-7cc7d6510db3",
+    "stream_id": "950266e1-fffb-4e61-a1d4-492a15df9f46",
+    "sequence": 1,
+    "occurred_at": "2026-11-13T12:00:00Z",
+    "event_type": "motion.stop_verified",
+    "operation_id": "task-123",
+    "session_id": "session-456",
+    "owner": "operator-1",
+    "stop_verified": true
+  }
+}

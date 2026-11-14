@@ -15,8 +15,7 @@ cleanup() {
   rm -rf "$test_dir"
 }
 trap cleanup EXIT
-profile="${ROBOCORE_TEST_PROFILE:-$HOME/Work/robocore-sdk/artifacts/robocore-c-preview/source/robocore-sdk/tests/fixtures/profiles/base.yaml}"
-robot_root="${BASE101_ROOT:-$HOME/Work/robots/base101}"
+profile="${RINGFOUR_TEST_PROFILE:-$HOME/Work/ringfour/ringfour-testing/platform_tests/fixtures/profiles/base.yaml}"
 [ -f "$profile" ]
 mkdir -p "$test_dir/staged/mission"
 cp ../missions/diagnostics/main.py ../missions/diagnostics/requirements.lock "$test_dir/staged/mission/"
@@ -66,19 +65,19 @@ common = {'revision_digest': bundle.revision_digest, 'code_ref': 'mission',
     'robot_id': '9b8a7c6d-5e4f-4a3b-8c7d-6e5f4a3b2c1d'}))
 PY
 docker build -q -t ringfour-runner:diagnostics-test apps/runner >/dev/null
-docker build -q -f "$robot_root/docker/Dockerfile.agent" -t base101-agent:socket-test "$robot_root" >/dev/null
 docker network create "$network" >/dev/null
 docker volume create "$volume" >/dev/null
+docker run --rm --user root --entrypoint chown -v "$volume:/socket" ringfour-agent:c-preview 1000:1000 /socket
 docker run -d --name "$agent" --network "$network" -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-  -v "$profile:/etc/robocore/profile.yaml:ro" -v "$volume:/run/robocore" -v "$test_dir:/fixture:ro" \
-  base101-agent:socket-test agent --profile /etc/robocore/profile.yaml --socket /run/robocore/agent.sock \
-  --host 127.0.0.1 --port 10101 --state-dir /var/lib/robocore >/dev/null
+  -v "$profile:/etc/ringfour/profile.yaml:ro" -v "$volume:/run/ringfour" -v "$test_dir:/fixture:ro" \
+  ringfour-agent:c-preview agent --profile /etc/ringfour/profile.yaml --socket /run/ringfour/agent.sock \
+  --host 127.0.0.1 --port 10101 --state-dir /var/lib/ringfour >/dev/null
 docker run -d --name "$runner" --network "$network" -p 127.0.0.1:18113:8082 \
-  -v "$test_dir/staged:/staged:ro" -v "$volume:/run/robocore:ro" \
-  -e RUNNER_AUTH_TOKEN=local-test-secret -e ROBOCORE_AGENT_URL=unix:///run/robocore/agent.sock ringfour-runner:diagnostics-test >/dev/null
+  -v "$test_dir/staged:/staged:ro" -v "$volume:/run/ringfour:ro" \
+  -e RUNNER_AUTH_TOKEN=local-test-secret -e RINGFOUR_AGENT_URL=unix:///run/ringfour/agent.sock ringfour-runner:diagnostics-test >/dev/null
 for _ in $(seq 1 60); do docker logs "$agent" 2>&1 | grep -q 'agent ready' && break; sleep 1; done
 docker logs "$agent" 2>&1 | grep -q 'agent ready'
-if [ "${ROBOCORE_TEST_NO_SENSORS:-0}" != 1 ]; then
+if [ "${RINGFOUR_TEST_NO_SENSORS:-0}" != 1 ]; then
   docker exec -d "$agent" bash -c 'source /opt/ros/jazzy/setup.bash && python3 /fixture/publish.py'
 fi
 for _ in $(seq 1 60); do curl -sf http://127.0.0.1:18113/health/ready >/dev/null && break; sleep 1; done
@@ -90,7 +89,7 @@ execution=7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e
 for _ in $(seq 1 45); do
   curl -fsS -H 'Authorization: Bearer local-test-secret' "http://127.0.0.1:18113/v1/executions/$execution/output?stream=stdout&offset=0&limit=16384" | \
     python3 -c 'import base64,json,sys; sys.stdout.buffer.write(base64.b64decode(json.load(sys.stdin)["data_base64"]))' >"$test_dir/output"
-  if [ "${ROBOCORE_TEST_NO_SENSORS:-0}" = 1 ]; then
+  if [ "${RINGFOUR_TEST_NO_SENSORS:-0}" = 1 ]; then
     if grep -q 'IMU observed: unavailable' "$test_dir/output" && grep -q 'camera base delivered: waiting for data' "$test_dir/output"; then break; fi
   elif grep -Eq 'IMU observed: [1-9][0-9.]* Hz' "$test_dir/output" && grep -Eq 'camera base delivered: [1-9][0-9.]* fps' "$test_dir/output"; then break; fi
   state=$(curl -fsS -H 'Authorization: Bearer local-test-secret' "http://127.0.0.1:18113/v1/executions/$execution" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
@@ -98,7 +97,7 @@ for _ in $(seq 1 45); do
   sleep 1
 done
 cat "$test_dir/output"
-if [ "${ROBOCORE_TEST_NO_SENSORS:-0}" = 1 ]; then
+if [ "${RINGFOUR_TEST_NO_SENSORS:-0}" = 1 ]; then
   imu_pattern='IMU observed: unavailable'
   camera_pattern='camera base delivered: waiting for data'
 else
@@ -117,4 +116,4 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [ "$state" = cancelled ]
-echo "PASS: diagnostics through Agent, Unix socket, SDK and Runner (no sensors: ${ROBOCORE_TEST_NO_SENSORS:-0}); stop cancels mission"
+echo "PASS: diagnostics through Agent, Unix socket, SDK and Runner (no sensors: ${RINGFOUR_TEST_NO_SENSORS:-0}); stop cancels mission"

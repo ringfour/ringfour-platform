@@ -64,6 +64,10 @@ public sealed class MissionTests(PostgresFixture postgres)
             var revision = JsonDocument.Parse(revisionJson).RootElement;
             ContractSchema.AssertValid("missions/v1/manifest.schema.json", revision.GetProperty("manifest").GetRawText());
             Assert.Equal(1, revision.GetProperty("version").GetInt32());
+            var revisionId = revision.GetProperty("id").GetGuid();
+            Assert.Equal(archive, await owner.GetByteArrayAsync($"/v1/missions/{missionId}/revisions/{revisionId}/source"));
+            Assert.Equal(HttpStatusCode.NotFound, (await outsider.GetAsync($"/v1/missions/{missionId}/revisions/{revisionId}/source")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/v1/missions/{missionId}/revisions/{Guid.NewGuid()}/source")).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync($"/v1/missions/{missionId}/revisions", publish, RingfourJson.Options)).StatusCode);
             owner.DefaultRequestHeaders.Remove("Idempotency-Key");
             owner.DefaultRequestHeaders.Add("Idempotency-Key", "publish-stale");

@@ -18,6 +18,7 @@ def project(tmp_path):
 def test_mission_bundle_is_deterministic_and_excludes_manifest_and_hidden_files(tmp_path):
     root = project(tmp_path)
     (root / ".secret").write_text("not uploaded")
+    (root / "ringfour.context.json").write_text("local only")
     first = build_mission_bundle(root)
     assert build_mission_bundle(root) == first
     assert first.manifest["source_digest"] == first.bundle.revision_digest

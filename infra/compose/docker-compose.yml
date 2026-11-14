@@ -42,6 +42,7 @@ services:
     environment:
       RUNNER_AUTH_TOKEN: ${RUNNER_AUTH_TOKEN:?Set a random RUNNER_AUTH_TOKEN before starting Compose}
       RUNNER_STAGE_DIR: /staged
+      RUNNER_LOGBOOK_URL: http://daemon:8081
     volumes:
       - runner-data:/data
       - staged-data:/staged:ro

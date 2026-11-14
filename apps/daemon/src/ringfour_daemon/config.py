@@ -14,6 +14,12 @@ class Settings:
     outbound_queue_limit: int = 128
     stage_dir: str = "/staged"
     runner_auth_token: str | None = None
+    local_dev_enabled: bool = False
+    local_dev_host: str = "0.0.0.0"
+    local_dev_port: int = 8084
+    local_tls_path: str = "/data/local-dev-tls.pem"
+    local_advertised_url: str | None = None
+    agent_motion_socket: str | None = None
 
     @staticmethod
     def from_env() -> "Settings":
@@ -32,4 +38,10 @@ class Settings:
             outbound_queue_limit=int(os.environ.get("DAEMON_OUTBOUND_QUEUE_LIMIT", "128")),
             stage_dir=os.environ.get("RUNNER_STAGE_DIR", "/staged"),
             runner_auth_token=os.environ.get("RUNNER_AUTH_TOKEN"),
+            local_dev_enabled=os.environ.get("RINGFOUR_LOCAL_DEV_ENABLED", "false").lower() == "true",
+            local_dev_host=os.environ.get("RINGFOUR_LOCAL_DEV_HOST", "0.0.0.0"),
+            local_dev_port=int(os.environ.get("RINGFOUR_LOCAL_DEV_PORT", "8084")),
+            local_tls_path=os.environ.get("RINGFOUR_LOCAL_TLS_PATH", "/data/local-dev-tls.pem"),
+            local_advertised_url=os.environ.get("RINGFOUR_LOCAL_DEV_URL") or None,
+            agent_motion_socket=os.environ.get("RINGFOUR_AGENT_MOTION_SOCKET") or None,
         )

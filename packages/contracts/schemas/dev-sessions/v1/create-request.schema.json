@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/dev-sessions/v1/create-request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ttl_seconds"
+  ],
+  "properties": {
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 300,
+      "maximum": 28800
+    }
+  }
+}

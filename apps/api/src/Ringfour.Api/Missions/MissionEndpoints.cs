@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Amazon.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Identity;
@@ -19,6 +20,7 @@ public static class MissionEndpoints
         group.MapGet("/organizations/{organizationId:guid}/missions", List);
         group.MapPost("/missions/{missionId:guid}/revisions", Publish);
         group.MapGet("/missions/{missionId:guid}/revisions", Revisions);
+        group.MapGet("/missions/{missionId:guid}/revisions/{revisionId:guid}/source", Source);
     }
 
     private static string Key(HttpContext context)
@@ -232,4 +234,20 @@ public static class MissionEndpoints
         var next = values.Count > pageSize ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"v1:{page[^1].Version}")) : null;
         return Results.Ok(new { items = page.Select(Response), next_cursor = next });
     }
+    private static async Task<IResult> Source(HttpContext context, RingfourDbContext db, IObjectStore store,
+        Guid missionId, Guid revisionId, CancellationToken ct)
+    {
+        await RequireMission(context, db, missionId, OrgRole.Operator, ct);
+        var source = await db.MissionRevisions.Where(item => item.Id == revisionId && item.MissionId == missionId)
+            .Select(item => item.ScriptRevision).SingleOrDefaultAsync(ct)
+            ?? throw ApiException.NotFound("The requested resource does not exist in this organization.");
+        byte[] archive;
+        try { archive = await store.GetAsync($"revisions/{source.Id:N}", ct); }
+        catch (Exception exception) when (exception is IOException or AmazonServiceException or AmazonClientException or HttpRequestException)
+        { throw new ApiException(503, "storage_unavailable", "The artifact store is unavailable."); }
+        if (archive.Length != source.ArchiveSize || Convert.ToHexStringLower(SHA256.HashData(archive)) != source.ArchiveSha256)
+            throw new ApiException(503, "storage_unavailable", "The artifact store returned invalid bytes.");
+        return Results.File(archive, "application/zip", "mission-source.zip");
+    }
+
 }

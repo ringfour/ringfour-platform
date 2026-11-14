@@ -6,6 +6,24 @@ info:
 security:
   - runnerBearer: []
 paths:
+  /v1/dev-sessions/restart:
+    post:
+      summary: Restart a committed development generation by stable operation and execution IDs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/runner-restart.schema.json }
+      responses:
+        '200':
+          description: Reserved execution or current state of identical replay
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/runner-restart-result.schema.json }
+        '400': { description: Invalid generation or request }
+        '401': { description: Missing or incorrect Runner credential }
+        '409': { description: Stale generation, conflicting ID, closed session or active production execution }
+        '503': { description: Previous execution still stopping or retention capacity reached }
   /v1/revisions/prepare:
     post:
       summary: Prepare a validated candidate without executing user code

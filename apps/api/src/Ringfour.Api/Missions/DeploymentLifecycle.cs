@@ -55,6 +55,8 @@ public static class DeploymentLifecycle
             throw ApiException.Conflict("execution_conflict", "Another execution is active.");
         if (kind != "stop")
         {
+            if (await db.DevSessionRuns.AnyAsync(item => item.RobotId == deployment.RobotId && (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct))
+                throw ApiException.Conflict("execution_conflict", "A development execution is active.");
             var presence = await db.RobotPresences.SingleOrDefaultAsync(item => item.RobotId == deployment.RobotId, ct);
             if (manager.Get(deployment.RobotId) is null || !OperationEndpoints.ComputeOnline(presence?.LastSeenAt, now,
                 config.GetValue("Connectivity:OfflineThresholdSeconds", 45)))
@@ -195,7 +197,8 @@ public sealed class DeploymentLifecycleWorker(IServiceScopeFactory scopes, Devic
         else if (action.State == "pending")
         {
             if (manager.Get(robotId) is null) { await tx.CommitAsync(ct); return; }
-            if (await db.ScriptExecutions.AnyAsync(item => item.RobotId == robotId &&
+            if (await db.DevSessionRuns.AnyAsync(item => item.RobotId == robotId && (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct) ||
+                await db.ScriptExecutions.AnyAsync(item => item.RobotId == robotId &&
                 (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct))
             { Fail(action, deployment, now, "execution_conflict", "Another execution is active."); }
             else
@@ -291,11 +294,14 @@ public sealed class DeploymentLifecycleWorker(IServiceScopeFactory scopes, Devic
         foreach (var snapshot in snapshots)
         {
             var execution = await db.ScriptExecutions.AsNoTracking().SingleOrDefaultAsync(item => item.Id == snapshot.ExecutionId, ct);
-            if (execution is null) continue;
+            // An execution for a previously selected revision must not replace
+            // the newly prepared revision's status.
+            if (execution?.MissionRevisionId is null) continue;
             var observed = execution.State switch { "queued" or "preparing" => "starting", _ => execution.State };
             var now = DateTimeOffset.UtcNow;
             await db.MissionDeployments.Where(item => item.Id == snapshot.Id && item.LastExecutionId == snapshot.ExecutionId &&
-                item.CandidateRevisionId == null && item.ObservedState != observed &&
+                item.CandidateRevisionId == null && item.SelectedRevisionId == execution.MissionRevisionId && item.ObservedState != observed &&
+                !db.Operations.Any(operation => operation.Id == item.LastOperationId && operation.Kind == "mission.prepare") &&
                 !db.DeploymentActions.Any(action => action.DeploymentId == item.Id && (action.State == "pending" || action.State == "starting")))
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.ObservedState, observed)
                     .SetProperty(item => item.UpdatedAt, now), ct);

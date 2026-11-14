@@ -1,0 +1,9 @@
+{
+  "operation_id": "44444444-4444-4444-8444-444444444444",
+  "base_generation": 1,
+  "generation": 2,
+  "archive_sha256": "618847f2ebf06a872da0a2db1364f1b8cf53cad93876fc6bfe7e11a4556f5058",
+  "archive_size": 237,
+  "grant_id": "44444444-4444-4444-8444-444444444444",
+  "lock_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

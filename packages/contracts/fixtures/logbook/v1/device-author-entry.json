@@ -1,0 +1,18 @@
+{
+  "event_id": "617cc719-6afc-487a-b841-cf70e1cdd1d2",
+  "robot_id": "5b895c0b-43a5-4052-9e9c-1b7d2d9176ea",
+  "local_sequence": 1,
+  "occurred_at": "2026-11-13T12:00:00Z",
+  "type": "mission.logbook.entry",
+  "schema_version": 1,
+  "operation_id": "97a25df2-bef3-4164-974a-338c28c4934c",
+  "execution_id": "804b3625-1288-4ab4-af22-cb3cd25debdc",
+  "payload": {
+    "level": "info",
+    "message": "Inspection skipped",
+    "fields": {
+      "station": "B",
+      "reason": "Operator reported maintenance"
+    }
+  }
+}

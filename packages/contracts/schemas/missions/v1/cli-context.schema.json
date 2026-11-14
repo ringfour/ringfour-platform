@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/missions/v1/cli-context.schema.json",
+  "title": "Local mission CLI context (new Ringfour design)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "targets"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "api_url",
+          "organization_id",
+          "mission_name",
+          "mission_id",
+          "robot_id",
+          "robot_name",
+          "deployment_id",
+          "revision_id"
+        ],
+        "properties": {
+          "api_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mission_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mission_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "robot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "robot_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deployment_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "dev_sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "api_url",
+          "organization_id",
+          "robot_id",
+          "robot_name",
+          "session_id",
+          "daemon_url"
+        ],
+        "properties": {
+          "api_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "robot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "robot_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "daemon_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

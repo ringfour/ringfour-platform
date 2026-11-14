@@ -67,6 +67,7 @@ public sealed class OperationSweeper(
                  operation.State == OperationState.Accepted ||
                  operation.State == OperationState.Running) &&
                 operation.Kind != "script.execution.start" && operation.Kind != "mission.prepare" && operation.Kind != "mission.lifecycle" &&
+                operation.Kind != "dev.session.create" && operation.Kind != "dev.session.close" && operation.Kind != "dev.session.expire" && operation.Kind != "dev.session.restart" &&
                 operation.DeadlineAt < now)
             .ToListAsync(cancellationToken);
         foreach (var operation in expired)
@@ -82,7 +83,7 @@ public sealed class OperationSweeper(
         }
 
         var scriptIds = await db.Operations.AsNoTracking().Where(operation =>
-            (operation.Kind == "script.execution.start" || operation.Kind == "mission.prepare") &&
+            (operation.Kind == "script.execution.start" || operation.Kind == "mission.prepare" || operation.Kind == "dev.session.create" || operation.Kind == "dev.session.restart") &&
             operation.State == OperationState.Queued && operation.DeadlineAt < now).Select(operation => operation.Id).ToListAsync(cancellationToken);
         foreach (var id in scriptIds)
         {
@@ -117,7 +118,7 @@ public sealed class OperationSweeper(
                     });
                 }
             }
-            else
+            else if (operation.Kind == "mission.prepare")
             {
                 var deploymentId = await db.MissionDeployments.Where(item => item.CandidateOperationId == id).Select(item => (Guid?)item.Id).SingleOrDefaultAsync(cancellationToken);
                 if (deploymentId is not null)

@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import os
+import shutil
 import signal
 import sqlite3
 import sys
@@ -237,7 +238,7 @@ async def capture(stream, path, settings, execution_id, name):
                     conn.execute(f"UPDATE executions SET {name}_truncated=1 WHERE execution_id=?", (execution_id,))
 
 
-async def run_execution(app, body, files):
+async def run_execution(app, body, files, *, dev_environment=None):
     settings = app.state.settings
     execution_id = body["execution_id"]
     path = Path(settings.data_dir) / "executions" / execution_id
@@ -256,8 +257,20 @@ async def run_execution(app, body, files):
                 transition(conn, execution_id, "cancelled")
                 return
             transition(conn, execution_id, "preparing")
-        prepared = prepared_environment(settings, body["revision_digest"], body.get("python_requirement"), body.get("lock_sha256"))
-        venv = prepared or Path(settings.data_dir) / "venvs" / body["revision_digest"]
+        prepared = prepared_environment(settings, body["revision_digest"], body.get("python_requirement"), body.get("lock_sha256")) if dev_environment is None else None
+        if dev_environment is not None:
+            venv = dev_environment
+            marker = venv.with_suffix(".ready")
+            if marker.is_file() and not marker.is_symlink() and (venv / "bin" / "python").is_file():
+                prepared = venv
+            else:
+                if venv.is_symlink() or marker.is_symlink():
+                    raise OSError("Unsafe development environment")
+                if venv.exists():
+                    shutil.rmtree(venv)
+                marker.unlink(missing_ok=True)
+        else:
+            venv = prepared or Path(settings.data_dir) / "venvs" / body["revision_digest"]
         if prepared is not None:
             with connection(settings) as conn:
                 if conn.execute("SELECT stop_requested FROM executions WHERE execution_id=?", (execution_id,)).fetchone()[0]:
@@ -269,10 +282,24 @@ async def run_execution(app, body, files):
             row = get_row(settings, execution_id)
             if row["state"] in TERMINAL:
                 return
+            if dev_environment is not None:
+                temporary = marker.with_suffix(".pending")
+                with temporary.open("w") as handle:
+                    handle.write("ready\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, marker)
 
         artifact_dir = path / "artifact-output"
         artifact_dir.mkdir(exist_ok=True)
         environment = {**os.environ, "RINGFOUR_ARTIFACT_DIR": str(artifact_dir)}
+        environment.pop("RUNNER_AUTH_TOKEN", None)
+        environment.pop("RINGFOUR_LOGBOOK_TOKEN", None)
+        environment.pop("RINGFOUR_LOGBOOK_URL", None)
+        if settings.logbook_url and settings.auth_token:
+            mac = hmac.new(settings.auth_token.encode(), ("ringfour-logbook-v1:" + execution_id).encode(), hashlib.sha256).hexdigest()
+            environment["RINGFOUR_LOGBOOK_URL"] = settings.logbook_url
+            environment["RINGFOUR_LOGBOOK_TOKEN"] = f"{execution_id}:{mac}"
         proc = await asyncio.create_subprocess_exec(str(venv / "bin" / "python"), str(code / body["entrypoint"]), cwd=str(code), env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
         app.state.processes[execution_id] = proc
         if get_row(settings, execution_id)["stop_requested"] and proc.returncode is None:
@@ -352,21 +379,18 @@ async def get_execution(request: Request, execution_id: str):
     return JSONResponse(snapshot(row)) if row else error(404, "not_found", "Execution not found.")
 
 
-@router.post("/v1/executions/{execution_id}/stop")
-async def stop(request: Request, execution_id: str):
-    if not authorize(request):
-        return error(401, "unauthenticated", "Runner authentication required.")
-    settings = request.app.state.settings
+async def stop_execution(app, execution_id):
+    settings = app.state.settings
     row = get_row(settings, execution_id)
     if not row:
-        return error(404, "not_found", "Execution not found.")
+        return None
     if row["state"] not in TERMINAL:
         with connection(settings) as conn:
             stamp = now()
             changed = conn.execute("UPDATE executions SET stop_requested=1,updated_at=? WHERE execution_id=? AND stop_requested=0 AND state NOT IN ('succeeded','failed','cancelled')", (stamp, execution_id)).rowcount
             if changed:
                 record_event(conn, execution_id, "stop_requested", stamp)
-        proc = request.app.state.processes.get(execution_id)
+        proc = app.state.processes.get(execution_id)
         if proc and proc.returncode is None:
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
@@ -376,7 +400,15 @@ async def stop(request: Request, execution_id: str):
                 await proc.wait()
             except ProcessLookupError:
                 pass
-    return JSONResponse(snapshot(get_row(settings, execution_id)))
+    return get_row(settings, execution_id)
+
+
+@router.post("/v1/executions/{execution_id}/stop")
+async def stop(request: Request, execution_id: str):
+    if not authorize(request):
+        return error(401, "unauthenticated", "Runner authentication required.")
+    row = await stop_execution(request.app, execution_id)
+    return JSONResponse(snapshot(row)) if row else error(404, "not_found", "Execution not found.")
 
 
 @router.get("/v1/executions/{execution_id}/output")

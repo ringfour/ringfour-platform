@@ -22,6 +22,14 @@ test("mission manifest fixture rejects traversal and unknown fields", async () =
   assert.equal(validate({ ...manifest, undocumented: true }), false);
 });
 
+test("local CLI mission context fixture rejects unknown fields", async () => {
+  const validate = await validatorFor("schemas/missions/v1/cli-context.schema.json");
+  const context = await loadJson("fixtures/missions/v1/cli-context.json");
+  assert.ok(validate(context), JSON.stringify(validate.errors));
+  assert.equal(validate({ ...context, version: 2 }), false);
+  assert.equal(validate({ ...context, targets: [{ ...context.targets[0], token: "secret" }] }), false);
+});
+
 test("mission deployment and action responses validate", async () => {
   const deployment = await validatorFor("schemas/missions/v1/deployment-accepted.schema.json");
   const action = await validatorFor("schemas/missions/v1/action-accepted.schema.json");
@@ -485,4 +493,119 @@ test("device pairing fixtures and exclusive claim targets", async () => {
   }
   const claim = await validatorFor("schemas/pairing/v1/claim-request.schema.json");
   assert.equal(claim({code:"ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ", name:"x", robot_id:"4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b"}), false);
+});
+
+test("development session proposal fixtures and source bounds validate", async () => {
+  for (const name of ["create-request", "session", "source-request", "accepted", "runner-sync", "runner-restart", "lifecycle-command", "sync-result", "grant-request", "grant-accepted", "device-grant", "local-status", "device-endpoint", "device-source-report", "local-source-state", "runner-restart-result", "restart-request", "device-run-status"]) {
+    const validate = await validatorFor(`schemas/dev-sessions/v1/${name}.schema.json`);
+    const fixture = await loadJson(`fixtures/dev-sessions/v1/${name}.json`);
+    assert.ok(validate(fixture), `${name}: ${JSON.stringify(validate.errors)}`);
+    assert.equal(validate({ ...fixture, unexpected: true }), false);
+  }
+  const source = await validatorFor("schemas/dev-sessions/v1/source-request.schema.json");
+  const input = await loadJson("fixtures/dev-sessions/v1/source-request.json");
+  assert.equal(source({ ...input, base_generation: -1 }), false);
+  assert.equal(source({ ...input, archive_size: 1048577 }), false);
+  assert.equal(source({ ...input, archive_base64: "!bad" }), false);
+  assert.equal(source({ ...input, manifest: { ...input.manifest, entrypoint: "../main.py" } }), false);
+  assert.equal(source({ ...input, manifest: { ...input.manifest, deleted_paths: ["a", "a"] } }), false);
+  const grant = await validatorFor("schemas/dev-sessions/v1/grant-accepted.schema.json");
+  const grantFixture = await loadJson("fixtures/dev-sessions/v1/grant-accepted.json");
+  assert.ok(grant({ ...grantFixture, daemon_url: null }));
+  assert.equal(grant({ ...grantFixture, daemon_url: "http://robot:8084" }), false);
+  assert.equal(grant({ ...grantFixture, certificate_sha256: "bad" }), false);
+  const deviceGrant = await validatorFor("schemas/dev-sessions/v1/device-grant.schema.json");
+  const deviceFixture = await loadJson("fixtures/dev-sessions/v1/device-grant.json");
+  assert.equal(deviceGrant({ ...deviceFixture, scopes: ["source", "source"] }), false);
+  const create = await validatorFor("schemas/dev-sessions/v1/create-request.schema.json");
+  assert.equal(create({ ttl_seconds: 299 }), false);
+  assert.equal(create({ ttl_seconds: 28801 }), false);
+});
+
+test("proposed Logbook event and batch fixtures enforce the allowlisted payload", async () => {
+  await validatorFor("schemas/logbook/v1/agent-motion-event.schema.json");
+  const event = await validatorFor("schemas/logbook/v1/device-event.schema.json");
+  const batch = await validatorFor("schemas/logbook/v1/device-batch.schema.json");
+  const checkpoint = await validatorFor("schemas/logbook/v1/device-checkpoint.schema.json");
+  const fixture = await loadJson("fixtures/logbook/v1/device-event.json");
+  assert.ok(event(fixture), JSON.stringify(event.errors));
+  assert.ok(batch(await loadJson("fixtures/logbook/v1/device-batch.json")), JSON.stringify(batch.errors));
+  assert.ok(checkpoint(await loadJson("fixtures/logbook/v1/device-checkpoint.json")));
+  assert.equal(event({ ...fixture, local_sequence: 0 }), false);
+  assert.equal(event({ ...fixture, schema_version: 2 }), false);
+  assert.equal(event({ ...fixture, payload: { state: "running", output: "secret" } }), false);
+  assert.equal(event({ ...fixture, actor_user_id: fixture.robot_id }), false);
+  assert.equal(batch({ events: [] }), false);
+  assert.equal(batch({ events: Array(101).fill(fixture) }), false);
+  assert.equal(checkpoint({ acknowledged_sequence: -1 }), false);
+  const motion = await loadJson("fixtures/logbook/v1/device-agent-motion.json");
+  assert.ok(event(motion), JSON.stringify(event.errors));
+  assert.equal(event({ ...motion, operation_id: fixture.operation_id }), false);
+  assert.equal(event({ ...motion, payload: { ...motion.payload, stop_verified: false } }), false);
+  const error = await validatorFor("schemas/errors/v1/error.schema.json");
+  for (const name of ["sequence-gap", "event-conflict"]) {
+    assert.ok(error(await loadJson(`fixtures/logbook/v1/error-${name}.json`)));
+  }
+});
+
+test("proposed mission Logbook entries preserve author fields and reject forged context", async () => {
+  const entry = await validatorFor("schemas/logbook/v1/runtime-entry-request.schema.json");
+  const accepted = await validatorFor("schemas/logbook/v1/runtime-entry-accepted.schema.json");
+  const input = await loadJson("fixtures/logbook/v1/runtime-entry-request.json");
+  assert.ok(entry(input), JSON.stringify(entry.errors));
+  assert.ok(accepted(await loadJson("fixtures/logbook/v1/runtime-entry-accepted.json")));
+  assert.equal(entry({ ...input, message: "   " }), false);
+  assert.equal(entry({ ...input, robot_id: "forged" }), false);
+  assert.equal(entry({ ...input, fields: { nested: { value: "not supported" } } }), false);
+  assert.equal(entry({ ...input, fields: { samples: [1, 2] } }), false);
+  assert.equal(entry({ ...input, fields: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`field${i}`, i])) }), false);
+  assert.equal(entry({ ...input, fields: { "bad-key": "value" } }), false);
+  assert.equal(entry({ ...input, level: "debug" }), false);
+});
+
+test("mission author device events carry execution and bounded structured fields", async () => {
+  const validate = await validatorFor("schemas/logbook/v1/device-event.schema.json");
+  const event = await loadJson("fixtures/logbook/v1/device-author-entry.json");
+  assert.ok(validate(event), JSON.stringify(validate.errors));
+  const { execution_id, ...missing } = event;
+  assert.equal(validate(missing), false);
+  assert.equal(validate({ ...event, payload: { ...event.payload, fields: { nested: [1] } } }), false);
+  assert.equal(validate({ ...event, actor_user_id: execution_id }), false);
+});
+
+test("proposed organization Logbook history page includes attribution", async () => {
+  const validate = await validatorFor("schemas/logbook/v1/history-page.schema.json");
+  const fixture = await loadJson("fixtures/logbook/v1/history-page.json");
+  assert.ok(validate(fixture), JSON.stringify(validate.errors));
+  assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], actor_user_id: "invalid" }] }), false);
+  assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], secret: "not allowed" }] }), false);
+});
+
+test("proposed Agent motion records cannot assert an unverified stop", async () => {
+  const validate = await validatorFor("schemas/logbook/v1/agent-motion-event.schema.json");
+  const input = await loadJson("fixtures/logbook/v1/agent-motion-event.json");
+  assert.ok(validate(input), JSON.stringify(validate.errors));
+  assert.equal(validate({ ...input, stop_verified: false }), false);
+  assert.equal(validate({ ...input, event_type: "motion.accepted", stop_verified: true }), false);
+  assert.equal(validate({ ...input, velocity: 0.5 }), false);
+  assert.equal(validate({ ...input, owner: "bad\0owner" }), false);
+  assert.ok(validate({ ...input, event_type: "motion.guard_tripped", stop_verified: null, operation_id: null, owner: null }));
+});
+
+test("local Agent handoff fixtures are scoped and bounded", async () => {
+  await validatorFor("schemas/logbook/v1/agent-motion-event.schema.json");
+  const request = await validatorFor("schemas/logbook/v1/agent-handoff-request.schema.json");
+  const response = await validatorFor("schemas/logbook/v1/agent-handoff-response.schema.json");
+  const read = await loadJson("fixtures/logbook/v1/agent-handoff-read.json");
+  const ack = await loadJson("fixtures/logbook/v1/agent-handoff-ack.json");
+  const page = await loadJson("fixtures/logbook/v1/agent-handoff-page.json");
+  assert.ok(request(read), JSON.stringify(request.errors));
+  assert.ok(request(ack), JSON.stringify(request.errors));
+  assert.ok(response(page), JSON.stringify(response.errors));
+  assert.ok(response({ok: true, result: null}));
+  assert.ok(response({ok: false, error: "history_gap"}));
+  assert.equal(request({...read, method: "move"}), false);
+  assert.equal(request({...read, limit: 101}), false);
+  assert.equal(request({...ack, sequence: -1}), false);
+  assert.equal(response({ok: false, error: "unexpected"}), false);
 });

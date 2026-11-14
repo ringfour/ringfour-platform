@@ -113,3 +113,55 @@ both present (mission runs). A per-robot active execution index remains shared
 by both kinds. Candidate and selected revisions remain separate so failed
 preparation cannot change selection. These are 06 additions, not robot-profile
 ownership or a new scheduler.
+
+## 07 — proposed development-session persistence
+
+The `dev_sessions` and
+`dev_session_generations` tables, robot-level locking, operation references,
+Runner-owned workspaces, cleanup and retention rules are specified in
+[dev-sessions-contract.md](dev-sessions-contract.md). The milestone 07 migration adds these persistence tables and database checks;
+session lifecycle endpoints and a recovery worker manage these records. A partial unique index
+allows only one pending or committed row for a given session/generation while
+retaining failed attempts. Authorization, generation reports and execution conflicts are enforced by the workflow.
+
+The subsequent `LocalDevSourceMetadata` migration removes the initial 07
+manifest and hosted object-key columns: source content and filenames now stay
+on the LAN. It preserves session and generation digest metadata. The discarded
+fields belonged to the undeployed hosted-transfer prototype.
+
+`DevLocalGrants` adds robot-credential-bound local endpoint fingerprints and
+operation-linked grant metadata. It stores the CLI-provided token hash in the
+existing durable operation payload, never the raw local bearer token. Grant
+retention and cleanup remain to be implemented.
+
+`DevSessionRuns` adds bounded metadata for development executions, linked to
+the session, robot, actor and durable operation; code and output are not stored
+in PostgreSQL. A robot row lock serializes production and development starts,
+while the Runner independently enforces one active process. Each session retains
+at most 100 development run records.
+
+## 08 — Logbook ingestion
+
+The additive `LogbookIngestion` migration introduces `logbook_events` and
+`logbook_checkpoints` as specified in [logbook-contract.md](logbook-contract.md).
+The API commits a batch and its checkpoint in one transaction under a per-robot
+lock. Organization-scoped history is queryable; retention and backfill are
+still open.
+The daemon subsequently adds SQLite `logbook_outbox_state` and `logbook_outbox`
+in migration 0009. Migration 0010 preserves queued events, increases the event
+size bound and adds `logbook_entry_replays` for bounded author-entry idempotency.
+The state retains the robot binding, allocated sequence and acknowledged
+checkpoint after queued events are removed. Mission-author entries write to the
+queue; no automatic operation lifecycle currently does. The Platform's
+`LogbookAuthorEntries` migration adds execution and JSON payload fields while
+preserving prototype event rows. See the Logbook contract for the remaining
+safe-admission policy.
+
+`AgentMotionLogbook` makes the Platform operation reference nullable for
+`agent.motion.event` rows only. Such events preserve opaque Agent attribution
+in JSON, and do not assert a Platform execution or human actor. The existing
+robot-local sequence and organization isolation remain unchanged. The daemon's
+0011 inbox and checkpoint persist the Agent stream independently; moving an
+inbox event to the outbox and deleting it are one SQLite transaction. The
+downgrade cannot succeed while motion rows have null operation IDs; it must
+not discard those history records.

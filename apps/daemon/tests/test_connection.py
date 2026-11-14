@@ -424,6 +424,8 @@ def test_conflicting_operation_id_disconnects_and_reconnects(tmp_path):
                 operation_id = "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b"
                 await stub.send("command", command_payload(operation_id))
                 ack = await asyncio.wait_for(stub.received.get(), timeout=5)
+                while ack["type"] == "heartbeat":
+                    ack = await asyncio.wait_for(stub.received.get(), timeout=5)
                 assert ack["type"] == "ack"
                 # Conflicting reuse of the same operation id.
                 await stub.send(
@@ -570,6 +572,47 @@ def test_heartbeat_uses_the_negotiated_interval(tmp_path):
                 beat = await asyncio.wait_for(stub.received.get(), timeout=5)
                 assert beat["type"] == "heartbeat"
                 assert beat["payload"] == {}
+                done.set()
+
+            await asyncio.gather(run_manager(manager, done.wait()), drive())
+        finally:
+            await stub.stop()
+
+    run(scenario())
+
+
+def test_local_grant_command_arrives_over_device_websocket(tmp_path):
+    import base64
+    import hashlib
+    import uuid
+
+    from ringfour_daemon.local_grants import authorize, record_session
+
+    async def scenario():
+        stub = StubPlatform()
+        url = await stub.start()
+        try:
+            settings = make_settings(tmp_path, url)
+            session = str(uuid.uuid4())
+            operation = str(uuid.uuid4())
+            token = base64.urlsafe_b64encode(b"x" * 32).decode().rstrip("=")
+            expires = (datetime.now(UTC) + timedelta(seconds=120)).isoformat().replace("+00:00", "Z")
+            session_expires = (datetime.now(UTC) + timedelta(seconds=3600)).isoformat().replace("+00:00", "Z")
+            record_session(settings.db_path, session, session_expires, "create")
+            command = command_payload(operation, payload={"operation_id": operation, "session_id": session,
+                "grant_id": str(uuid.uuid4()), "token_sha256": hashlib.sha256(b"x" * 32).hexdigest(),
+                "expires_at": expires, "scopes": ["source", "output"]})
+            command["kind"] = "dev.session.grant"
+            manager = ConnectionManager(settings)
+            done = asyncio.Event()
+
+            async def drive():
+                await stub.expect_hello()
+                await stub.send("command", command)
+                assert (await asyncio.wait_for(stub.received.get(), timeout=5))["type"] == "ack"
+                result = await asyncio.wait_for(stub.received.get(), timeout=5)
+                assert result["payload"]["state"] == "succeeded"
+                assert authorize(settings.db_path, session, token)
                 done.set()
 
             await asyncio.gather(run_manager(manager, done.wait()), drive())

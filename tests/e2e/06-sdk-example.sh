@@ -15,7 +15,7 @@ cleanup() {
   rm -rf "$test_dir"
 }
 trap cleanup EXIT
-profile="${ROBOCORE_TEST_PROFILE:-$HOME/Work/robocore-sdk/artifacts/robocore-c-preview/source/robocore-sdk/tests/fixtures/profiles/base.yaml}"
+profile="${RINGFOUR_TEST_PROFILE:-$HOME/Work/ringfour/ringfour-testing/platform_tests/fixtures/profiles/base.yaml}"
 [ -f "$profile" ]
 mkdir -p "$test_dir/staged/mission"
 cp ../missions/capabilities/main.py ../missions/capabilities/requirements.lock "$test_dir/staged/mission/"
@@ -36,37 +36,36 @@ bundle = mission.bundle
 PY
 docker build -q -t ringfour-runner:sdk-test apps/runner >/dev/null
 docker network create "$network" >/dev/null
-if [ "${ROBOCORE_TEST_SOCKET:-0}" = 1 ]; then
-  robot_root="${BASE101_ROOT:-$HOME/Work/robots/base101}"
-  docker build -q -f "$robot_root/docker/Dockerfile.agent" -t base101-agent:socket-test "$robot_root" >/dev/null
+if [ "${RINGFOUR_TEST_SOCKET:-0}" = 1 ]; then
   docker volume create "$agent_volume" >/dev/null
+  docker run --rm --user root --entrypoint chown -v "$agent_volume:/socket" ringfour-agent:c-preview 1000:1000 /socket
   # Fast DDS avoids needing the robot's Zenoh router for this synthetic profile.
   docker run -d --name "$agent" --network "$network" -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-    -v "$profile:/etc/robocore/profile.yaml:ro" -v "$agent_volume:/run/robocore" \
-    base101-agent:socket-test agent --profile /etc/robocore/profile.yaml --socket /run/robocore/agent.sock \
-    --host 127.0.0.1 --port 10101 --state-dir /var/lib/robocore >/dev/null
+    -v "$profile:/etc/ringfour/profile.yaml:ro" -v "$agent_volume:/run/ringfour" \
+    ringfour-agent:c-preview agent --profile /etc/ringfour/profile.yaml --socket /run/ringfour/agent.sock \
+    --host 127.0.0.1 --port 10101 --state-dir /var/lib/ringfour >/dev/null
   docker run -d --name "$runner" --network "$network" -p 127.0.0.1:18112:8082 \
-    -v "$test_dir/staged:/staged:ro" -v "$agent_volume:/run/robocore:ro" \
-    -e RUNNER_AUTH_TOKEN=local-test-secret -e ROBOCORE_AGENT_URL=unix:///run/robocore/agent.sock ringfour-runner:sdk-test >/dev/null
+    -v "$test_dir/staged:/staged:ro" -v "$agent_volume:/run/ringfour:ro" \
+    -e RUNNER_AUTH_TOKEN=local-test-secret -e RINGFOUR_AGENT_URL=unix:///run/ringfour/agent.sock ringfour-runner:sdk-test >/dev/null
 else
-  docker run -d --name "$agent" --network "$network" --network-alias agent -v "$profile:/etc/robocore/profile.yaml:ro" robocore-agent:c-preview >/dev/null
+  docker run -d --name "$agent" --network "$network" --network-alias agent -v "$profile:/etc/ringfour/profile.yaml:ro" ringfour-agent:c-preview >/dev/null
   docker run -d --name "$runner" --network "$network" -p 127.0.0.1:18112:8082 -v "$test_dir/staged:/staged:ro" \
-    -e RUNNER_AUTH_TOKEN=local-test-secret -e ROBOCORE_AGENT_URL=ws://agent:10101 ringfour-runner:sdk-test >/dev/null
+    -e RUNNER_AUTH_TOKEN=local-test-secret -e RINGFOUR_AGENT_URL=ws://agent:10101 ringfour-runner:sdk-test >/dev/null
 fi
 for _ in $(seq 1 60); do
   docker logs "$agent" 2>&1 | grep -q 'agent ready' && break
   sleep 1
 done
 docker logs "$agent" 2>&1 | grep -q 'agent ready'
-if [ "${ROBOCORE_TEST_SOCKET:-0}" = 1 ]; then
+if [ "${RINGFOUR_TEST_SOCKET:-0}" = 1 ]; then
   # A killed Agent must reclaim the socket left in its persistent volume.
   docker kill "$agent" >/dev/null
   docker start "$agent" >/dev/null
   for _ in $(seq 1 60); do
-    docker exec "$agent" python3 -c 'import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect("/run/robocore/agent.sock"); s.close()' >/dev/null 2>&1 && break
+    docker exec "$agent" python3 -c 'import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect("/run/ringfour/agent.sock"); s.close()' >/dev/null 2>&1 && break
     sleep 1
   done
-  docker exec "$agent" python3 -c 'import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect("/run/robocore/agent.sock"); s.close()'
+  docker exec "$agent" python3 -c 'import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect("/run/ringfour/agent.sock"); s.close()'
 fi
 for _ in $(seq 1 60); do curl -sf http://127.0.0.1:18112/health/ready >/dev/null && break; sleep 1; done
 curl -fsS --max-time 300 -H 'Authorization: Bearer local-test-secret' -H 'content-type: application/json' \
@@ -90,4 +89,4 @@ fi
 grep -q '^Robot:' "$test_dir/stdout"
 grep -q '^Capabilities:' "$test_dir/stdout"
 cat "$test_dir/stdout"
-echo 'PASS: pinned RoboCore SDK mission used the actual Runner and synthetic-profile Agent'
+echo 'PASS: pinned Ringfour SDK mission used the actual Runner and synthetic-profile Agent'

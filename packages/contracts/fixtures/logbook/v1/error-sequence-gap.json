@@ -1,0 +1,1 @@
+{"error":{"code":"sequence_gap","message":"The batch does not start at the next expected sequence.","request_id":"example-request-id"}}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/dev-sessions/v1/restart-request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generation"
+  ],
+  "properties": {
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    }
+  }
+}

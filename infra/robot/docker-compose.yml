@@ -3,14 +3,14 @@
 name: ringfour-robot-dev
 services:
   agent:
-    image: robocore-agent:c-preview
+    image: ringfour-agent:c-preview
     environment:
       ROS_DOMAIN_ID: ${ROBOT_ROS_DOMAIN_ID:-84}
     volumes:
-      - ${ROBOCORE_PROFILE_PATH:?Set ROBOCORE_PROFILE_PATH to an Agent-compatible profile}:/etc/robocore/profile.yaml:ro
-      - agent-state:/var/lib/robocore
+      - ${RINGFOUR_PROFILE_PATH:?Set RINGFOUR_PROFILE_PATH to an Agent-compatible profile}:/etc/ringfour/profile.yaml:ro
+      - agent-state:/var/lib/ringfour
     ports:
-      - "127.0.0.1:${ROBOCORE_AGENT_PORT:-10101}:10101"
+      - "127.0.0.1:${RINGFOUR_AGENT_PORT:-10101}:10101"
   ros:
     image: ros:jazzy-ros-base
     environment:

@@ -1,0 +1,29 @@
+{
+  "operation_id": "44444444-4444-4444-8444-444444444444",
+  "session_id": "11111111-1111-4111-8111-111111111111",
+  "base_generation": 1,
+  "generation": 2,
+  "archive_sha256": "618847f2ebf06a872da0a2db1364f1b8cf53cad93876fc6bfe7e11a4556f5058",
+  "archive_size": 237,
+  "staged_archive": "dev/operation.zip",
+  "manifest": {
+    "entrypoint": "main.py",
+    "python_requirement": ">=3.13,<3.14",
+    "lock_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "files": [
+      {
+        "path": "main.py",
+        "size": 15,
+        "sha256": "b80792336156c7b0f7fe02eeef24610d2d52a10d1810397744471d1dc5738180"
+      },
+      {
+        "path": "requirements.lock",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "deleted_paths": [
+      "old.py"
+    ]
+  }
+}

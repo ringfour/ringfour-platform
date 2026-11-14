@@ -76,3 +76,29 @@ async def execute(settings, operation):
                 reject_response(response)
             return {"execution": execution, "output": response.json()}
         raise RunnerRejected("invalid_input", "Unsupported Runner operation.")
+
+
+async def dev_session_lifecycle(settings, operation):
+    """Retry the same durable lifecycle command against the private Runner."""
+    if not settings.runner_auth_token:
+        raise RunnerRejected("runner_unauthenticated", "Runner credential unavailable.")
+    expected_reason = {"dev.session.create": "create", "dev.session.close": "close", "dev.session.expire": "expire"}
+    payload = operation.payload
+    if (operation.kind not in expected_reason or not isinstance(payload, dict)
+            or set(payload) != {"operation_id", "session_id", "expires_at", "reason"}
+            or payload["operation_id"] != operation.operation_id
+            or payload["reason"] != expected_reason[operation.kind]):
+        raise RunnerRejected("invalid_input", "Invalid development session operation.")
+    headers = {"authorization": f"Bearer {settings.runner_auth_token}"}
+    async with httpx.AsyncClient(base_url=settings.runner_url, headers=headers, timeout=10) as client:
+        response = await client.post("/v1/dev-sessions/lifecycle", json=payload)
+        if response.status_code >= 500:
+            response.raise_for_status()  # Retry this durable operation after reconnect.
+        if response.status_code != 200:
+            reject_response(response)
+        result = response.json()
+        if (not isinstance(result, dict) or result.get("session_id") != payload["session_id"]
+                or result.get("state") != ("ready" if payload["reason"] == "create" else "closed")
+                or result.get("generation") != 0):
+            raise RunnerRejected("runner_error", "Runner returned an invalid session result.")
+        return result

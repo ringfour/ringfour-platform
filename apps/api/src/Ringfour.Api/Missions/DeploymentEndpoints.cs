@@ -23,6 +23,7 @@ public static class DeploymentEndpoints
         var human = endpoints.MapGroup("/v1").RequireAuthorization();
         human.MapPost("/robots/{robotId:guid}/deployments", Deploy);
         human.MapGet("/deployments/{deploymentId:guid}", Get);
+        human.MapGet("/organizations/{organizationId:guid}/deployments", List);
         endpoints.MapGet("/v1/device/deployments/{deploymentId:guid}/candidate", Candidate);
     }
 
@@ -79,6 +80,8 @@ public static class DeploymentEndpoints
         if (deployment?.CandidateRevisionId is not null || (deployment is not null && await db.DeploymentActions.AnyAsync(
             item => item.DeploymentId == deployment.Id && (item.State == "pending" || item.State == "starting"), ct)))
             throw ApiException.Conflict("deployment_in_progress", "A deployment or restart is already in progress.");
+        if (await db.DevSessionRuns.AnyAsync(item => item.RobotId == robotId && (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct))
+            throw ApiException.Conflict("execution_conflict", "A development execution is active.");
         if (await db.ScriptExecutions.AnyAsync(item => item.RobotId == robotId &&
             (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct))
             throw ApiException.Conflict("execution_conflict", "An execution is active; stop it before deploying.");
@@ -170,20 +173,36 @@ public static class DeploymentEndpoints
     private static async Task<IResult> Get(HttpContext context, RingfourDbContext db, Guid deploymentId, CancellationToken ct)
     {
         var (_, item) = await RequireDeployment(context, db, deploymentId, OrgRole.Operator, ct);
-        return Results.Ok(new
-        {
-            id = item.Id,
-            robot_id = item.RobotId,
-            selected_revision_id = item.SelectedRevisionId,
-            candidate_revision_id = item.CandidateRevisionId,
-            desired_state = item.DesiredState,
-            observed_state = item.ObservedState,
-            last_operation_id = item.LastOperationId,
-            last_execution_id = item.LastExecutionId,
-            last_error = item.LastError is null ? null : JsonNode.Parse(item.LastError),
-            created_at = item.CreatedAt,
-            updated_at = item.UpdatedAt
-        });
+        return Results.Ok(Response(item));
+    }
+
+    private static object Response(MissionDeployment item) => new
+    {
+        id = item.Id,
+        robot_id = item.RobotId,
+        selected_revision_id = item.SelectedRevisionId,
+        candidate_revision_id = item.CandidateRevisionId,
+        desired_state = item.DesiredState,
+        observed_state = item.ObservedState,
+        last_operation_id = item.LastOperationId,
+        last_execution_id = item.LastExecutionId,
+        last_error = item.LastError is null ? null : JsonNode.Parse(item.LastError),
+        created_at = item.CreatedAt,
+        updated_at = item.UpdatedAt
+    };
+
+    private static async Task<IResult> List(HttpContext context, RingfourDbContext db, Guid organizationId, string? cursor, int? limit, CancellationToken ct)
+    {
+        var user = await IdentityAccess.ResolveOrCreateUser(db, IdentityAccess.RequireSubject(context), ct);
+        await IdentityAccess.RequireMembership(db, organizationId, user.Id, OrgRole.Operator, ct);
+        var (createdAfter, idAfter) = Pagination.DecodeCursor(cursor);
+        var pageSize = Pagination.ClampLimit(limit);
+        var query = db.MissionDeployments.Where(item => db.Robots.Any(robot => robot.Id == item.RobotId && robot.OrganizationId == organizationId));
+        if (createdAfter is not null)
+            query = query.Where(item => item.CreatedAt > createdAfter || (item.CreatedAt == createdAfter && item.Id.CompareTo(idAfter!.Value) > 0));
+        var values = await query.OrderBy(item => item.CreatedAt).ThenBy(item => item.Id).Take(pageSize + 1).ToListAsync(ct);
+        var page = values.Take(pageSize).ToList();
+        return Results.Ok(new { items = page.Select(Response), next_cursor = Pagination.NextCursor(values.Count > pageSize, page, item => item.CreatedAt, item => item.Id) });
     }
 
     private static async Task<IResult> Candidate(HttpContext context, RingfourDbContext db, IObjectStore store,

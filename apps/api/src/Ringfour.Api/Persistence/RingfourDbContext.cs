@@ -24,9 +24,147 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<MissionRevision> MissionRevisions => Set<MissionRevision>();
     public DbSet<MissionDeployment> MissionDeployments => Set<MissionDeployment>();
     public DbSet<DeploymentAction> DeploymentActions => Set<DeploymentAction>();
+    public DbSet<DevSession> DevSessions => Set<DevSession>();
+    public DbSet<DevSessionGeneration> DevSessionGenerations => Set<DevSessionGeneration>();
+    public DbSet<DevLocalEndpoint> DevLocalEndpoints => Set<DevLocalEndpoint>();
+    public DbSet<DevLocalGrant> DevLocalGrants => Set<DevLocalGrant>();
+    public DbSet<DevSessionRun> DevSessionRuns => Set<DevSessionRun>();
+    public DbSet<LogbookEvent> LogbookEvents => Set<LogbookEvent>();
+    public DbSet<LogbookCheckpoint> LogbookCheckpoints => Set<LogbookCheckpoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<LogbookEvent>(entity =>
+        {
+            entity.ToTable("logbook_events");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.RobotId).HasColumnName("robot_id");
+            entity.Property(item => item.OperationId).HasColumnName("operation_id");
+            entity.Property(item => item.LocalSequence).HasColumnName("local_sequence");
+            entity.Property(item => item.Type).HasColumnName("type");
+            entity.Property(item => item.SchemaVersion).HasColumnName("schema_version");
+            entity.Property(item => item.OccurredAt).HasColumnName("occurred_at");
+            entity.Property(item => item.ReceivedAt).HasColumnName("received_at");
+            entity.Property(item => item.State).HasColumnName("state");
+            entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
+            entity.Property(item => item.Payload).HasColumnName("payload").HasColumnType("jsonb");
+            entity.HasIndex(item => new { item.RobotId, item.LocalSequence }).IsUnique();
+            entity.HasIndex(item => new { item.RobotId, item.ReceivedAt, item.Id });
+            entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Operation).WithMany().HasForeignKey(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "local_sequence BETWEEN 1 AND 9007199254740991"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL))"));
+        });
+        modelBuilder.Entity<LogbookCheckpoint>(entity =>
+        {
+            entity.ToTable("logbook_checkpoints");
+            entity.HasKey(item => item.RobotId);
+            entity.Property(item => item.RobotId).HasColumnName("robot_id");
+            entity.Property(item => item.Sequence).HasColumnName("sequence");
+            entity.HasOne(item => item.Robot).WithOne().HasForeignKey<LogbookCheckpoint>(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_checkpoint", "sequence BETWEEN 0 AND 9007199254740991"));
+        });
+        modelBuilder.Entity<DevSessionRun>(entity =>
+        {
+            entity.ToTable("dev_session_runs");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.SessionId).HasColumnName("session_id");
+            entity.Property(item => item.RobotId).HasColumnName("robot_id");
+            entity.Property(item => item.ActorUserId).HasColumnName("actor_user_id");
+            entity.Property(item => item.OperationId).HasColumnName("operation_id");
+            entity.Property(item => item.Generation).HasColumnName("generation");
+            entity.Property(item => item.State).HasColumnName("state");
+            entity.Property(item => item.ExitCode).HasColumnName("exit_code");
+            entity.Property(item => item.Error).HasColumnName("error").HasColumnType("jsonb");
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
+            entity.HasIndex(item => item.OperationId).IsUnique();
+            entity.HasIndex(item => new { item.RobotId, item.State });
+            entity.HasOne(item => item.Session).WithMany().HasForeignKey(item => item.SessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Operation).WithOne().HasForeignKey<DevSessionRun>(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_run_state", "state IN ('queued','preparing','running','succeeded','failed','cancelled')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_run_generation", "generation BETWEEN 1 AND 20"));
+        });
+        modelBuilder.Entity<DevLocalEndpoint>(entity =>
+        {
+            entity.ToTable("dev_local_endpoints");
+            entity.HasKey(item => item.RobotId);
+            entity.Property(item => item.RobotId).HasColumnName("robot_id");
+            entity.Property(item => item.CredentialId).HasColumnName("credential_id");
+            entity.Property(item => item.CertificateSha256).HasColumnName("certificate_sha256");
+            entity.Property(item => item.DaemonUrl).HasColumnName("daemon_url");
+            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
+            entity.HasOne(item => item.Robot).WithOne().HasForeignKey<DevLocalEndpoint>(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Credential).WithMany().HasForeignKey(item => item.CredentialId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_endpoint_fingerprint", "certificate_sha256 ~ '^[0-9a-f]{64}$'"));
+        });
+        modelBuilder.Entity<DevLocalGrant>(entity =>
+        {
+            entity.ToTable("dev_local_grants");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.SessionId).HasColumnName("session_id");
+            entity.Property(item => item.OperationId).HasColumnName("operation_id");
+            entity.Property(item => item.CertificateSha256).HasColumnName("certificate_sha256");
+            entity.Property(item => item.DaemonUrl).HasColumnName("daemon_url");
+            entity.Property(item => item.ExpiresAt).HasColumnName("expires_at");
+            entity.HasIndex(item => item.OperationId).IsUnique();
+            entity.HasOne(item => item.Session).WithMany().HasForeignKey(item => item.SessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Operation).WithOne().HasForeignKey<DevLocalGrant>(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<DevSession>(entity =>
+        {
+            entity.ToTable("dev_sessions");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.RobotId).HasColumnName("robot_id");
+            entity.Property(item => item.OwnerUserId).HasColumnName("owner_user_id");
+            entity.Property(item => item.State).HasColumnName("state");
+            entity.Property(item => item.Generation).HasColumnName("generation");
+            entity.Property(item => item.ActiveGeneration).HasColumnName("active_generation");
+            entity.Property(item => item.DependencyDigest).HasColumnName("dependency_digest");
+            entity.Property(item => item.LastOperationId).HasColumnName("last_operation_id");
+            entity.Property(item => item.LastExecutionId).HasColumnName("last_execution_id");
+            entity.Property(item => item.LastError).HasColumnName("last_error").HasColumnType("jsonb");
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(item => item.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(item => item.ClosedAt).HasColumnName("closed_at");
+            entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(item => item.RobotId).IsUnique().HasFilter("state NOT IN ('closed', 'expired')");
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_state", "state IN ('creating', 'ready', 'syncing', 'starting', 'running', 'stopping', 'closing', 'closed', 'expired', 'failed')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_generations", "generation >= 0 AND (active_generation IS NULL OR (active_generation > 0 AND active_generation <= generation))"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_expiry", "expires_at > created_at"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_closed", "(state IN ('closed', 'expired')) = (closed_at IS NOT NULL)"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_digest", "dependency_digest IS NULL OR dependency_digest ~ '^[0-9a-f]{64}$'"));
+        });
+        modelBuilder.Entity<DevSessionGeneration>(entity =>
+        {
+            entity.ToTable("dev_session_generations");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.SessionId).HasColumnName("session_id");
+            entity.Property(item => item.OperationId).HasColumnName("operation_id");
+            entity.Property(item => item.Generation).HasColumnName("generation");
+            entity.Property(item => item.State).HasColumnName("state");
+            entity.Property(item => item.ArchiveSha256).HasColumnName("archive_sha256");
+            entity.Property(item => item.ArchiveSize).HasColumnName("archive_size");
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            entity.HasOne(item => item.Session).WithMany().HasForeignKey(item => item.SessionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Operation).WithMany().HasForeignKey(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(item => item.OperationId).IsUnique();
+            entity.HasIndex(item => new { item.SessionId, item.Generation }).IsUnique().HasFilter("state IN ('pending', 'committed')");
+            entity.HasIndex(item => item.SessionId).IsUnique().HasFilter("state = 'pending'");
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_generation_state", "state IN ('pending', 'committed', 'failed')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_generation_number", "generation > 0"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_generation_archive", "archive_size BETWEEN 1 AND 1048576 AND archive_sha256 ~ '^[0-9a-f]{64}$'"));
+        });
         modelBuilder.Entity<MissionDeployment>(entity =>
         {
             entity.ToTable("mission_deployments");

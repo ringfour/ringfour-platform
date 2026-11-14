@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/logbook/v1/runtime-entry-accepted.schema.json",
+  "title": "Proposed durable mission entry acknowledgement",
+  "type": "object", "additionalProperties": false,
+  "required": ["entry_id"],
+  "properties": {"entry_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}}
+}

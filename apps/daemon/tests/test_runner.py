@@ -43,3 +43,24 @@ def test_runner_conflict_is_mapped_without_exposing_response():
         assert "private detail" not in exc.message
     else:
         raise AssertionError("Expected RunnerRejected")
+
+
+def test_dev_session_lifecycle_replays_same_authenticated_request(tmp_path, monkeypatch):
+    requests = []
+    real_client = httpx.AsyncClient
+    session = "11111111-1111-4111-8111-111111111111"
+    operation_id = "22222222-2222-4222-8222-222222222222"
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"session_id": session, "state": "ready", "generation": 0})
+
+    monkeypatch.setattr(runner.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    settings = Settings(db_path=str(tmp_path / "db"), runner_url="http://runner", runner_auth_token="test-secret")
+    operation = operations.DeviceOperation(operation_id=operation_id, robot_id="robot", kind="dev.session.create",
+        payload_version=1, payload={"operation_id": operation_id, "session_id": session, "expires_at": "2027-01-01T00:00:00Z", "reason": "create"},
+        state="running", deadline_at=datetime.now(UTC).isoformat(), updated_at=datetime.now(UTC).isoformat(), result=None)
+    assert asyncio.run(runner.dev_session_lifecycle(settings, operation))["state"] == "ready"
+    assert asyncio.run(runner.dev_session_lifecycle(settings, operation))["state"] == "ready"
+    assert requests[0].headers["authorization"] == "Bearer test-secret"
+    assert requests[0].content == requests[1].content

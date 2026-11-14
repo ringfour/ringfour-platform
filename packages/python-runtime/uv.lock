@@ -1,0 +1,8 @@
+version = 1
+revision = 3
+requires-python = ">=3.10"
+
+[[package]]
+name = "ringfour-platform-runtime"
+version = "0.1.0.dev0"
+source = { editable = "." }

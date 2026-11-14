@@ -28,9 +28,225 @@ tags:
     description: Local-daemon-facing enrollment, credential verification and the authenticated WebSocket connection; no human token.
   - name: scripts
     description: Script revisions, runs, output and artifacts (new Ringfour design).
+  - name: dev-sessions
+    description: Proposed milestone 07 development sessions (new Ringfour design; not implemented).
   - name: missions
     description: Proposed milestone 06 mission revisions and robot deployments (new Ringfour design).
+  - name: logbook
+    description: Milestone 08 event ingestion and organization history (new Ringfour design).
 paths:
+  /v1/organizations/{org_id}/events:
+    get:
+      tags: [logbook]
+      operationId: listLogbookEvents
+      description: Organization-scoped history query ordered by receipt time; preserve filters when continuing a cursor.
+      parameters:
+        - { name: org_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: robot_id, in: query, schema: { type: string, format: uuid } }
+        - { name: execution_id, in: query, schema: { type: string, format: uuid } }
+        - { name: operation_id, in: query, schema: { type: string, format: uuid } }
+        - { name: actor_user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Organization-scoped Logbook entries
+          content:
+            application/json:
+              schema: { $ref: ../schemas/logbook/v1/history-page.schema.json }
+        '400': { description: Invalid filter or cursor }
+        '401': { description: Authentication required }
+        '404': { description: Organization inaccessible }
+  /v1/device/logbook/events:
+    post:
+      tags: [logbook, device]
+      operationId: ingestDeviceLogbookEvents
+      description: Commit a contiguous device event batch before acknowledging it; the authenticated credential determines the robot. Agent motion records have no inferred Platform operation, execution, or human actor.
+      security: []
+      parameters:
+        - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
+        - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/logbook/v1/device-batch.schema.json }
+      responses:
+        '200':
+          description: Highest contiguous sequence durably stored for this robot
+          content:
+            application/json:
+              schema: { $ref: ../schemas/logbook/v1/device-checkpoint.schema.json }
+        '400': { description: Invalid event or batch }
+        '401': { description: Invalid machine credential }
+        '409': { description: Sequence gap, conflicting replay, or mismatched robot or operation }
+        '413': { description: Batch exceeds the request size limit }
+        '503': { description: Durable storage unavailable }
+  /v1/robots/{robot_id}/dev-sessions:
+    parameters:
+      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [dev-sessions]
+      operationId: createDevSession
+      description: Proposed milestone 07 interface; accepted is not ready.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/create-request.schema.json }
+      responses:
+        '202':
+          description: Session and durable creation operation accepted
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/accepted.schema.json }
+        '400': { description: Invalid request }
+        '403': { description: Insufficient role }
+        '404': { description: Robot inaccessible }
+        '409': { description: Active session, execution, or conflicting key }
+        '503': { description: Robot or storage unavailable }
+  /v1/dev-sessions/{session_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [dev-sessions]
+      operationId: getDevSession
+      responses:
+        '200':
+          description: Session state and current generation
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/session.schema.json }
+        '403': { description: Insufficient role }
+        '404': { description: Session inaccessible }
+    delete:
+      tags: [dev-sessions]
+      operationId: closeDevSession
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '202':
+          description: Closure accepted; process stop and cleanup may still be pending
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/accepted.schema.json }
+        '403': { description: Not the owner or a privileged member }
+        '404': { description: Session inaccessible }
+        '409': { description: Conflicting key }
+  /v1/device/dev-sessions/{session_id}/runs/{execution_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
+      - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
+    put:
+      tags: [device]
+      operationId: reportDevRunStatus
+      description: Reports state metadata only; output and artifacts remain on the robot.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/device-run-status.schema.json }
+      responses:
+        '204': { description: Status recorded or identical replay }
+        '400': { description: Invalid status }
+        '401': { description: Invalid machine credential }
+        '404': { description: Run inaccessible to this robot }
+        '409': { description: Invalid state transition }
+  /v1/device/dev-sessions/{session_id}/generations:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
+      - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
+    post:
+      tags: [device]
+      operationId: reportDevSessionGeneration
+      description: Machine-authenticated durable local commit report; never receives source files or filenames.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/device-source-report.schema.json }
+      responses:
+        '204': { description: Commit recorded or identical replay }
+        '400': { description: Invalid report }
+        '401': { description: Invalid device credential }
+        '404': { description: Session inaccessible to this robot }
+        '409': { description: Stale generation or conflicting report }
+  /v1/device/local-dev-endpoint:
+    put:
+      tags: [device]
+      operationId: publishLocalDevEndpoint
+      description: Device-authenticated fingerprint advertisement; robot identity comes from the machine credential.
+      security: []  # Uses machine credentials, not a human access token.
+      parameters:
+        - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
+        - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/device-endpoint.schema.json }
+      responses:
+        '204': { description: Endpoint advertisement recorded }
+        '400': { description: Invalid fingerprint or daemon URL }
+        '401': { description: Invalid device credential }
+  /v1/dev-sessions/{session_id}/local-grants:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [dev-sessions]
+      operationId: createDevSessionLocalGrant
+      description: Proposed only. Submit a hash of a CLI-generated secret; the secret never reaches the Platform.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/grant-request.schema.json }
+      responses:
+        '202':
+          description: Grant installation accepted; wait for operation success before local access.
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/grant-accepted.schema.json }
+        '400': { description: Invalid grant }
+        '403': { description: Insufficient role }
+        '404': { description: Session inaccessible }
+        '409': { description: Session unavailable or conflicting key }
+        '503': { description: Robot offline or local endpoint unavailable }
+  /v1/dev-sessions/{session_id}/restart:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [dev-sessions]
+      operationId: restartDevSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/dev-sessions/v1/restart-request.schema.json }
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '202':
+          description: Restart accepted with reserved execution ID
+          content:
+            application/json:
+              schema: { $ref: ../schemas/dev-sessions/v1/accepted.schema.json }
+        '403': { description: Insufficient role }
+        '404': { description: Session inaccessible }
+        '409': { description: Missing generation, active sync or conflicting execution }
+        '503': { description: Robot unavailable }
   /v1/missions:
     post:
       tags: [missions]
@@ -105,6 +321,38 @@ paths:
         '403': { description: Insufficient role }
         '404': { description: Mission or source revision inaccessible }
         '409': { description: Version or idempotency conflict }
+  /v1/organizations/{organization_id}/deployments:
+    parameters:
+      - { name: organization_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: cursor, in: query, required: false, schema: { type: string } }
+      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+    get:
+      tags: [missions]
+      operationId: listDeployments
+      description: Read-only organization deployment records. New Ringfour design.
+      responses:
+        '200':
+          description: Organization-scoped deployment page
+          content:
+            application/json:
+              schema: { $ref: ../schemas/missions/v1/deployment-page.schema.json }
+        '404': { description: Organization inaccessible }
+  /v1/missions/{mission_id}/revisions/{revision_id}/source:
+    parameters:
+      - { name: mission_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: revision_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [missions]
+      operationId: downloadMissionSource
+      description: Download the verified immutable source archive for a revision. New Ringfour design.
+      responses:
+        '200':
+          description: Verified source ZIP
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '404': { description: Mission or revision inaccessible }
+        '503': { description: Source storage unavailable or invalid }
   /v1/robots/{robot_id}/deployments:
     parameters:
       - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -209,6 +457,23 @@ paths:
         '404': { description: Organization is inaccessible }
         '409': { description: Idempotency key reused for different input }
         '503': { description: Revision retention capacity reached }
+  /v1/robots/{robot_id}/executions:
+    parameters:
+      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: cursor, in: query, required: false, schema: { type: string } }
+      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+    get:
+      tags: [scripts]
+      operationId: listRobotExecutions
+      description: Robot-scoped execution history. New Ringfour design.
+      responses:
+        '200':
+          description: Execution page
+          content:
+            application/json:
+              schema: { $ref: ../schemas/scripts/v1/execution-page.schema.json }
+        '400': { description: Invalid cursor }
+        '404': { description: Robot inaccessible }
   /v1/robots/{robot_id}/script-runs:
     parameters:
       - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }

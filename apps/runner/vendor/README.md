@@ -1,14 +1,15 @@
-# RoboCore SDK artifact
+# SDK artifacts
 
-`robocore-0.1.0.dev20261111114406+c.799c8afa-py3-none-any.whl` is the
-unchanged C-preview artifact produced by the separate RoboCore SDK project. Its
-SHA-256 is `2c41f42c81ee82d8b8fe13535c1feb48de8dd19df7bf126a650bdda2a5592a00`.
-It was frozen from a dirty source snapshot based on commit `799c8afa`, so the
-commit alone does not identify the build. The source project's
-`artifacts/robocore-c-preview/manifest.json` identifies the frozen files. It
-matches the `robocore-agent:c-preview` image used by the robot deployment.
+`ringfour_sdk-0.1.0.dev0-py3-none-any.whl` is the unmodified wheel from the
+separate Ringfour SDK project, SHA-256
+`f6f1519e5fb72c6cd05367fc2fff1afa824e287a78a72a33636609dafaf8e459`.
+It is copied into the Runner image and installed into a mission environment
+only when that mission pins it and its dependencies in a hash-checked lock.
+The older RoboCore wheel is retained for existing immutable mission revisions;
+new missions should use the Ringfour SDK. Agent and profiles remain separate.
 
-The Runner image carries this wheel; it is installed into a mission's isolated
-uv environment only when explicitly listed with its hash in that mission's
-requirements lock. The SDK project and Agent remain separate and own their APIs
-and robot profiles.
+`ringfour_platform_runtime-0.1.0.dev0-py3-none-any.whl` is built from the
+separate `packages/python-runtime` project, SHA-256
+`781fcebf64494ed5106f47aa4a656a37fc7aef5ed32bd4ce6f0ed77e8d8972b7`.
+Missions install it explicitly through a hash-pinned lock; the standalone SDK
+and Agent do not require it. Images must be rebuilt to include it.

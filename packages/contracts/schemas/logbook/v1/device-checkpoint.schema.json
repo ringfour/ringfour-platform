@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/logbook/v1/device-checkpoint.schema.json",
+  "title": "Proposed contiguous device event acknowledgement",
+  "type": "object", "additionalProperties": false,
+  "required": ["acknowledged_sequence"],
+  "properties": {"acknowledged_sequence": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}}
+}
