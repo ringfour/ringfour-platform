@@ -38,7 +38,7 @@ docs/milestones/
 AGENTS.md
 ```
 
-Applications communicate through versioned contracts, never imports of another application's implementation. The RoboCore SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts.
+Applications communicate through versioned contracts, never imports of another application's implementation. The Ringfour SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts.
 
 ## Reading and execution order
 
