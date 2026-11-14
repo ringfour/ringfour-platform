@@ -1,6 +1,7 @@
 import { useAuth0 } from "@auth0/auth0-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { apiFetch } from "@/lib/api";
@@ -90,7 +91,11 @@ export function IdentityPage() {
   };
 
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-6">
+    <main className="workspace-page space-y-6">
+      <PageHeading
+        title="Workspace"
+        description="Manage your organizations and account."
+      />
       <Card>
         <CardHeader>
           <CardTitle>Identity</CardTitle>

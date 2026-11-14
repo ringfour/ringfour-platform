@@ -1,9 +1,10 @@
 import { useAuth0 } from "@auth0/auth0-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiFetchAll } from "@/lib/api";
 
 type OrganizationItem = {
   id: string;
@@ -40,7 +41,19 @@ type RobotStatus = {
 // secret). It lives only in this component's state until dismissed.
 type ShownSecret = { kind: string; value: string; expires_at?: string };
 
-export function RobotsPage() {
+export function RobotsPage({
+  preferredOrganizationId = "",
+  preferredRobotId,
+  onOrganizationChange,
+  onOpenRobot,
+  onRobotsChanged,
+}: {
+  preferredOrganizationId?: string;
+  preferredRobotId?: string;
+  onOrganizationChange?: (id: string) => void;
+  onOpenRobot?: (id: string) => void;
+  onRobotsChanged?: () => void;
+} = {}) {
   const { getAccessTokenSilently } = useAuth0();
   const getToken = useCallback(async (): Promise<string> => {
     const token = await getAccessTokenSilently({
@@ -75,24 +88,28 @@ export function RobotsPage() {
   );
 
   useEffect(() => {
-    apiFetch(getToken, "/v1/organizations")
-      .then((r) => r.json())
-      .then((body) => {
-        const items = (body as { items: OrganizationItem[] }).items;
+    apiFetchAll<OrganizationItem>(getToken, "/v1/organizations")
+      .then((items) => {
         setOrganizations(items);
-        setSelectedOrg((current) => current ?? items[0] ?? null);
+        setSelectedOrg(
+          (current) =>
+            current ??
+            items.find((item) => item.id === preferredOrganizationId) ??
+            items[0] ??
+            null,
+        );
       })
       .catch(report);
-  }, [getToken, report]);
+  }, [getToken, report, preferredOrganizationId]);
 
   const loadRobots = useCallback(
     async (orgId: string) => {
       try {
-        const body = await apiFetch(
+        const items = await apiFetchAll<Robot>(
           getToken,
           `/v1/organizations/${orgId}/robots`,
-        ).then((r) => r.json());
-        setRobots((body as { items: Robot[] }).items);
+        );
+        setRobots(items);
         setError(null);
       } catch (cause) {
         report(cause);
@@ -146,20 +163,30 @@ export function RobotsPage() {
     };
   }, [selectedRobot, getToken]);
 
-  const inspectRobot = async (robot: Robot) => {
-    setSelectedRobot(robot);
-    setShownSecret(null);
-    try {
-      const body = await apiFetch(
-        getToken,
-        `/v1/robots/${robot.id}/credentials`,
-      ).then((r) => r.json());
-      setCredentials((body as { items: Credential[] }).items);
-      setError(null);
-    } catch (cause) {
-      report(cause);
-    }
-  };
+  const inspectRobot = useCallback(
+    async (robot: Robot) => {
+      setSelectedRobot(robot);
+      setRobotStatus(null);
+      setCredentials(null);
+      setShownSecret(null);
+      try {
+        const body = await apiFetch(
+          getToken,
+          `/v1/robots/${robot.id}/credentials`,
+        ).then((r) => r.json());
+        setCredentials((body as { items: Credential[] }).items);
+        setError(null);
+      } catch (cause) {
+        report(cause);
+      }
+    },
+    [getToken, report],
+  );
+
+  useEffect(() => {
+    const target = robots?.find((robot) => robot.id === preferredRobotId);
+    if (target && selectedRobot?.id !== target.id) void inspectRobot(target);
+  }, [robots, preferredRobotId, selectedRobot?.id, inspectRobot]);
 
   const pairRobot = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -194,6 +221,7 @@ export function RobotsPage() {
       );
       setError(null);
       await loadRobots(orgId);
+      onRobotsChanged?.();
       if (selectedRobot?.id === robot.id) {
         await inspectRobot(robot);
       }
@@ -258,7 +286,11 @@ export function RobotsPage() {
   const isOwner = selectedOrg?.role === "owner";
 
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-6">
+    <main className="workspace-page space-y-6">
+      <PageHeading
+        title="Fleet"
+        description="Connect devices and inspect your robots."
+      />
       <Card>
         <CardHeader>
           <CardTitle>Robots</CardTitle>
@@ -279,13 +311,14 @@ export function RobotsPage() {
                   className="rounded border bg-transparent px-2 py-1.5 text-sm"
                   value={selectedOrg?.id ?? ""}
                   disabled={pairingBusy}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setSelectedOrg(
                       organizations.find(
                         (org) => org.id === event.target.value,
                       ) ?? null,
-                    )
-                  }
+                    );
+                    onOrganizationChange?.(event.target.value);
+                  }}
                 >
                   {organizations.map((org) => (
                     <option key={org.id} value={org.id}>
@@ -316,7 +349,11 @@ export function RobotsPage() {
                           <button
                             type="button"
                             className="font-medium text-primary underline-offset-2 hover:underline"
-                            onClick={() => inspectRobot(robot)}
+                            onClick={() =>
+                              onOpenRobot
+                                ? onOpenRobot(robot.id)
+                                : inspectRobot(robot)
+                            }
                           >
                             {robot.name}
                           </button>
@@ -459,6 +496,10 @@ export function RobotsPage() {
               <div className="flex gap-2">
                 <dt className="w-28 text-muted-foreground">Name</dt>
                 <dd>{selectedRobot.name}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-28 text-muted-foreground">Created</dt>
+                <dd>{selectedRobot.created_at}</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="w-28 text-muted-foreground">Enrolled</dt>

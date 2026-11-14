@@ -344,3 +344,14 @@ test("non-owner members see a read-only view", async () => {
   ).toBeNull();
   expect(screen.queryByRole("button", { name: /revoke/i })).toBeNull();
 });
+
+test("opens the selected robot from the dashboard", async () => {
+  stubApi();
+  render(
+    <RobotsPage preferredOrganizationId={ORG.id} preferredRobotId={ROBOT.id} />,
+  );
+  expect(await screen.findByText("Robot detail")).toBeTruthy();
+  expect((await screen.findByTestId("device-status")).textContent).toContain(
+    "online",
+  );
+});

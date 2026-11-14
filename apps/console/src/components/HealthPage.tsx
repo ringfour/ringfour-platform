@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 
@@ -43,7 +44,11 @@ export function HealthPage() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-2xl p-6">
+    <main className="workspace-page">
+      <PageHeading
+        title="System health"
+        description="Check the services connected to this Console."
+      />
       <Card>
         <CardHeader>
           <CardTitle>Service health</CardTitle>
