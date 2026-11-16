@@ -1,5 +1,6 @@
 import base64
 import hashlib
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -79,9 +80,11 @@ def test_run_does_not_send_credentials_to_an_external_upload_url(tmp_path, fake_
 
 
 def test_download_checks_digest_and_does_not_overwrite(tmp_path, monkeypatch):
-    monkeypatch.setattr(main, "_settings", lambda: object())
-    monkeypatch.setattr(main.auth, "TokenStore", lambda: object())
+    monkeypatch.setattr(main, "_settings", lambda: SimpleNamespace(api_url="http://platform"))
+    monkeypatch.setattr(main.auth, "TokenStore", lambda: SimpleNamespace(load=lambda _: {"access_token": "token"}))
     data = b"artifact data"
+    client = httpx.Client
+    monkeypatch.setattr(main.httpx, "Client", lambda **kwargs: client(transport=httpx.MockTransport(lambda _: httpx.Response(200, content=data)), **kwargs))
 
     def request(method, path, settings, store, **kwargs):
         if path.endswith("/artifacts"):

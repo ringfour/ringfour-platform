@@ -67,7 +67,11 @@ public sealed class DevSessionWorker(IServiceScopeFactory scopes, DeviceConnecti
         foreach (var run in failedRuns)
         {
             run.State = "failed";
-            run.Error = """{"code":"restart_failed","message":"The device could not start the development execution."}""";
+            var code = run.Operation.Result is not null &&
+                JsonNode.Parse(run.Operation.Result)?["error"]?["code"]?.GetValue<string>() == "insufficient_storage"
+                ? "insufficient_storage" : "restart_failed";
+            run.Error = new JsonObject { ["code"] = code, ["message"] = code == "insufficient_storage"
+                ? "The Runner does not have enough free storage." : "The device could not start the development execution." }.ToJsonString();
             run.UpdatedAt = now;
             if (item.LastExecutionId == run.Id && item.State is not ("closing" or "closed" or "expired"))
             {

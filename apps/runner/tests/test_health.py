@@ -2,7 +2,6 @@ import shutil
 
 import pytest
 from fastapi.testclient import TestClient
-
 from ringfour_runner.config import Settings
 from ringfour_runner.main import create_app
 
@@ -27,7 +26,7 @@ def test_readiness_ok_with_writable_volume_and_uv(tmp_path):
     assert response.json() == {
         "status": "ok",
         "version": "0.1.0",
-        "checks": {"volume": "ok", "uv": "ok", "auth": "ok"},
+        "checks": {"volume": "ok", "disk": "ok", "uv": "ok", "auth": "ok"},
     }
 
 

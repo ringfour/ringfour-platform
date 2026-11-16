@@ -20,30 +20,58 @@ cleanup() {
   if [ -n "${test_dir:-}" ]; then rm -rf "$test_dir"; fi
 }
 trap cleanup EXIT
-set -a
-. ./.auth.env
-set +a
-export RINGFOUR_AUTH0_DOMAIN="$AUTH0_DOMAIN" RINGFOUR_AUTH0_CLIENT_ID="$AUTH0_CLI_CLIENT_ID" RINGFOUR_AUTH0_AUDIENCE="$AUTH0_AUDIENCE"
+test_dir=$(mktemp -d "${TMPDIR:-/tmp}/ringfour-cli-dev.XXXXXXXX")
+mkdir "$test_dir/wheels"
+auth_options=()
+if [ "${RINGFOUR_TEST_LOCAL_AUTH:-0}" = 1 ]; then
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$test_dir/test-signing.pem" 2>/dev/null
+  access_token=$(python3 - "$test_dir/test-signing.pem" <<'PY'
+import base64, json, subprocess, sys, time
+def encode(value):
+    return base64.urlsafe_b64encode(value).rstrip(b"=")
+header = encode(json.dumps({"alg":"RS256","typ":"JWT","kid":"ringfour-test-key"}, separators=(",", ":")).encode())
+claims = encode(json.dumps({"iss":"ringfour-e2e","aud":"ringfour-e2e","sub":"ringfour-e2e-owner","exp":int(time.time())+3600}, separators=(",", ":")).encode())
+content = header + b"." + claims
+signature = subprocess.run(["openssl", "dgst", "-sha256", "-sign", sys.argv[1]], input=content, check=True, stdout=subprocess.PIPE).stdout
+print((content + b"." + encode(signature)).decode())
+PY
+  )
+  export RINGFOUR_AUTH0_DOMAIN=ringfour-e2e RINGFOUR_AUTH0_CLIENT_ID=ringfour-e2e RINGFOUR_AUTH0_AUDIENCE=ringfour-e2e
+  export PYTHONPATH="$PWD/apps/cli/tests${PYTHONPATH:+:$PYTHONPATH}"
+  export PYTHON_KEYRING_BACKEND=env_keyring.EnvironmentKeyring
+  export RINGFOUR_TEST_TOKEN_JSON="{\"access_token\":\"$access_token\"}"
+  auth_options=(-e ASPNETCORE_ENVIRONMENT=Development -e Auth__Test__Issuer=ringfour-e2e -e Auth__Test__Audience=ringfour-e2e -e "Auth__Test__RsaPrivateKeyPem=$(cat "$test_dir/test-signing.pem")")
+else
+  set -a
+  . ./.auth.env
+  set +a
+  export RINGFOUR_AUTH0_DOMAIN="$AUTH0_DOMAIN" RINGFOUR_AUTH0_CLIENT_ID="$AUTH0_CLI_CLIENT_ID" RINGFOUR_AUTH0_AUDIENCE="$AUTH0_AUDIENCE"
+  auth_options=(-e "Auth0__Domain=$AUTH0_DOMAIN" -e "Auth0__Audience=$AUTH0_AUDIENCE")
+fi
 export RINGFOUR_API_URL="http://127.0.0.1:18095"
 cli=(uv run --project "$PWD/apps/cli" ringfour-cli)
 secret=$(openssl rand -hex 32)
-docker build -q -t ringfour-api:07-test apps/api >/dev/null
-docker build -q -t ringfour-daemon:07-test apps/daemon >/dev/null
-docker build -q -t ringfour-runner:07-test apps/runner >/dev/null
+if [ "${RINGFOUR_TEST_SKIP_BUILD:-0}" = 1 ]; then
+  for image in ringfour-api:07-test ringfour-daemon:07-test ringfour-runner:07-test postgres:18; do
+    docker image inspect "$image" >/dev/null
+  done
+else
+  docker build -q -t ringfour-api:07-test apps/api >/dev/null
+  docker build -q -t ringfour-daemon:07-test apps/daemon >/dev/null
+  docker build -q -t ringfour-runner:07-test apps/runner >/dev/null
+fi
 docker network create "$network" >/dev/null
 for v in "$stage" "$runner_data" "$daemon_data" "$api_data"; do docker volume create "$v" >/dev/null; done
 docker run -d --name "$postgres" --network "$network" -e POSTGRES_DB=ringfour -e POSTGRES_USER=ringfour -e POSTGRES_PASSWORD=temporary-test-password postgres:18 >/dev/null
 for _ in $(seq 1 60); do docker exec "$postgres" pg_isready -U ringfour -d ringfour >/dev/null 2>&1 && break; sleep 1; done
 docker run -d --name "$api" --network "$network" -p 127.0.0.1:18095:8080 -v "$api_data:/storage" \
   -e "ConnectionStrings__Postgres=Host=$postgres;Port=5432;Database=ringfour;Username=ringfour;Password=temporary-test-password" \
-  -e "Auth0__Domain=$AUTH0_DOMAIN" -e "Auth0__Audience=$AUTH0_AUDIENCE" -e Storage__Backend=filesystem -e Storage__FilesystemRoot=/storage ringfour-api:07-test >/dev/null
+  "${auth_options[@]}" -e Storage__Backend=filesystem -e Storage__FilesystemRoot=/storage ringfour-api:07-test >/dev/null
 for _ in $(seq 1 60); do curl -sf "$RINGFOUR_API_URL/health/ready" >/dev/null && break; sleep 1; done
 curl -fsS "$RINGFOUR_API_URL/health/ready" >/dev/null
 "${cli[@]}" whoami >/dev/null
 access_token=$(uv run --project apps/cli python -c 'from ringfour_cli.auth import TokenStore; from ringfour_cli.config import load_settings; print(TokenStore().load(load_settings())["access_token"])')
 api_curl() { curl -fsS -H "authorization: Bearer $access_token" "$@"; }
-test_dir=$(mktemp -d "${TMPDIR:-/tmp}/ringfour-cli-dev.XXXXXXXX")
-mkdir "$test_dir/wheels"
 python3 - "$test_dir/wheels" <<'PY'
 import pathlib, sys, zipfile
 path = pathlib.Path(sys.argv[1]) / 'ringfour_test_dep-1.0-py3-none-any.whl'
@@ -72,7 +100,7 @@ org=$(api_curl -H 'content-type: application/json' -d '{"name":"Milestone 07 iso
 robot=$(api_curl -H 'content-type: application/json' -d '{"name":"test-robot","profile_ref":null}' "$RINGFOUR_API_URL/v1/organizations/$org/robots" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 owner=$(api_curl "$RINGFOUR_API_URL/v1/me" | python3 -c 'import json,sys; print(json.load(sys.stdin)["user"]["id"])')
 enrollment=$(api_curl -X POST "$RINGFOUR_API_URL/v1/robots/$robot/enrollment-tokens" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-docker run -d --name "$runner" --network "$network" -v "$stage:/staged:ro" -v "$runner_data:/data" -v "$test_dir/wheels:/test-wheels:ro" -e RUNNER_AUTH_TOKEN="$secret" "${runner_options[@]}" ringfour-runner:07-test >/dev/null
+docker run -d --name "$runner" --network "$network" -v "$stage:/staged:ro" -v "$runner_data:/data" -v "$test_dir/wheels:/test-wheels:ro" -e RUNNER_AUTH_TOKEN="$secret" ${runner_options[@]+"${runner_options[@]}"} ringfour-runner:07-test >/dev/null
 docker run -d --name "$daemon" --network "$network" -p 127.0.0.1::8081 -p 127.0.0.1::8084 -v "$stage:/staged" -v "$daemon_data:/data" \
   -e "RUNNER_URL=http://$runner:8082" -e RUNNER_AUTH_TOKEN="$secret" -e "PLATFORM_API_URL=http://$api:8080" -e RINGFOUR_LOCAL_DEV_ENABLED=true ringfour-daemon:07-test >/dev/null
 control_port=$(docker port "$daemon" 8081/tcp | sed 's/.*://')
@@ -163,8 +191,13 @@ assert "RUNNER_AUTH_TOKEN" not in os.environ
 if Path("/test-wheels/offline-test").exists():
     while not Path("/test-wheels/allow-entry").exists():
         time.sleep(0.1)
-entry = logbook.info("Inspection skipped", station="B", reason="Operator reported maintenance")
+entry = logbook.info("Inspection started", station="B", phase="observe")
 print("logbook entry " + entry, flush=True)
+if not Path("/test-wheels/offline-test").exists():
+    time.sleep(1)
+    second = logbook.info("Inspection still running", station="B", phase="capture")
+    print("logbook entry " + second, flush=True)
+    time.sleep(120)
 PY
   (cd "$test_dir/mission" && "${cli[@]}" dev sync --org "$org") >"$test_dir/author-sync.out"
   if [ "${RINGFOUR_TEST_LOGBOOK_OFFLINE:-0}" = 1 ]; then
@@ -194,17 +227,78 @@ PY
     for _ in $(seq 1 60); do curl -sf "$RINGFOUR_API_URL/health/ready" >/dev/null && break; sleep 1; done
     curl -fsS "$RINGFOUR_API_URL/health/ready" >/dev/null
   else
-    (cd "$test_dir/mission" && "${cli[@]}" dev restart --follow --org "$org") >"$test_dir/author-run.out"
-    grep -q 'logbook entry ' "$test_dir/author-run.out"
+    (cd "$test_dir/mission" && "${cli[@]}" dev restart --org "$org") >"$test_dir/author-run.out"
   fi
   for _ in $(seq 1 60); do
-    entries=$(docker exec "$postgres" psql -At -U ringfour -d ringfour -c "SELECT count(*) FROM logbook_events e JOIN dev_session_runs r ON r.id=e.execution_id AND r.operation_id=e.operation_id WHERE e.robot_id='$robot' AND r.actor_user_id='$owner' AND e.type='mission.logbook.entry' AND e.payload->>'message'='Inspection skipped' AND e.payload->'fields'->>'station'='B'")
-    [ "$entries" = 1 ] && break
+    entries=$(docker exec "$postgres" psql -At -U ringfour -d ringfour -c "SELECT count(*) FROM logbook_events e JOIN dev_session_runs r ON r.id=e.execution_id AND r.operation_id=e.operation_id WHERE e.robot_id='$robot' AND r.actor_user_id='$owner' AND e.type='mission.logbook.entry' AND e.payload->'fields'->>'station'='B'")
+    expected=2
+    [ "${RINGFOUR_TEST_LOGBOOK_OFFLINE:-0}" = 1 ] && expected=1
+    [ "$entries" = "$expected" ] && break
     sleep 1
   done
-  [ "$entries" = 1 ]
+  [ "$entries" = "$expected" ]
+  if [ "${RINGFOUR_TEST_LOGBOOK_OFFLINE:-0}" != 1 ]; then
+    execution=$(docker exec "$postgres" psql -At -U ringfour -d ringfour -c "SELECT id FROM dev_session_runs WHERE session_id='$session' AND state='running' ORDER BY created_at DESC LIMIT 1")
+    [ -n "$execution" ]
+    history=$(api_curl "$RINGFOUR_API_URL/v1/organizations/$org/events?robot_id=$robot&execution_id=$execution")
+    python3 - "$execution" "$history" <<'PY'
+import json, sys
+execution, raw = sys.argv[1:]
+page = json.loads(raw)
+messages = [item["payload"].get("message") for item in page["items"]]
+assert messages == ["Inspection started", "Inspection still running"], messages
+assert all(item["execution_id"] == execution for item in page["items"])
+PY
+  fi
   (cd "$test_dir/mission" && "${cli[@]}" dev stop --org "$org") >"$test_dir/author-stop.out"
-  echo 'PASS: actual SDK mission wrote an execution-attributed entry through Runner, daemon and Platform'
+  if [ "${RINGFOUR_TEST_LOGBOOK_OFFLINE:-0}" != 1 ]; then
+    cat >"$test_dir/mission/main.py" <<'PY'
+import base64, os, time
+from pathlib import Path
+from ringfour_runtime import artifacts, logbook
+photo = Path(os.environ["RINGFOUR_ARTIFACT_DIR"]) / "photo.png"
+photo.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+artifact = artifacts.publish_file(photo, content_type="image/png")
+entry = logbook.info("Photo captured", evidence=[artifact], station="B", phase="capture")
+print("artifact " + artifact + " entry " + entry, flush=True)
+time.sleep(120)
+PY
+    (cd "$test_dir/mission" && "${cli[@]}" run main.py --lock requirements.lock --robot "$robot" --org "$org" --detach) >"$test_dir/artifact-run.out" 2>&1
+    execution=$(sed -n 's/^Execution: //p' "$test_dir/artifact-run.out")
+    [ -n "$execution" ]
+    for _ in $(seq 1 60); do
+      artifact_id=$(docker exec "$postgres" psql -At -U ringfour -d ringfour -c "SELECT id FROM script_artifacts WHERE execution_id='$execution' AND path='photo.png' AND content_type='image/png' AND state='available'")
+      [ -n "$artifact_id" ] && break
+      sleep 1
+    done
+    [ -n "$artifact_id" ]
+    state=$(api_curl "$RINGFOUR_API_URL/v1/executions/$execution" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+    [ "$state" = running ]
+    history=$(api_curl "$RINGFOUR_API_URL/v1/organizations/$org/events?robot_id=$robot&execution_id=$execution")
+    python3 - "$artifact_id" "$history" <<'PY'
+import json,sys
+artifact_id,page=sys.argv[1:]
+items=json.loads(page)["items"]
+assert len(items)==1 and items[0]["payload"]["evidence"]==[artifact_id],items
+PY
+    artifacts_json=$(api_curl "$RINGFOUR_API_URL/v1/executions/$execution/artifacts")
+    python3 - "$artifact_id" "$artifacts_json" <<'PY'
+import json,sys
+artifact_id,page=sys.argv[1:]
+items=json.loads(page)["artifacts"]
+assert len(items)==1 and items[0]["artifact_id"]==artifact_id and items[0]["state"]=="available",items
+PY
+    api_curl "$RINGFOUR_API_URL/v1/executions/$execution/artifacts/content?path=photo.png" >"$test_dir/photo.png"
+    python3 - "$test_dir/photo.png" <<'PY'
+import pathlib,sys
+assert pathlib.Path(sys.argv[1]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+PY
+    queued=$(docker exec "$daemon" /app/.venv/bin/python -c 'import sqlite3; c=sqlite3.connect("/data/ringfour.db"); print(c.execute("select count(*) from live_artifact_queue").fetchone()[0])')
+    [ "$queued" = 0 ]
+    docker exec "$runner" /app/.venv/bin/python -c 'import pathlib,sys; assert not (pathlib.Path("/data/executions")/sys.argv[1]/"live-artifacts"/sys.argv[2]).exists()' "$execution" "$artifact_id"
+    "${cli[@]}" execution stop "$execution" >/dev/null
+  fi
+  echo 'PASS: running SDK mission delivered live execution-attributed entries and immutable image evidence through Runner, daemon, Platform and history API'
   exit 0
 fi
 
@@ -258,6 +352,23 @@ printf 'import ringfour_test_dep\nprint(ringfour_test_dep.VALUE, flush=True)\n' 
 grep -q 'dependency installed' "$test_dir/dependency-run.out"
 [ "$(markers | wc -l | tr -d ' ')" = 2 ]
 printf '%s\n' "$(markers)" | grep -Fxq "$initial_markers"
+if [ "${RINGFOUR_TEST_MANY_SYNCS:-0}" = 1 ]; then
+  for n in $(seq 1 19); do
+    printf '# sync %s\n' "$n" >>"$test_dir/mission/main.py"
+    (cd "$test_dir/mission" && "${cli[@]}" dev sync --org "$org") >"$test_dir/many-syncs.out"
+  done
+  grep -q 'generation 22' "$test_dir/many-syncs.out"
+  for _ in $(seq 1 90); do
+    generation=$(api_curl "$RINGFOUR_API_URL/v1/dev-sessions/$session" | python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])')
+    [ "$generation" = 22 ] && break
+    sleep 1
+  done
+  [ "$generation" = 22 ]
+  (cd "$test_dir/mission" && "${cli[@]}" dev restart --follow --org "$org") >"$test_dir/many-restart.out"
+  grep -q 'dependency installed' "$test_dir/many-restart.out"
+  wait_dev_ready
+  echo 'PASS: 22 generations synchronized and restarted via CLI, Platform, daemon and Runner'
+fi
 printf 'import time\nprint("long running", flush=True)\ntime.sleep(600)\n' >"$test_dir/mission/main.py"
 (cd "$test_dir/mission" && "${cli[@]}" dev sync --org "$org") >"$test_dir/sync3.out"
 (cd "$test_dir/mission" && "${cli[@]}" dev restart --org "$org") >"$test_dir/run3.out"

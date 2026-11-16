@@ -10,8 +10,9 @@ An owner or developer creates a revision for an organization with
 SHA-256 and byte length of the uploaded archive, the Runner canonical bundle
 digest, the Python entrypoint, Python requirement and dependency lock. An
 upload is not a usable revision until finalization has independently read and
-verified the stored bytes. Limit an archive and its extracted bundle to 1 MiB,
-each extracted file to 256 KiB, and each bundle to 1024 regular files. Reject
+verified the stored bytes. Mission and artifact byte lengths use the exact JSON
+integer range, with practical storage and infrastructure limits; bundles retain
+the 1024-regular-file and 2048-ZIP-entry limits. Reject
 absolute paths, duplicate paths, `.` and `..` components, symlinks and special
 files. The entrypoint must be a `.py` file inside the bundle. Preserve the
 canonical manifest algorithm already defined in `runner-contract.md`.
@@ -21,8 +22,8 @@ The archive format is ZIP. File paths use only ASCII letters, digits, `_`,
 The bundle contains `requirements.lock`, a UTF-8 dependency lock whose SHA-256
 matches `lock_sha256` (an empty lock represents no third-party dependencies).
 The lock is included in the canonical bundle digest. No ZIP entry may reuse a
-path; directories must not collide with files. A ZIP's declared or actual
-uncompressed size cannot exceed the stated per-file and bundle limits.
+path; directories must not collide with files. ZIP expansion is bounded by
+available staging space and actual member lengths are verified.
 For script runs the private Runner start request adds `python_requirement` and
 `lock_sha256` together. Runner rejects an incompatible Python interpreter or a
 mismatched lock and prepares the environment with `uv pip sync --require-hashes`
@@ -30,7 +31,7 @@ against `requirements.lock`. An empty lock installs no external packages. The
 existing diagnostic requests omit both fields and retain their behavior.
 
 Initiation returns an ID and a short-lived scoped upload URL. Finalization
-reads the upload once into a bounded private buffer, checks its actual
+reads the upload into a private temporary file using bounded buffers, checks its actual
 size and SHA-256, validates extraction, entrypoint and the canonical digest,
 then stores those same verified bytes under a new server-controlled immutable
 key. It does not validate one version and copy a mutable object afterwards.
@@ -47,15 +48,14 @@ scoped to the authenticated user, route and organization. A matching replay
 returns the original revision and upload URL; a changed request returns 409.
 The URL is the API path `/v1/script-revisions/{id}/content`, authorizes the
 same organization role using the caller's human bearer token, accepts one ZIP
-body with `PUT`, and expires 15 minutes after creation. It never exposes object
+body with `PUT`, and expires 24 hours after creation. It never exposes object
 store credentials. `POST /v1/script-revisions/{id}/finalize` checks the upload
 and returns the ready revision; a successful repeat is idempotent. Failed
 verification returns 400 and does not publish the revision; missing uploaded
 bytes returns 409. The upload URL refuses writes once finalized or expired.
-At most 100 pending plus ready revisions may be retained per organization;
-capacity exhaustion returns 503. Records and immutable data are retained until
+There is no fixed revision-count quota. Records and immutable data are retained until
 operator cleanup; expired incomplete objects are removed by a durable retrying
-sweeper 24 hours after their upload expiry and remain counted until removed.
+sweeper 24 hours after their upload expiry.
 The same sweeper removes temporary upload copies for ready revisions, recording
 cleanup completion for retry. Ready revisions and execution histories are not
 automatically deleted.
@@ -77,8 +77,8 @@ credentials are deployment configuration, not robot-visible credentials. API
 and device-accessible URL origins may differ and must be configured explicitly;
 never give a device a URL containing an internal Docker-only hostname.
 The API's internal object-store boundary accepts server-generated relative keys
-only, reads and writes at most 1 MiB per object, and supports put, bounded get,
-and idempotent delete. It does not grant clients direct access to immutable
+only, supports streaming transfers and idempotent delete, and retains bounded
+byte-array methods for small legacy control paths. It does not grant clients direct access to immutable
 keys. Storage failures are not translated into successful finalization.
 The internal adapter is registered lazily through `Storage:Backend` (either
 `filesystem` or `s3`). The former requires an absolute `Storage:FilesystemRoot`;
@@ -89,6 +89,25 @@ encoding, while retaining request signing. Use TLS for a hosted S3 endpoint.
 API readiness checks both PostgreSQL and the configured private storage. A
 missing or unreachable storage configuration makes readiness fail; liveness
 does not contact storage.
+
+Transfer staging uses temporary disk on the CLI, API and daemon, and the
+Runner stores execution-owned copies. Provision space for multiple copies of
+an archive and its extracted contents, and a 256 MiB free-space reserve on
+each checked volume. The upload window and the default mission preparation
+deadline are 24 hours (`Missions:PrepareTimeoutSeconds` configures the latter).
+Any ingress or proxy must allow the intended body size and transfer duration.
+The backend's archive-size and artifact-size columns are `bigint`; rolling back
+that migration requires all values to fit the former integer limits.
+
+Interrupted uploads restart from byte zero. Normal failure and cancellation
+remove private temporary files and abort S3 multipart uploads; the periodic
+cleanup removes recognized temporary files and incomplete Ringfour multipart
+uploads older than 48 hours. It must have permission to list and abort multipart
+uploads in the configured bucket. Transfers that stall beyond that age can be
+aborted by cleanup and must be retried. The daemon removes stale unpublished
+staging directories on startup, and Runner restart discards only incomplete
+artifact snapshots while retaining the original artifact output for recovery.
+These cleanup rules do not delete finalized revisions or execution history.
 
 Errors use the shared `{error:{code,message,request_id}}` envelope. For
 example, starting a new run while disconnected returns HTTP 503 with
@@ -135,22 +154,27 @@ storage before publishing terminal state. Names are relative POSIX paths, at
 most 240 UTF-8 bytes, with no empty, `.` or `..` components, control characters
 or backslashes.
 Symlinks and special files are rejected, including in parent directories. The
-snapshot has at most 16 files, each at most 256 KiB and at most 1 MiB total.
-If collection fails or a limit is exceeded, the execution is failed with
-`artifact_collection_failed`; a cancellation remains cancelled and reports the
-collection error separately. No partial artifact set is exposed. Runner retains
+snapshot has at most 16 files; byte sizes are limited by storage and the exact
+JSON integer range. If collection fails, process state and exit code remain
+independent and artifact status reports `artifact_collection_failed`.
+No partial snapshot is exposed. Runner retains
 the snapshot with the execution, including across restart.
 
 The existing private Bearer authentication applies to both endpoints.
-`GET /v1/executions/{execution_id}/artifacts` returns `{execution_id, artifacts}`;
+`GET /v1/executions/{execution_id}/artifacts` returns `{execution_id, artifacts, artifact_state, artifact_error}`;
 each entry has `path`, `size` and lowercase SHA-256 `sha256`. It returns 409
 `execution_not_terminal` while the process or snapshot is active. The data
 endpoint is `GET /v1/executions/{execution_id}/artifacts/content` with query
-parameters `path`, integer `offset` (0–262144), and integer `limit` (1–16384).
+parameters `path`, integer `offset` (0–9007199254740991), and integer `limit` (1–16384).
 It returns `{execution_id, path, offset, next_offset, data_base64, eof}` with
 offsets measured in bytes. Missing executions or artifacts return 404;
 malformed paths or ranges return 400. Content and listing are snapshots, not
 live views of a mutable script directory.
+
+The authenticated `/v1/executions/{execution_id}/artifacts/download` endpoint
+streams a complete snapshot file. Platform artifact lists also expose delivery
+state: `pending`, `uploading`, `ready`, `failed`, or `unknown` for historical
+records. Delivery can fail and retry independently of the terminal process.
 
 ### Hosted execution synchronization (new design)
 
@@ -176,7 +200,7 @@ target is disconnected rather than silently create a queued run.
 `Idempotency-Key` as described above. The returned operation ID is also the
 execution ID. Store the run and its dispatch operation in the same database
 transaction. A partial unique index permits only one nonterminal run per robot;
-retain at most 100 runs per robot until explicit operator cleanup. Check the
+there is no fixed execution-history count cap. Check the
 current authenticated device session before accepting a new run; matching
 idempotent retries return the original result even if the device is now offline.
 
@@ -198,17 +222,19 @@ at the exact current offset. A replay that matches already persisted bytes is
 accepted; an overlap with different bytes or a gap is 409. API and daemon
 persist offsets before advancing, so a lost response never loses data.
 
-After Runner is terminal the daemon snapshots each bounded artifact, sends it
+After Runner is terminal the daemon reports process status after output, then
+streams each verified snapshot artifact
 to `PUT /v1/device/executions/{id}/artifacts?path=...&sha256=...`, and retries
 until acknowledged. The API computes the digest itself, stores verified bytes
 under a server-derived key and commits metadata; an identical repeat is
 accepted and a changed same-path repeat is 409. An object written before a
-database failure can be safely rewritten by retry. Finally the daemon sends a
-terminal status; all output and artifacts must already have been acknowledged.
+database failure can be safely rewritten by retry. Artifact delivery progress,
+failure, and completion are reported separately using the machine-authenticated
+artifact-status endpoint.
 Before then, status updates may report `queued`, `preparing` or `running`.
 Once terminal, only the same terminal status and metadata may be replayed.
 Daemon SQLite `script_sync` records execution ID and output offsets before
-starting Runner, and marks completion only after terminal acknowledgement.
+starting Runner, and marks completion only after terminal and artifact-status acknowledgement.
 Runner records are the durable source of local execution status and output.
 Transient device/API or Runner outages retry without starting a second process.
 An accepted start whose acknowledgement is ambiguous stays pending beyond the

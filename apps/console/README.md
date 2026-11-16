@@ -18,7 +18,10 @@ docker compose -f infra/compose/docker-compose.yml up -d --build
 
 Open `http://localhost:5173/` and sign in. The Vite server proxies `/api` to
 the Platform; Compose supplies `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID`,
-`VITE_AUTH0_AUDIENCE` and `API_PROXY_TARGET`. If dependencies change and a
+`VITE_AUTH0_AUDIENCE`, `VITE_CONSOLE_ORIGIN` and `API_PROXY_TARGET`.
+The default Console origin is `http://localhost:5173`, matching the Auth0 SPA
+callback, logout and web-origin registration. Opening the development server by
+LAN IP redirects to that canonical origin before Auth0 initializes. If dependencies change and a
 recreated container still uses an old anonymous `/app/node_modules` volume,
 renew the Console's anonymous volume when recreating that service.
 

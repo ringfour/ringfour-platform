@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/logbook/v2/runtime-entry-request.schema.json",
+  "title": "Mission-authored Logbook entry with evidence",
+  "description": "New Ringfour design. Evidence contains execution-owned artifact IDs, never file bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entry_id", "level", "message", "fields", "evidence"],
+  "properties": {
+    "entry_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "level": {"const": "info"},
+    "message": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "\\S", "not": {"pattern": "\\u0000"}},
+    "fields": {"type": "object", "maxProperties": 16, "propertyNames": {"pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"}, "additionalProperties": {"anyOf": [{"type": "string", "maxLength": 512, "not": {"pattern": "\\u0000"}}, {"type": "number", "minimum": -9007199254740991, "maximum": 9007199254740991}, {"type": "boolean"}, {"type": "null"}]}},
+    "evidence": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}}
+  }
+}

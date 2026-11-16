@@ -61,8 +61,6 @@ public static class DeploymentLifecycle
             if (manager.Get(deployment.RobotId) is null || !OperationEndpoints.ComputeOnline(presence?.LastSeenAt, now,
                 config.GetValue("Connectivity:OfflineThresholdSeconds", 45)))
                 throw new ApiException(503, "robot_unavailable", "The robot is offline.");
-            if (await db.ScriptExecutions.CountAsync(item => item.RobotId == deployment.RobotId, ct) >= 100)
-                throw new ApiException(503, "capacity_exceeded", "Execution retention capacity reached.");
         }
         // A stop cancels an unfinished start or restart under the same robot lock.
         // If restart already issued a stop, carry that stable operation forward.

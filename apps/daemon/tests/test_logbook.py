@@ -119,5 +119,5 @@ def test_author_migration_preserves_existing_outbox(tmp_path):
             conn.executescript(path.read_text())
             conn.execute("INSERT INTO schema_migrations VALUES (?, '2026-01-01')", (version,))
     event = append(db, robot, operation)
-    assert migrate(db) == [10, 11]
+    assert migrate(db) == [10, 11, 12]
     assert logbook.batch(db, robot) == [event]

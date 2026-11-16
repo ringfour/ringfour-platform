@@ -7,7 +7,7 @@ public sealed class ScriptRevision
     public Guid CreatedByUserId { get; set; }
     public required string State { get; set; }
     public required string ArchiveSha256 { get; set; }
-    public int ArchiveSize { get; set; }
+    public long ArchiveSize { get; set; }
     public required string RevisionDigest { get; set; }
     public required string Entrypoint { get; set; }
     public required string PythonRequirement { get; set; }

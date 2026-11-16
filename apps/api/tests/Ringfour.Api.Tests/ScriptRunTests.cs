@@ -40,6 +40,17 @@ public sealed class ScriptRunTests(PostgresFixture postgres)
             var revision = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
             Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsync($"/v1/script-revisions/{revision}/content", new ByteArrayContent(archive))).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"/v1/script-revisions/{revision}/finalize", null)).StatusCode);
+            var ownerId = await RobotTests.UserId(owner);
+            await postgres.ExecuteAsync("""
+                WITH history AS (
+                    INSERT INTO operations (id, robot_id, kind, payload_version, payload, state, created_at, updated_at, deadline_at)
+                    SELECT gen_random_uuid(), @robot, 'script.execution.start', 1, '{}', 'Succeeded', now(), now(), now() + interval '1 hour'
+                    FROM generate_series(1, 100) RETURNING id
+                )
+                INSERT INTO script_executions (id, robot_id, revision_id, actor_user_id, state, created_at, updated_at, exit_code,
+                    stdout, stderr, stdout_truncated, stderr_truncated)
+                SELECT id, @robot, @revision, @actor, 'succeeded', now(), now(), 0, ''::bytea, ''::bytea, false, false FROM history
+                """, ("robot", robot), ("revision", revision), ("actor", ownerId));
             owner.DefaultRequestHeaders.Remove("Idempotency-Key");
             owner.DefaultRequestHeaders.Add("Idempotency-Key", "run-key");
             var request = new { revision_id = revision };
@@ -85,13 +96,33 @@ public sealed class ScriptRunTests(PostgresFixture postgres)
             Assert.Equal(HttpStatusCode.Conflict, (await device.PutAsync(outputUrl, new ByteArrayContent("other"u8.ToArray()))).StatusCode);
             Assert.Equal(HttpStatusCode.Conflict, (await device.PutAsync($"/v1/device/executions/{id}/output/stdout?offset=10", new ByteArrayContent("x"u8.ToArray()))).StatusCode);
             var bytes = "artifact"u8.ToArray();
-            var artifactUrl = $"/v1/device/executions/{id}/artifacts?path=report.txt&sha256={ScriptRevisionTests.Hash(bytes)}";
-            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsync(artifactUrl, new ByteArrayContent(bytes))).StatusCode);
-            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsync(artifactUrl, new ByteArrayContent(bytes))).StatusCode);
+            var artifactId = Guid.NewGuid();
+            var artifactUrl = $"/v1/device/executions/{id}/artifacts?artifact_id={artifactId}&path=report.txt&sha256={ScriptRevisionTests.Hash(bytes)}&content_type=image%2Fpng";
             var status = new { state = "succeeded", exit_code = (int?)0, error = (object?)null, stdout_truncated = false, stderr_truncated = false };
             Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsJsonAsync($"/v1/device/executions/{id}/status", status, RingfourJson.Options)).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsJsonAsync($"/v1/device/executions/{id}/status", status, RingfourJson.Options)).StatusCode);
             Assert.Equal(HttpStatusCode.Conflict, (await device.PutAsJsonAsync($"/v1/device/executions/{id}/status", status with { state = "running", exit_code = (int?)null }, RingfourJson.Options)).StatusCode);
+            var artifactStatusUrl = $"/v1/device/executions/{id}/artifact-status";
+            var failure = new { state = "failed", error = (object?)new { code = "artifact_upload_failed", message = "Retrying." } };
+            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsJsonAsync(artifactStatusUrl, failure, RingfourJson.Options)).StatusCode);
+            var failedArtifacts = JsonDocument.Parse(await owner.GetStringAsync($"/v1/executions/{id}/artifacts")).RootElement;
+            Assert.Equal("failed", failedArtifacts.GetProperty("artifact_state").GetString());
+            Assert.Equal("artifact_upload_failed", failedArtifacts.GetProperty("artifact_error").GetProperty("code").GetString());
+            var uploading = new { state = "uploading", error = (object?)null };
+            var ready = uploading with { state = "ready" };
+            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsJsonAsync(artifactStatusUrl, uploading, RingfourJson.Options)).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsync(artifactUrl, new ByteArrayContent(bytes))).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsync($"/v1/device/executions/{id}/artifacts?path=report.txt&sha256={ScriptRevisionTests.Hash(bytes)}", new ByteArrayContent(bytes))).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsJsonAsync(artifactStatusUrl, ready, RingfourJson.Options)).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsJsonAsync(artifactStatusUrl, uploading, RingfourJson.Options)).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await device.PutAsync(artifactUrl, new ByteArrayContent(bytes))).StatusCode);
+            var otherUrl = $"/v1/device/executions/{id}/artifacts?path=other.txt&sha256={ScriptRevisionTests.Hash(bytes)}";
+            Assert.Equal(HttpStatusCode.Conflict, (await device.PutAsync(otherUrl, new ByteArrayContent(bytes))).StatusCode);
+            Assert.Equal("ready", JsonDocument.Parse(await owner.GetStringAsync($"/v1/executions/{id}/artifacts")).RootElement.GetProperty("artifact_state").GetString());
+            var artifactList = JsonDocument.Parse(await owner.GetStringAsync($"/v1/executions/{id}/artifacts")).RootElement.GetProperty("artifacts")[0];
+            Assert.Equal(artifactId, artifactList.GetProperty("artifact_id").GetGuid());
+            Assert.Equal("image/png", artifactList.GetProperty("content_type").GetString());
+            Assert.Equal("available", artifactList.GetProperty("state").GetString());
             var execution = await owner.GetStringAsync($"/v1/executions/{id}");
             ContractSchema.AssertValid("scripts/v1/execution.schema.json", execution);
             Assert.Equal("succeeded", JsonDocument.Parse(execution).RootElement.GetProperty("state").GetString());

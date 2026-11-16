@@ -37,6 +37,30 @@ type RobotStatus = {
   protocol_version: number | null;
 };
 
+function relativeLastSeen(value: string | null): string {
+  if (value === null) return "Never seen";
+  const elapsed = Math.max(0, Date.now() - Date.parse(value));
+  if (!Number.isFinite(elapsed)) return "Unknown";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60)
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? "day" : "days"} ago`;
+}
+
+function LastSeen({ value }: { value: string | null }) {
+  return value === null ? (
+    <>Never seen</>
+  ) : (
+    <time dateTime={value} title={value}>
+      {relativeLastSeen(value)}
+    </time>
+  );
+}
+
 // A secret shown exactly once (enrollment token or rotated credential
 // secret). It lives only in this component's state until dismissed.
 type ShownSecret = { kind: string; value: string; expires_at?: string };
@@ -72,7 +96,12 @@ export function RobotsPage({
   const [robots, setRobots] = useState<Robot[] | null>(null);
   const [selectedRobot, setSelectedRobot] = useState<Robot | null>(null);
   const [credentials, setCredentials] = useState<Credential[] | null>(null);
-  const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
+  const [robotStatuses, setRobotStatuses] = useState<
+    Record<string, RobotStatus>
+  >({});
+  const robotStatus = selectedRobot
+    ? (robotStatuses[selectedRobot.id] ?? null)
+    : null;
   const [pairingCode, setPairingCode] = useState("");
   const [pairingName, setPairingName] = useState("");
   const [pairingTarget, setPairingTarget] = useState("");
@@ -132,41 +161,42 @@ export function RobotsPage({
     }
   }, [selectedOrg, loadRobots]);
 
-  // Observed device status: poll while a robot is selected. Read-only; any
-  // member may view it. The server derives online/offline from its own
-  // receive-time freshness window, so this reflects reality even when the
-  // device never says goodbye.
+  // Read-only fleet presence comes from the Platform's receive-time window.
   useEffect(() => {
-    if (selectedRobot === null) {
-      setRobotStatus(null);
-      return;
-    }
+    if (robots === null || robots.length === 0) return;
     let cancelled = false;
     const load = async () => {
-      try {
-        const body = await apiFetch(
-          getToken,
-          `/v1/robots/${selectedRobot.id}/status`,
-        ).then((response) => response.json());
-        if (!cancelled) {
-          setRobotStatus(body as RobotStatus);
-        }
-      } catch {
-        // Keep the last known status; the next poll retries.
-      }
+      const updates = await Promise.all(
+        robots.map(async (robot) => {
+          try {
+            const body = await apiFetch(
+              getToken,
+              `/v1/robots/${robot.id}/status`,
+            ).then((response) => response.json());
+            return [robot.id, body as RobotStatus] as const;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (!cancelled)
+        setRobotStatuses((current) => {
+          const next = { ...current };
+          for (const update of updates) if (update) next[update[0]] = update[1];
+          return next;
+        });
     };
     void load();
-    const timer = setInterval(() => void load(), 5000);
+    const timer = setInterval(() => void load(), 15000);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [selectedRobot, getToken]);
+  }, [robots, getToken]);
 
   const inspectRobot = useCallback(
     async (robot: Robot) => {
       setSelectedRobot(robot);
-      setRobotStatus(null);
       setCredentials(null);
       setShownSecret(null);
       try {
@@ -334,47 +364,66 @@ export function RobotsPage({
                   No robots in this organization yet.
                 </p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="py-2 font-medium">Name</th>
-                      <th className="py-2 font-medium">Status</th>
-                      <th className="py-2 font-medium">Created</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {robots.map((robot) => (
-                      <tr key={robot.id} className="border-b last:border-0">
-                        <td className="py-2">
-                          <button
-                            type="button"
-                            className="font-medium text-primary underline-offset-2 hover:underline"
-                            onClick={() =>
-                              onOpenRobot
-                                ? onOpenRobot(robot.id)
-                                : inspectRobot(robot)
-                            }
-                          >
-                            {robot.name}
-                          </button>
-                        </td>
-                        <td className="py-2">
-                          {robot.enrolled_at === null ? (
-                            <StatusBadge
-                              variant="neutral"
-                              label="not enrolled"
-                            />
-                          ) : (
-                            <StatusBadge variant="success" label="enrolled" />
-                          )}
-                        </td>
-                        <td className="py-2 text-muted-foreground">
-                          {robot.created_at}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <section className="fleet-robot-list" aria-label="Robots">
+                  <header className="logbook-list-heading">
+                    <h2>Robots</h2>
+                    <span>
+                      {robots.length} {robots.length === 1 ? "robot" : "robots"}
+                    </span>
+                  </header>
+                  {robots.map((robot) => {
+                    const status = robotStatuses[robot.id];
+                    const selected = selectedRobot?.id === robot.id;
+                    return (
+                      <button
+                        key={robot.id}
+                        type="button"
+                        className={`fleet-robot-row${selected ? " is-selected" : ""}`}
+                        aria-pressed={selected}
+                        onClick={() =>
+                          onOpenRobot
+                            ? onOpenRobot(robot.id)
+                            : inspectRobot(robot)
+                        }
+                      >
+                        <span className="fleet-robot-row-main">
+                          <span className="robot-avatar" aria-hidden="true">
+                            {robot.name.slice(0, 1).toUpperCase()}
+                          </span>
+                          <span className="fleet-robot-copy">
+                            <strong>{robot.name}</strong>
+                            <small>
+                              {robot.profile_ref ?? "No robot profile"} ·{" "}
+                              <span>
+                                {robot.enrolled_at === null
+                                  ? "not enrolled"
+                                  : "enrolled"}
+                              </span>
+                            </small>
+                          </span>
+                        </span>
+                        <span
+                          className={`fleet-robot-presence${status?.online ? " is-online" : ""}`}
+                        >
+                          <span
+                            className={`fleet-presence-dot ${status?.online ? "is-online" : ""}`}
+                            aria-hidden="true"
+                          />
+                          <span>
+                            {status
+                              ? status.online
+                                ? "Online"
+                                : "Offline"
+                              : "Checking"}
+                          </span>
+                        </span>
+                        <span className="fleet-robot-last-seen">
+                          <LastSeen value={status?.last_seen_at ?? null} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </section>
               )}
               {isOwner && (
                 <form
@@ -528,7 +577,9 @@ export function RobotsPage({
                 </div>
                 <div className="flex gap-2">
                   <dt className="w-28 text-muted-foreground">Last seen</dt>
-                  <dd>{robotStatus.last_seen_at ?? "never"}</dd>
+                  <dd>
+                    <LastSeen value={robotStatus.last_seen_at} />
+                  </dd>
                 </div>
                 <div className="flex gap-2">
                   <dt className="w-28 text-muted-foreground">Daemon version</dt>

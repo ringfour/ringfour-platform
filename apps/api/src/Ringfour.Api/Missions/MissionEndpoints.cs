@@ -241,13 +241,8 @@ public static class MissionEndpoints
         var source = await db.MissionRevisions.Where(item => item.Id == revisionId && item.MissionId == missionId)
             .Select(item => item.ScriptRevision).SingleOrDefaultAsync(ct)
             ?? throw ApiException.NotFound("The requested resource does not exist in this organization.");
-        byte[] archive;
-        try { archive = await store.GetAsync($"revisions/{source.Id:N}", ct); }
-        catch (Exception exception) when (exception is IOException or AmazonServiceException or AmazonClientException or HttpRequestException)
-        { throw new ApiException(503, "storage_unavailable", "The artifact store is unavailable."); }
-        if (archive.Length != source.ArchiveSize || Convert.ToHexStringLower(SHA256.HashData(archive)) != source.ArchiveSha256)
-            throw new ApiException(503, "storage_unavailable", "The artifact store returned invalid bytes.");
-        return Results.File(archive, "application/zip", "mission-source.zip");
+        return await TemporaryTransfer.VerifiedResponseAsync(context, store, $"revisions/{source.Id:N}",
+            source.ArchiveSize, source.ArchiveSha256, "application/zip", "mission-source.zip", ct);
     }
 
 }

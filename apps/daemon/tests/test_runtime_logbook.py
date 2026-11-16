@@ -55,3 +55,15 @@ def test_author_entries_authenticate_running_execution_and_replay(tmp_path, monk
         assert conn.execute('SELECT count(*) FROM logbook_outbox').fetchone()[0] == 0
         replay = conn.execute('SELECT request_hash FROM logbook_entry_replays').fetchone()[0]
         assert 'Inspection skipped' not in replay and 'runner-secret' not in replay and mac not in replay
+
+
+def test_author_entry_with_evidence_uses_schema_v2(tmp_path):
+    db = str(tmp_path / "daemon.db")
+    migrate(db)
+    robot, operation, execution, artifact = (str(uuid.uuid4()) for _ in range(4))
+    with sqlite3.connect(db) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        event = runtime_logbook.logbook.append(conn, robot, operation, None, execution_id=execution,
+            author_payload={"level": "info", "message": "Photo captured", "fields": {}, "evidence": [artifact]})
+    assert event["schema_version"] == 2
+    assert event["payload"]["evidence"] == [artifact]

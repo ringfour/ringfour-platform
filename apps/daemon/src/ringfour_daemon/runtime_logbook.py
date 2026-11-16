@@ -35,7 +35,8 @@ def _unique(pairs):
 
 def validate(raw):
     value = json.loads(raw, object_pairs_hook=_unique, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-    if not isinstance(value, dict) or set(value) != {"entry_id", "level", "message", "fields"} or not logbook._id(value["entry_id"]) or value["level"] != "info":
+    if (not isinstance(value, dict) or set(value) not in ({"entry_id", "level", "message", "fields"},
+            {"entry_id", "level", "message", "fields", "evidence"}) or not logbook._id(value["entry_id"]) or value["level"] != "info"):
         raise ValueError("Invalid entry")
     message, fields = value["message"], value["fields"]
     if not isinstance(message, str) or not message.strip() or "\x00" in message or len(message) > 500 or not isinstance(fields, dict) or len(fields) > 16:
@@ -52,6 +53,10 @@ def validate(raw):
         if type(item) is float and math.isfinite(item) and abs(item) <= 2 ** 53 - 1:
             continue
         raise ValueError("Invalid field")
+    evidence = value.get("evidence")
+    if evidence is not None and (not isinstance(evidence, list) or len(evidence) > 16 or
+            len(set(evidence)) != len(evidence) or not all(logbook._id(item) for item in evidence)):
+        raise ValueError("Invalid evidence")
     json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
     return value
 
@@ -91,7 +96,7 @@ def _record(settings, robot, execution, operation, entry):
             raise logbook.OutboxFull("Replay capacity exhausted")
         try:
             event = logbook.append(conn, robot, operation, None, event_id=entry["entry_id"], execution_id=execution,
-                author_payload={"level": entry["level"], "message": entry["message"], "fields": entry["fields"]})
+                author_payload={key: entry[key] for key in ("level", "message", "fields", "evidence") if key in entry})
         except sqlite3.IntegrityError as exc:
             raise logbook.OutboxError("conflict") from exc
         conn.execute("INSERT INTO logbook_entry_replays VALUES (?,?,?,?,?)", (entry["entry_id"], execution, fingerprint, event["local_sequence"], time.time()))

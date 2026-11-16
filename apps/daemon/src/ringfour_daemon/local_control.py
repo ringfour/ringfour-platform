@@ -87,7 +87,9 @@ def create_local_app(settings):
                 return JSONResponse({"error": {"code": "sync_pending", "message": "Source sync is pending; retry with the same key.", "request_id": str(uuid.uuid4())}}, status_code=503)
             if "error" in result:
                 code = result["error"]
-                return JSONResponse({"error": {"code": code, "message": "The source sync was not committed.", "request_id": str(uuid.uuid4())}}, status_code=400 if code == "invalid_source" else 409)
+                status = 503 if code == "insufficient_storage" else 400 if code == "invalid_source" else 409
+                message = "Runner storage is low; free space and retry with the same key." if code == "insufficient_storage" else "The source sync was not committed."
+                return JSONResponse({"error": {"code": code, "message": message, "request_id": str(uuid.uuid4())}}, status_code=status)
             return result
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             code = str(exc) if str(exc) in {"invalid_key", "invalid_source", "session_unavailable", "conflict", "sync_in_progress", "stale_generation", "capacity_exceeded", "source_too_large"} else "invalid_source"

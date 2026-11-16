@@ -11,7 +11,7 @@
     "created_by_user_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
     "state": {"enum": ["uploading", "ready"]},
     "archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "archive_size": {"type": "integer", "minimum": 1, "maximum": 1048576},
+    "archive_size": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
     "revision_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "entrypoint": {"type": "string", "minLength": 4, "maxLength": 240},
     "python_requirement": {"type": "string", "minLength": 1, "maxLength": 128},

@@ -48,3 +48,21 @@ and [milestone 06](../../docs/human-testing/06.md).
 The private development restart endpoint runs a committed development
 generation and reuses its lock-matched environment. Platform, daemon and CLI
 integration has been tested locally; see [milestone 07 evidence](../../docs/evidence/07.md).
+
+
+## Storage and execution history
+
+The Runner retains execution records and execution files on its persistent
+volume; it does not silently remove output or artifacts, including those that
+may not yet have synchronized. Operators must provision and monitor the volume.
+New executions are rejected with `insufficient_storage` if available space
+would fall below `RUNNER_MIN_FREE_BYTES` (default 268435456 bytes), and
+`/health/ready` reports a failed `disk` check under that threshold. Existing
+execution IDs and stop requests remain available; clearing the volume would
+lose reconciliation history and is not a cleanup procedure.
+
+Development sync keeps the current snapshot, snapshots used by active
+executions, and snapshots younger than 24 hours. Older unreferenced snapshot
+directories may be removed after a successful sync, while their metadata and
+operation IDs remain available for replay. Closing the session removes its
+workspace after stopping its execution.

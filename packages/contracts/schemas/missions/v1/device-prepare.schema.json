@@ -44,7 +44,7 @@
     "archive_size": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 1048576
+      "maximum": 9007199254740991
     },
     "entrypoint": {
       "type": "string",

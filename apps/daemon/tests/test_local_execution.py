@@ -5,11 +5,11 @@ import uuid
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
-from test_local_source import setup
-
-from ringfour_daemon import local_execution, operations
+from ringfour_daemon import local_execution, operations, runner
 from ringfour_daemon.local_control import create_local_app
+from test_local_source import setup
 
 
 def test_restart_records_before_runner_and_reports_only_status(tmp_path, monkeypatch):
@@ -50,3 +50,19 @@ def test_restart_records_before_runner_and_reports_only_status(tmp_path, monkeyp
         assert client.get(path.replace(execution, str(uuid.uuid4())), headers={"authorization": f"Bearer {token}"}).status_code == 404
         assert client.get(path, headers={"authorization": f"Bearer {token}"}).json()["state"] == "running"
         assert client.get(path + "/output", params={"stream": "stdout", "offset": 0, "limit": 5}, headers={"authorization": f"Bearer {token}"}).status_code == 200
+
+
+def test_restart_reports_low_storage_but_preserves_ambiguous_server_failures(tmp_path, monkeypatch):
+    settings, session, _, _ = setup(tmp_path)
+    operation, execution, robot = (str(uuid.uuid4()) for _ in range(3))
+    payload = {"operation_id": operation, "session_id": session, "execution_id": execution, "robot_id": robot, "generation": 21}
+    item = operations.DeviceOperation(operation_id=operation, robot_id=robot, kind="dev.session.restart", payload_version=1,
+        payload=payload, state="running", deadline_at=datetime.now(UTC).isoformat(), updated_at=datetime.now(UTC).isoformat(), result=None)
+    real_client = httpx.AsyncClient
+    responses = iter([httpx.Response(503, json={"error": {"code": "insufficient_storage"}}), httpx.Response(503)])
+    monkeypatch.setattr(local_execution.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(lambda _: next(responses)), **kwargs))
+    with pytest.raises(runner.RunnerRejected) as rejected:
+        asyncio.run(local_execution.restart(settings, item))
+    assert rejected.value.code == "insufficient_storage"
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(local_execution.restart(settings, item))

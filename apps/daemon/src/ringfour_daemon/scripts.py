@@ -1,8 +1,9 @@
 """Stage verified scripts and replicate Runner output through durable offsets."""
 import asyncio
 import base64
+import codecs
+import errno
 import hashlib
-import io
 import json
 import logging
 import os
@@ -22,8 +23,22 @@ from . import runner
 from .enrollment import credential_error, load_identity
 
 logger = logging.getLogger(__name__)
-MAX_ARCHIVE = 1048576
-MAX_FILE = 262144
+MAX_EXACT_SIZE = 9007199254740991
+MIN_FREE_BYTES = 268435456
+
+
+def cleanup_interrupted_stages(stage_root):
+    """Remove old unpublished extraction directories; published revisions remain untouched."""
+    root = Path(stage_root) / "scripts"
+    if not root.is_dir() or root.is_symlink():
+        return
+    cutoff = time.time() - 48 * 60 * 60
+    for candidate in root.glob(".stage-*"):
+        try:
+            if not candidate.is_symlink() and candidate.is_dir() and candidate.stat().st_mtime < cutoff:
+                shutil.rmtree(candidate)
+        except OSError:
+            logger.warning("Unable to clean an interrupted mission stage")
 
 
 def digest(data):
@@ -71,23 +86,47 @@ def validate_start_payload(payload):
             or ("mission_revision_id" in payload and not valid_id(payload["mission_revision_id"]))):
         raise runner.RunnerRejected("invalid_input", "Invalid revision metadata.")
     size, requirement = payload["archive_size"], payload["python_requirement"]
-    if type(size) is not int or not 1 <= size <= MAX_ARCHIVE or not isinstance(requirement, str) or not requirement.strip() or len(requirement) > 128:
+    if type(size) is not int or not 1 <= size <= MAX_EXACT_SIZE or not isinstance(requirement, str) or not requirement.strip() or len(requirement) > 128:
         raise runner.RunnerRejected("invalid_input", "Invalid revision metadata.")
 
 
 def unpack_verified(archive_bytes, payload, stage_root):
+    """Compatibility entry point for bounded in-memory fixtures."""
+    with tempfile.TemporaryFile() as archive:
+        archive.write(archive_bytes)
+        archive.flush()
+        return unpack_verified_file(archive, payload, stage_root)
+
+
+def unpack_verified_file(archive_file, payload, stage_root):
     if any(not isinstance(payload.get(key), str) or not re.fullmatch(r"[0-9a-f]{64}", payload[key]) for key in ("archive_sha256", "revision_digest", "lock_sha256")):
         raise runner.RunnerRejected("invalid_input", "Invalid revision digest.")
-    if not isinstance(payload.get("archive_size"), int) or not valid_bundle_path(payload.get("entrypoint", "")) or not payload["entrypoint"].endswith(".py"):
+    if type(payload.get("archive_size")) is not int or not valid_bundle_path(payload.get("entrypoint", "")) or not payload["entrypoint"].endswith(".py"):
         raise runner.RunnerRejected("invalid_input", "Invalid revision metadata.")
-    if len(archive_bytes) != payload["archive_size"] or len(archive_bytes) > MAX_ARCHIVE or digest(archive_bytes) != payload["archive_sha256"]:
+    archive_file.seek(0, os.SEEK_END)
+    size = archive_file.tell()
+    archive_file.seek(0)
+    if size != payload["archive_size"] or size > MAX_EXACT_SIZE or hashlib.file_digest(archive_file, "sha256").hexdigest() != payload["archive_sha256"]:
         raise runner.RunnerRejected("invalid_input", "Downloaded revision failed verification.")
-    files = {}
-    directories = set()
-    explicit = set()
+    archive_file.seek(0)
+    root = Path(stage_root) / "scripts"
+    root.mkdir(parents=True, exist_ok=True)
+    if Path(stage_root).is_symlink() or root.is_symlink():
+        raise runner.RunnerRejected("invalid_input", "Staging directory is invalid.")
+    destination = root / payload["revision_digest"]
+    temporary = Path(tempfile.mkdtemp(prefix=".stage-", dir=root))
+    files, directories, explicit = {}, set(), set()
     try:
-        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        with zipfile.ZipFile(archive_file) as archive:
+            if len(archive.infolist()) > 2048:
+                raise ValueError("Too many entries")
             total = 0
+            available = max(0, shutil.disk_usage(root).free - MIN_FREE_BYTES)
+            announced = sum(entry.file_size for entry in archive.infolist() if not entry.is_dir())
+            if announced > available:
+                raise runner.RunnerRejected("insufficient_storage", "Not enough robot storage to extract this mission.")
+            next_report = 64 * 1024 * 1024
+            next_space_check = 0
             for entry in archive.infolist():
                 directory = entry.is_dir()
                 name = entry.filename[:-1] if directory else entry.filename
@@ -106,53 +145,88 @@ def unpack_verified(archive_bytes, payload, stage_root):
                         raise ValueError("File and directory collide")
                     directories.add(name)
                     continue
-                if name in directories or len(files) >= 1024 or entry.file_size > MAX_FILE:
+                if name in directories or len(files) >= 1024 or entry.file_size > MAX_EXACT_SIZE:
                     raise ValueError("Invalid bundle size or path")
-                with archive.open(entry) as source:
-                    content = source.read(MAX_FILE + 1)
-                total += len(content)
-                if len(content) != entry.file_size or len(content) > MAX_FILE or total > MAX_ARCHIVE:
-                    raise ValueError("Bundle size limit")
-                files[name] = content
-        if payload["entrypoint"] not in files or "requirements.lock" not in files:
-            raise ValueError("Missing entrypoint or lock")
-        if digest(files["requirements.lock"]) != payload["lock_sha256"]:
-            raise ValueError("Lock digest mismatch")
-        files["requirements.lock"].decode("utf-8")
-        manifest = [[name, digest(data)] for name, data in sorted(files.items())]
-        canonical = json.dumps(manifest, ensure_ascii=False, separators=(",", ":")).encode()
-        if digest(canonical) != payload["revision_digest"]:
-            raise ValueError("Bundle digest mismatch")
-    except (ValueError, OSError, UnicodeError, zipfile.BadZipFile, KeyError) as exc:
-        raise runner.RunnerRejected("invalid_input", "Downloaded revision failed verification.") from exc
-
-    root = Path(stage_root) / "scripts"
-    root.mkdir(parents=True, exist_ok=True)
-    destination = root / payload["revision_digest"]
-    if destination.exists():
-        if destination.is_symlink() or not destination.is_dir():
-            raise runner.RunnerRejected("invalid_input", "Staged revision is invalid.")
-        actual = {}
-        for path in destination.rglob("*"):
-            if path.is_symlink() or (not path.is_file() and not path.is_dir()):
-                raise runner.RunnerRejected("invalid_input", "Staged revision is invalid.")
-            if path.is_file():
-                with path.open("rb") as source:
-                    actual[path.relative_to(destination).as_posix()] = source.read(MAX_FILE + 1)
-        if actual != files:
-            raise runner.RunnerRejected("invalid_input", "Staged revision does not match its digest.")
-    else:
-        temporary = Path(tempfile.mkdtemp(prefix=".stage-", dir=root))
-        try:
-            for name, data in files.items():
-                target = temporary / name
+                target = temporary.joinpath(*components)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
+                checksum = hashlib.sha256()
+                decoder = codecs.getincrementaldecoder("utf-8")("strict") if name == "requirements.lock" else None
+                length = 0
+                with archive.open(entry) as source, target.open("xb") as output:
+                    while chunk := source.read(65536):
+                        length += len(chunk)
+                        total += len(chunk)
+                        if length > entry.file_size or total > available:
+                            raise ValueError("Bundle size limit")
+                        if total >= next_space_check:
+                            if shutil.disk_usage(root).free < MIN_FREE_BYTES + len(chunk):
+                                raise runner.RunnerRejected("insufficient_storage", "Not enough robot storage to extract this mission.")
+                            next_space_check = total + 16 * 1024 * 1024
+                        checksum.update(chunk)
+                        if decoder is not None:
+                            decoder.decode(chunk)
+                        output.write(chunk)
+                        if total >= next_report:
+                            logger.info("Mission preparation: extracted %d MiB", total // 1048576)
+                            next_report = total + 64 * 1024 * 1024
+                    if decoder is not None:
+                        decoder.decode(b"", final=True)
+                if length != entry.file_size:
+                    raise ValueError("Archive length mismatch")
+                files[name] = (length, checksum.hexdigest())
+        if payload["entrypoint"] not in files or "requirements.lock" not in files or files["requirements.lock"][1] != payload["lock_sha256"]:
+            raise ValueError("Missing entrypoint or lock")
+        manifest = [[name, value[1]] for name, value in sorted(files.items())]
+        if digest(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")).encode()) != payload["revision_digest"]:
+            raise ValueError("Bundle digest mismatch")
+        if destination.exists():
+            if destination.is_symlink() or not destination.is_dir():
+                raise ValueError("Staged revision is invalid")
+            actual = {}
+            for path in destination.rglob("*"):
+                if path.is_symlink() or (not path.is_file() and not path.is_dir()):
+                    raise ValueError("Staged revision is invalid")
+                if path.is_file():
+                    with path.open("rb") as source:
+                        actual[path.relative_to(destination).as_posix()] = (path.stat().st_size, hashlib.file_digest(source, "sha256").hexdigest())
+            if actual != files:
+                raise ValueError("Staged revision does not match its digest")
+        else:
             os.replace(temporary, destination)
-        finally:
-            if temporary.exists():
-                shutil.rmtree(temporary)
-    return f"scripts/{payload['revision_digest']}"
+        return f"scripts/{payload['revision_digest']}"
+    except OSError as exc:
+        if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+            raise runner.RunnerRejected("insufficient_storage", "Not enough robot storage to extract this mission.") from exc
+        raise runner.RunnerRejected("invalid_input", "Downloaded revision failed verification.") from exc
+    except (ValueError, UnicodeError, zipfile.BadZipFile, KeyError, RuntimeError) as exc:
+        raise runner.RunnerRejected("invalid_input", "Downloaded revision failed verification.") from exc
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
+
+async def download_and_stage(response, payload, stage_root):
+    """Stream into an anonymous temporary file, then verify and stage off the event loop."""
+    if shutil.disk_usage(tempfile.gettempdir()).free < payload["archive_size"] + MIN_FREE_BYTES:
+        raise runner.RunnerRejected("insufficient_storage", "Not enough temporary storage to download this mission.")
+    try:
+        with tempfile.TemporaryFile() as archive:
+            total = 0
+            next_report = 64 * 1024 * 1024
+            async for chunk in response.aiter_bytes(65536):
+                total += len(chunk)
+                if total > payload["archive_size"]:
+                    raise runner.RunnerRejected("invalid_input", "Downloaded revision exceeds its declared size.")
+                await asyncio.to_thread(archive.write, chunk)
+                if total >= next_report:
+                    logger.info("Mission download: %d of %d MiB", total // 1048576, payload["archive_size"] // 1048576)
+                    next_report = total + 64 * 1024 * 1024
+            await asyncio.to_thread(archive.flush)
+            return await asyncio.to_thread(unpack_verified_file, archive, payload, stage_root)
+    except OSError as exc:
+        if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+            raise runner.RunnerRejected("insufficient_storage", "Not enough temporary storage to download this mission.") from exc
+        raise
 
 
 async def start(settings, operation):
@@ -161,21 +235,16 @@ async def start(settings, operation):
     if identity is None or credential_error(settings.credential_path):
         raise runner.RunnerRejected("credential_missing", "Device credential unavailable.")
     headers = machine_headers(settings, identity)
-    async with httpx.AsyncClient(base_url=identity["platform_url"], headers=headers, timeout=15) as client, \
+    async with httpx.AsyncClient(base_url=identity["platform_url"], headers=headers, timeout=httpx.Timeout(None, connect=15, write=300)) as client, \
             client.stream("GET", f"/v1/device/executions/{operation.operation_id}/revision") as response:
         response.raise_for_status()
-        chunks = bytearray()
-        async for chunk in response.aiter_bytes():
-            chunks.extend(chunk)
-            if len(chunks) > MAX_ARCHIVE:
-                raise runner.RunnerRejected("invalid_input", "Downloaded revision exceeds its limit.")
-    code_ref = unpack_verified(bytes(chunks), operation.payload, settings.stage_dir)
+        code_ref = await download_and_stage(response, operation.payload, settings.stage_dir)
     record_sync(settings.db_path, operation.operation_id)
     body = {"execution_id": operation.operation_id, "robot_id": operation.robot_id,
             "revision_digest": operation.payload["revision_digest"], "code_ref": code_ref,
             "entrypoint": operation.payload["entrypoint"], "python_requirement": operation.payload["python_requirement"],
             "lock_sha256": operation.payload["lock_sha256"]}
-    async with httpx.AsyncClient(base_url=settings.runner_url, headers={"authorization": f"Bearer {settings.runner_auth_token}"}, timeout=10) as client:
+    async with httpx.AsyncClient(base_url=settings.runner_url, headers={"authorization": f"Bearer {settings.runner_auth_token}"}, timeout=httpx.Timeout(None, connect=15, write=300)) as client:
         response = await client.post("/v1/executions", json=body)
         if response.status_code not in (200, 201):
             complete_sync(settings.db_path, operation.operation_id)
@@ -219,19 +288,14 @@ async def prepare_mission(settings, operation):
     identity = load_identity(settings.db_path)
     if identity is None or credential_error(settings.credential_path):
         raise runner.RunnerRejected("credential_missing", "Device credential unavailable.")
-    async with httpx.AsyncClient(base_url=identity["platform_url"], headers=machine_headers(settings, identity), timeout=15) as client, \
+    async with httpx.AsyncClient(base_url=identity["platform_url"], headers=machine_headers(settings, identity), timeout=httpx.Timeout(None, connect=15, write=300)) as client, \
             client.stream("GET", f"/v1/device/deployments/{payload['deployment_id']}/candidate", params={"operation_id": operation.operation_id}) as response:
         response.raise_for_status()
-        chunks = bytearray()
-        async for chunk in response.aiter_bytes():
-            chunks.extend(chunk)
-            if len(chunks) > MAX_ARCHIVE:
-                raise runner.RunnerRejected("invalid_input", "Downloaded revision exceeds its limit.")
-    code_ref = unpack_verified(bytes(chunks), payload, settings.stage_dir)
+        code_ref = await download_and_stage(response, payload, settings.stage_dir)
     request = {"revision_digest": payload["revision_digest"], "code_ref": code_ref, "entrypoint": payload["entrypoint"],
                "python_requirement": payload["python_requirement"], "lock_sha256": payload["lock_sha256"], "retain_digests": retain}
-    async with httpx.AsyncClient(base_url=settings.runner_url, headers={"authorization": f"Bearer {settings.runner_auth_token}"}, timeout=600) as client:
-        deadline = time.monotonic() + 600
+    async with httpx.AsyncClient(base_url=settings.runner_url, headers={"authorization": f"Bearer {settings.runner_auth_token}"}, timeout=httpx.Timeout(None, connect=15, write=300)) as client:
+        deadline = time.monotonic() + 86400
         while True:
             response = await client.post("/v1/revisions/prepare", json=request)
             try:
@@ -264,8 +328,9 @@ async def synchronize(settings, identity, row):
     execution_id, stdout_offset, stderr_offset, started = row
     machine = machine_headers(settings, identity)
     runner_headers = {"authorization": f"Bearer {settings.runner_auth_token}"}
-    async with httpx.AsyncClient(base_url=settings.runner_url, headers=runner_headers, timeout=10) as local, \
-            httpx.AsyncClient(base_url=identity["platform_url"], headers=machine, timeout=15) as platform:
+    transfer_timeout = httpx.Timeout(None, connect=15, write=300)
+    async with httpx.AsyncClient(base_url=settings.runner_url, headers=runner_headers, timeout=transfer_timeout) as local, \
+            httpx.AsyncClient(base_url=identity["platform_url"], headers=machine, timeout=transfer_timeout) as platform:
         response = await local.get(f"/v1/executions/{execution_id}")
         if response.status_code == 404:
             if started:
@@ -295,32 +360,67 @@ async def synchronize(settings, identity, row):
                 offset += len(data)
                 advance(settings.db_path, execution_id, stream, offset)
         terminal = snapshot["state"] in ("succeeded", "failed", "cancelled")
-        if terminal:
-            response = await local.get(f"/v1/executions/{execution_id}/artifacts")
-            response.raise_for_status()
-            for artifact in response.json()["artifacts"]:
-                data = bytearray()
-                while len(data) < artifact["size"]:
-                    response = await local.get(f"/v1/executions/{execution_id}/artifacts/content", params={"path": artifact["path"], "offset": len(data), "limit": 16384})
-                    response.raise_for_status()
-                    chunk = response.json()
-                    part = base64.b64decode(chunk["data_base64"], validate=True)
-                    if not part or chunk["offset"] != len(data) or chunk["next_offset"] != len(data) + len(part):
-                        raise ValueError("Invalid Runner artifact offsets")
-                    data.extend(part)
-                    if len(data) > MAX_FILE:
-                        raise ValueError("Runner artifact exceeds limit")
-                if len(data) != artifact["size"] or digest(data) != artifact["sha256"]:
-                    raise ValueError("Runner artifact digest mismatch")
-                response = await platform.put(f"/v1/device/executions/{execution_id}/artifacts", params={"path": artifact["path"], "sha256": artifact["sha256"]}, content=bytes(data))
-                response.raise_for_status()
         status = {"state": snapshot["state"], "exit_code": snapshot["exit_code"], "error": snapshot["error"],
                   "stdout_truncated": truncation["stdout"], "stderr_truncated": truncation["stderr"]}
         response = await platform.put(f"/v1/device/executions/{execution_id}/status", json=status)
         response.raise_for_status()
         if terminal:
+            async def artifact_status(state, failure=None):
+                response = await platform.put(f"/v1/device/executions/{execution_id}/artifact-status", json={"state": state, "error": failure})
+                response.raise_for_status()
+
+            response = await local.get(f"/v1/executions/{execution_id}/artifacts")
+            response.raise_for_status()
+            artifact_result = response.json()
+            if artifact_result.get("artifact_state") == "failed":
+                await artifact_status("failed", artifact_result.get("artifact_error") or {"code": "artifact_collection_failed", "message": "Artifact collection failed."})
+                complete_sync(settings.db_path, execution_id)
+                return
+            await artifact_status("uploading")
+            try:
+                await upload_artifacts(local, platform, execution_id, artifact_result["artifacts"])
+            except (httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
+                try:
+                    await artifact_status("failed", {"code": "artifact_upload_failed", "message": "Artifact delivery failed and will be retried."})
+                except httpx.HTTPError:
+                    logger.warning("could not report artifact delivery failure for %s", execution_id)
+                raise
+            if artifact_result.get("artifact_state") == "ready":
+                await artifact_status("ready")
+            else:
+                await artifact_status("failed", {"code": "artifact_status_unknown", "message": "Runner could not verify artifact collection."})
             complete_sync(settings.db_path, execution_id)
 
+
+async def upload_artifacts(local, platform, execution_id, artifacts):
+    for artifact in artifacts:
+        if type(artifact.get("size")) is not int or not 0 <= artifact["size"] <= MAX_EXACT_SIZE:
+            raise ValueError("Invalid artifact size")
+        if shutil.disk_usage(tempfile.gettempdir()).free < artifact["size"] + MIN_FREE_BYTES:
+            raise OSError("Insufficient temporary storage for artifact")
+        with tempfile.TemporaryFile() as data:
+            checksum = hashlib.sha256()
+            offset = 0
+            async with local.stream("GET", f"/v1/executions/{execution_id}/artifacts/download", params={"path": artifact["path"]}) as download:
+                download.raise_for_status()
+                async for part in download.aiter_bytes(65536):
+                    offset += len(part)
+                    if offset > artifact["size"]:
+                        raise ValueError("Runner artifact exceeds limit")
+                    checksum.update(part)
+                    await asyncio.to_thread(data.write, part)
+            if offset != artifact["size"] or checksum.hexdigest() != artifact["sha256"]:
+                raise ValueError("Runner artifact digest mismatch")
+            await asyncio.to_thread(data.flush)
+            data.seek(0)
+
+            async def artifact_chunks():
+                while part := await asyncio.to_thread(data.read, 65536):
+                    yield part
+
+            response = await platform.put(f"/v1/device/executions/{execution_id}/artifacts", params={"path": artifact["path"], "sha256": artifact["sha256"]},
+                headers={"Content-Length": str(offset)}, content=artifact_chunks())
+            response.raise_for_status()
 
 async def run_sync(settings):
     while True:

@@ -62,7 +62,8 @@ def append(conn, robot_id, operation_id, state, *, now=None, event_id=None, exec
         raise OutboxFull("Logbook sequence is exhausted.")
     event = {"event_id": event_id, "robot_id": robot_id, "local_sequence": sequence,
              "occurred_at": stamp.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z"),
-             "type": "mission.logbook.entry" if author else "agent.motion.event" if motion else "device.operation.state_changed", "schema_version": 1,
+             "type": "mission.logbook.entry" if author else "agent.motion.event" if motion else "device.operation.state_changed",
+             "schema_version": 2 if author and "evidence" in author_payload else 1,
              "operation_id": operation_id, "payload": author_payload if author else motion_payload if motion else {"state": state}}
     if author:
         event["execution_id"] = execution_id

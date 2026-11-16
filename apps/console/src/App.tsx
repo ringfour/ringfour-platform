@@ -1,5 +1,5 @@
 import { useAuth0 } from "@auth0/auth0-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { DashboardPage } from "@/components/DashboardPage";
 import { FleetPage } from "@/components/FleetPage";
@@ -104,6 +104,7 @@ export default function App() {
 
 function DevConsole() {
   const { isAuthenticated, isLoading, error } = useAuth0();
+  const [authWaitExpired, setAuthWaitExpired] = useState(false);
   const [view, setView] = useState<View>("overview");
   const [organizationId, setOrganizationId] = useState("");
   const [robotId, setRobotId] = useState<string | undefined>();
@@ -112,6 +113,29 @@ function DevConsole() {
     setView(next);
   };
 
+  useEffect(() => {
+    if (!isLoading) {
+      setAuthWaitExpired(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setAuthWaitExpired(true), 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [isLoading]);
+
+  if (isLoading && authWaitExpired)
+    return (
+      <main className="auth-wait">
+        <p role="alert" className="text-danger">
+          Authentication is taking too long. Open Console at{" "}
+          <a
+            href={import.meta.env.VITE_CONSOLE_ORIGIN || window.location.origin}
+          >
+            {import.meta.env.VITE_CONSOLE_ORIGIN || window.location.origin}
+          </a>
+          .
+        </p>
+      </main>
+    );
   if (isLoading)
     return <main className="auth-wait">Loading your workspace…</main>;
   if (error)

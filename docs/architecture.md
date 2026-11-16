@@ -2,7 +2,7 @@
 
 ## Ownership and flows
 
-CLI/Console → hosted API → outbound device connection → daemon → private Runner control API → Python process → existing SDK → existing Agent → ROS/robot.
+CLI/Console → hosted API ↔ outbound device connection from the robot daemon → private Runner control API → Python process → existing SDK → existing Agent → ROS/robot.
 
 PostgreSQL owns accounts, organization membership, robots, enrollment, immutable uploaded revisions, requested operations and replicated history. SQLite owns device operation deduplication, execution reconciliation, local events and an upload outbox. Runner persists execution metadata and process output on a dedicated volume. The daemon owns lifecycle coordination; Runner owns environment preparation and OS processes. An API outage does not kill an already running mission, but prevents new hosted requests and human responses until reconnection.
 
@@ -52,6 +52,20 @@ Artifacts use hosted private blob storage behind a small storage interface (file
 
 Create local durable events from the first execution feature; milestone 08 adds full hosted Logbook queries. Events have event_id, robot_id, local sequence, occurred_at, received_at, actor, correlation/operation/execution IDs, type and schema-versioned payload. Deduplicate replicated events by event_id; use sequence for local ordering, not cross-device wall-clock time. Separate stdout/stderr chunks with offsets from lifecycle events. Bound disk use explicitly; surface backpressure rather than silently losing lifecycle history. Persist intent/outbox atomically with local state.
 
-## Test environments
+## Deployment and test environments
+
+The server deployment runs the Platform API and PostgreSQL (plus configured
+hosted storage and ingress). It does not build or run device-side software.
+Each robot runs its own daemon and Runner; the daemon connects outbound to the
+hosted API using the versioned device protocol. The Balena manifest contains
+only robot-side services.
+
+`infra/server/docker-compose.yml` is the independent server stack.
+`../ringfour-virtual` is the local device-side stack: it pins Base101, uses its
+simulated profile, and builds Agent with SDK source plus daemon and Runner from
+their own projects. Its containers join the simulator's ROS network and reach
+the server through the device protocol. The stacks share no source/package
+dependency, Docker network, or database. `infra/compose/docker-compose.yml` is
+retained only for older milestone integration scripts.
 
 Platform tests use xUnit; persistence, migrations and database-backed API tests use real PostgreSQL through Testcontainers. Component tests isolate other external boundaries. Local integration uses real service processes and PostgreSQL/SQLite, migrated from empty volumes; test-only Auth0-compatible fixtures cannot substitute for live Auth0 login acceptance. Balena smoke at 04 verifies container/network assumptions; 10 verifies actual SDK/Agent/ROS. Pin and record external versions. Do not publish the internal Console in production deployment manifests.

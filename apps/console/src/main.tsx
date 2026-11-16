@@ -12,6 +12,18 @@ import "./index.css";
 const domain = import.meta.env.VITE_AUTH0_DOMAIN as string | undefined;
 const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID as string | undefined;
 const audience = import.meta.env.VITE_AUTH0_AUDIENCE as string | undefined;
+const consoleOrigin = import.meta.env.VITE_CONSOLE_ORIGIN as string | undefined;
+const redirectUri = consoleOrigin || window.location.origin;
+
+// Auth0 SPA origins are exact. Canonicalize before the SDK starts so login,
+// callback and silent authorization all use the registered local origin.
+if (consoleOrigin && window.location.origin !== consoleOrigin) {
+  const destination = new URL(
+    `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    consoleOrigin,
+  );
+  window.location.replace(destination);
+}
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -24,8 +36,9 @@ createRoot(rootElement).render(
       <Auth0Provider
         domain={domain}
         clientId={clientId}
+        cacheLocation="localstorage"
         authorizationParams={{
-          redirect_uri: window.location.origin,
+          redirect_uri: redirectUri,
           audience,
         }}
       >

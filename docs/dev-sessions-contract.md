@@ -104,10 +104,10 @@ the base against the last committed generation under a session lock: a mismatch
 is `stale_generation`; another pending sync is `sync_in_progress`. A client
 must read current state and resubmit after a conflict.
 
-Limits match 05: 1 MiB compressed and extracted total, 256 KiB per file, and
-1024 regular files and 2048 ZIP entries. A session retains at most 20
-committed generations; further syncs return `capacity_exceeded` until the
-session is closed. Paths use the 05 restricted relative POSIX alphabet;
+The separate local development sync path still has its own 1 MiB compressed
+and extracted total, 256 KiB per file, and
+1024 regular files and 2048 ZIP entries. Generation numbers use signed 32-bit
+integers; there is no 20-generation session quota. Paths use the 05 restricted relative POSIX alphabet;
 reject empty, `.`, `..`, absolute, duplicate, link and special-file entries.
 The CLI excludes hidden files and directories, including `.git`, `.env`,
 `.venv`, and `__pycache__`; the daemon and Runner reject those entries even if
@@ -137,8 +137,10 @@ digest; they never contain source bytes, filenames or a manifest. The Platform
 records each report atomically and accepts identical replays. When offline, the
 local generation remains authoritative and the hosted generation may lag. A
 failed transfer leaves the previous generation usable. Old unreferenced staging
-files are collected after five minutes; committed generations remain subject
-to the 20-generation session limit.
+files are collected after five minutes. Runner retains the current generation,
+any generation used by an active execution, and generations less than 24 hours
+old; older unreferenced snapshot directories may be deleted after a successful
+sync. Durable generation and operation records remain for idempotent replay.
 
 ## Restart, expiry and recovery
 

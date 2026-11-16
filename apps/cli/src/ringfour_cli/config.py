@@ -64,8 +64,13 @@ def require_auth0(settings: Settings) -> None:
         )
 
 
-def update_config(settings: Settings, **values: str) -> None:
-    config = {**settings.config, **values}
+def update_config(settings: Settings, **values: str | None) -> None:
+    config = dict(settings.config)
+    for key, value in values.items():
+        if value is None:
+            config.pop(key, None)
+        else:
+            config[key] = value
     settings.config_path.parent.mkdir(parents=True, exist_ok=True)
     settings.config_path.write_text(json.dumps(config, indent=2) + "\n")
 

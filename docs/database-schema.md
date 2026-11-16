@@ -89,13 +89,14 @@ declared archive size/digest, canonical bundle digest, Python requirement,
 entrypoint and lock digest; `uploading`/`ready` state and timestamps; and the
 principal-scoped idempotency key, request fingerprint and upload-cleanup marker. The creator,
 organization and key form a unique index. Check constraints enforce state /
-finalization consistency and the 1 MiB archive limit. Object keys are derived
+finalization consistency and 64-bit exact JSON byte lengths. Object keys are derived
 from the revision UUID; bytes live in the configured private object store, not
-PostgreSQL. Organization-row locking serializes the quota and create replay;
+PostgreSQL. Organization-row locking serializes create replay;
 revision-row locking serializes upload and finalization. `script_executions`
 stores the robot, revision, actor, state, exit/error, timestamps and bounded
 stdout/stderr; a partial unique index enforces one active run per robot.
-`script_artifacts` stores verified artifact metadata; its bytes live in private
+`script_executions` separately stores artifact delivery status and its error;
+historical rows migrate to `unknown`. `script_artifacts` stores verified artifact metadata; its bytes live in private
 object storage. `script_execution_events` records actor-attributed observed state
 changes. Device SQLite `script_sync` records durable output offsets and whether
 Runner accepted the start, so reconnects replay offsets and reconcile stable

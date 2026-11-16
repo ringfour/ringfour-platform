@@ -19,7 +19,8 @@ relative `code_ref`, and relative `entrypoint`; these identify a staged bundle.
 The request body is limited to 4096 bytes. A bundle is a directory of regular files; its digest is SHA-256 of a canonical
 manifest: UTF-8 JSON array of `[relative POSIX path, sha256 file bytes]` pairs,
 ordered by path, compact JSON separators, no newline. Symlinks, path traversal,
-non-regular files, files over 256 KiB, bundles over 1 MiB, and more than 1024 files are rejected.
+non-regular files and more than 1024 files are rejected. Mission bytes are
+streamed, subject to available storage and the exact JSON integer range.
 `entrypoint` must name a Python file inside the bundle. Runner copies validated
 bytes to its own volume and verifies the copy before execution. The caller must
 not mutate staged content during validation; mismatch fails closed.
@@ -65,7 +66,9 @@ execution transactionally. Lifecycle transitions and corresponding local
 outbox events (UUID, sequence, timestamps, execution/operation IDs and versioned
 payload) commit together. Output offset denotes bytes already persisted. A
 restart reconciles every nonterminal row before accepting work. Retain records,
-output and events for this milestone until explicit operator cleanup. At 100 executions the Runner refuses further starts with 503 until an operator removes retained data; output and bundle bytes per execution are bounded. Daemon keeps coordination in its existing
+output and events until explicit operator cleanup. There is no fixed execution
+count limit; Runner reserves free disk space and fails new work clearly under
+pressure. Daemon keeps coordination in its existing
 `device_operations`, and any new reconciliation state is persisted before a
 Runner call. Hosted operation records and idempotency remain in existing
 PostgreSQL tables; there is no new hosted table in 04.

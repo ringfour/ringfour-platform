@@ -1,8 +1,10 @@
 """Private, authenticated execution service and durable local state."""
 import asyncio
 import base64
+import codecs
 import hashlib
 import hmac
+import io
 import json
 import logging
 import os
@@ -11,13 +13,15 @@ import signal
 import sqlite3
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
+from starlette.background import BackgroundTask
 
 from . import artifacts
 from .preparation import prepared_environment
@@ -26,7 +30,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled"}
 OUTPUT_LIMIT = 65536
-MAX_EXECUTIONS = 100
 
 
 def now():
@@ -50,8 +53,19 @@ def connection(settings):
     return conn
 
 
+def has_storage(settings, required_bytes=0):
+    """Preserve a free-space reserve without deleting unsynchronized execution data."""
+    try:
+        return shutil.disk_usage(settings.data_dir).free >= settings.min_free_bytes + required_bytes
+    except OSError:
+        return False
+
+
 def transition(conn, execution_id, state, *, exit_code=None, failure=None):
     stamp = now()
+    if state in TERMINAL:
+        conn.execute("UPDATE executions SET artifact_state='failed',artifact_error=? WHERE execution_id=? AND artifact_state='pending'",
+                     (json.dumps({"code": "artifact_collection_incomplete", "message": "Artifact collection did not complete."}), execution_id))
     conn.execute("UPDATE executions SET state=?,updated_at=?,exit_code=?,error=? WHERE execution_id=?",
                  (state, stamp, exit_code, json.dumps(failure) if failure else None, execution_id))
     record_event(conn, execution_id, state, stamp)
@@ -82,11 +96,27 @@ def initialize(settings):
           operation_id TEXT NOT NULL, occurred_at TEXT NOT NULL, received_at TEXT,
           event_type TEXT NOT NULL, actor TEXT NOT NULL, schema_version INTEGER NOT NULL, payload TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS live_artifacts (
+          artifact_id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(execution_id),
+          path TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, content_type TEXT NOT NULL,
+          state TEXT NOT NULL, created_at TEXT NOT NULL,
+          UNIQUE(execution_id, path),
+          CHECK(state IN ('pending','delivered'))
+        );
         """)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(executions)")}
+        if "artifact_state" not in columns:
+            conn.execute("ALTER TABLE executions ADD COLUMN artifact_state TEXT NOT NULL DEFAULT 'unknown'")
+        if "artifact_error" not in columns:
+            conn.execute("ALTER TABLE executions ADD COLUMN artifact_error TEXT")
         conn.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES (1,?)", (now(),))
         rows = conn.execute("SELECT execution_id FROM executions WHERE state IN ('queued','preparing','running')").fetchall()
         for row in rows:
             transition(conn, row[0], "failed", failure={"code": "interrupted_unknown_outcome", "message": "Runner restarted while execution outcome was unknown."})
+    # A crash during collection can leave an unpublished snapshot. The source
+    # artifact-output directory remains available for operator recovery.
+    for row in rows:
+        shutil.rmtree(Path(settings.data_dir) / "executions" / row[0] / "artifact-snapshot.pending", ignore_errors=True)
 
 
 def snapshot(row):
@@ -108,13 +138,59 @@ def safe_relative(value):
     return path
 
 
+@dataclass(frozen=True)
+class StagedFile:
+    root: Path
+    name: str
+    size: int
+    sha256: str
+
+
+def entry_size(data):
+    return data.size if isinstance(data, StagedFile) else len(data)
+
+
+def copy_entry(name, data, target):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not isinstance(data, StagedFile):
+        target.write_bytes(data)
+        if hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(data).digest():
+            raise OSError("Staged copy verification failed")
+        return
+    checksum = hashlib.sha256()
+    length = 0
+    with artifacts.open_regular_under(data.root, name) as source, target.open("xb") as output:
+        while chunk := source.read(65536):
+            length += len(chunk)
+            if length > data.size:
+                raise OSError("Staged file changed")
+            checksum.update(chunk)
+            output.write(chunk)
+    if length != data.size or checksum.hexdigest() != data.sha256:
+        raise OSError("Staged file changed")
+
+
+def verify_lock(data, expected):
+    source = artifacts.open_regular_under(data.root, data.name) if isinstance(data, StagedFile) else io.BytesIO(data)
+    checksum = hashlib.sha256()
+    decoder = codecs.getincrementaldecoder("utf-8")("strict")
+    length = 0
+    with source:
+        while chunk := source.read(65536):
+            length += len(chunk)
+            checksum.update(chunk)
+            decoder.decode(chunk)
+        decoder.decode(b"", final=True)
+    if checksum.hexdigest() != expected or (isinstance(data, StagedFile) and (length != data.size or checksum.hexdigest() != data.sha256)):
+        raise ValueError("Dependency lock mismatch")
+
+
 def bundle_files(settings, code_ref, entrypoint):
     ref = safe_relative(code_ref)
     entry = safe_relative(entrypoint)
     if entry.suffix != ".py":
         raise ValueError("Entrypoint must be a Python file")
-    root = Path(settings.stage_dir)
-    current = root
+    current = Path(settings.stage_dir)
     for part in ref.parts:
         current = current / part
         if current.is_symlink():
@@ -130,17 +206,19 @@ def bundle_files(settings, code_ref, entrypoint):
             continue
         if not path.is_file():
             raise ValueError("Only regular files are permitted")
-        if len(files) >= 1024 or path.stat().st_size > 262144:
-            raise ValueError("Bundle exceeds size limit")
-        with path.open("rb") as handle:
-            data = handle.read(262145)
-        total += len(data)
-        if len(data) > 262144 or total > 1048576:
-            raise ValueError("Bundle exceeds size limit")
-        files.append((path.relative_to(current).as_posix(), data))
+        name = path.relative_to(current).as_posix()
+        if len(files) >= 1024:
+            raise ValueError("Bundle exceeds file count limit")
+        with artifacts.open_regular_under(current, name) as handle:
+            size = os.fstat(handle.fileno()).st_size
+            checksum = hashlib.file_digest(handle, "sha256").hexdigest()
+        total += size
+        if total > 9007199254740991:
+            raise ValueError("Bundle exceeds supported exact integer range")
+        files.append((name, StagedFile(current, name, size, checksum)))
     if not any(name == str(entry) for name, _ in files):
         raise ValueError("Entrypoint not found")
-    manifest = [[name, hashlib.sha256(data).hexdigest()] for name, data in files]
+    manifest = [[name, data.sha256] for name, data in files]
     digest = hashlib.sha256(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
     return files, digest
 
@@ -190,14 +268,14 @@ async def start(request: Request):
             if existing["request"] != fingerprint:
                 return error(409, "conflict", "Execution ID was used with different input.")
             return JSONResponse(snapshot(existing))
-        files, digest = bundle_files(request.app.state.settings, body["code_ref"], body["entrypoint"])
+        files, digest = await asyncio.to_thread(bundle_files, request.app.state.settings, body["code_ref"], body["entrypoint"])
         if digest != body["revision_digest"]:
             raise ValueError("Bundle digest mismatch")
         if "lock_sha256" in body:
             lock = next((data for name, data in files if name == "requirements.lock"), None)
-            if lock is None or hashlib.sha256(lock).hexdigest() != body["lock_sha256"]:
-                raise ValueError("Dependency lock mismatch")
-            lock.decode("utf-8")
+            if lock is None:
+                raise ValueError("Dependency lock missing")
+            await asyncio.to_thread(verify_lock, lock, body["lock_sha256"])
     except (ValueError, OSError, UnicodeError):
         return error(400, "invalid_input", "Invalid execution request or staged bundle.")
     settings = request.app.state.settings
@@ -213,10 +291,10 @@ async def start(request: Request):
             return JSONResponse(snapshot(existing))
         if conn.execute("SELECT 1 FROM executions WHERE state IN ('queued','preparing','running') LIMIT 1").fetchone():
             return error(409, "execution_conflict", "Another execution is active.")
-        if conn.execute("SELECT count(*) FROM executions").fetchone()[0] >= MAX_EXECUTIONS:
-            return error(503, "capacity_exceeded", "Execution retention capacity reached.")
+        if not has_storage(settings, sum(entry_size(data) for _, data in files)):
+            return error(503, "insufficient_storage", "Runner storage is below the configured free-space reserve.")
         stamp = now()
-        conn.execute("INSERT INTO executions(execution_id,robot_id,request,revision_digest,state,created_at,updated_at) VALUES (?,?,?,?,'queued',?,?)",
+        conn.execute("INSERT INTO executions(execution_id,robot_id,request,revision_digest,state,created_at,updated_at,artifact_state) VALUES (?,?,?,?,'queued',?,?,'pending')",
                      (execution_id, body["robot_id"], fingerprint, digest, stamp, stamp))
         record_event(conn, execution_id, "queued", stamp)
     task = asyncio.create_task(run_execution(request.app, body, files))
@@ -247,10 +325,7 @@ async def run_execution(app, body, files, *, dev_environment=None):
         code = path / "code"
         for name, data in files:
             target = code / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-            if hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(data).digest():
-                raise OSError("Staged copy verification failed")
+            await asyncio.to_thread(copy_entry, name, data, target)
         with connection(settings) as conn:
             row = conn.execute("SELECT * FROM executions WHERE execution_id=?", (execution_id,)).fetchone()
             if row["stop_requested"]:
@@ -296,10 +371,14 @@ async def run_execution(app, body, files, *, dev_environment=None):
         environment.pop("RUNNER_AUTH_TOKEN", None)
         environment.pop("RINGFOUR_LOGBOOK_TOKEN", None)
         environment.pop("RINGFOUR_LOGBOOK_URL", None)
+        environment.pop("RINGFOUR_ARTIFACT_TOKEN", None)
+        environment.pop("RINGFOUR_ARTIFACT_URL", None)
         if settings.logbook_url and settings.auth_token:
             mac = hmac.new(settings.auth_token.encode(), ("ringfour-logbook-v1:" + execution_id).encode(), hashlib.sha256).hexdigest()
             environment["RINGFOUR_LOGBOOK_URL"] = settings.logbook_url
             environment["RINGFOUR_LOGBOOK_TOKEN"] = f"{execution_id}:{mac}"
+            environment["RINGFOUR_ARTIFACT_URL"] = settings.logbook_url
+            environment["RINGFOUR_ARTIFACT_TOKEN"] = f"{execution_id}:{mac}"
         proc = await asyncio.create_subprocess_exec(str(venv / "bin" / "python"), str(code / body["entrypoint"]), cwd=str(code), env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
         app.state.processes[execution_id] = proc
         if get_row(settings, execution_id)["stop_requested"] and proc.returncode is None:
@@ -313,12 +392,14 @@ async def run_execution(app, body, files, *, dev_environment=None):
         row = get_row(settings, execution_id)
         state = "cancelled" if row["stop_requested"] else "succeeded" if proc.returncode == 0 else "failed"
         failure = {"code": "process_failed", "message": "Execution exited with a nonzero code."} if state == "failed" else None
+        artifact_error = None
         try:
-            artifacts.collect(artifact_dir, path / "artifact-snapshot")
+            await asyncio.to_thread(artifacts.collect, artifact_dir, path / "artifact-snapshot", settings.min_free_bytes)
         except artifacts.ArtifactError:
-            state = "cancelled" if state == "cancelled" else "failed"
-            failure = {"code": "artifact_collection_failed", "message": "Execution artifacts could not be collected."}
+            artifact_error = {"code": "artifact_collection_failed", "message": "Execution artifacts could not be collected."}
         with connection(settings) as conn:
+            conn.execute("UPDATE executions SET artifact_state=?,artifact_error=? WHERE execution_id=?",
+                         ("failed" if artifact_error else "ready", json.dumps(artifact_error) if artifact_error else None, execution_id))
             transition(conn, execution_id, state, exit_code=proc.returncode, failure=failure)
     except Exception:
         logger.exception("Runner execution %s failed unexpectedly", execution_id)
@@ -451,7 +532,39 @@ async def artifact_list(request: Request, execution_id: str):
     if row["state"] not in TERMINAL:
         return error(409, "execution_not_terminal", "Execution is not terminal.")
     directory = Path(request.app.state.settings.data_dir) / "executions" / execution_id / "artifact-snapshot"
-    return {"execution_id": execution_id, "artifacts": artifacts.listing(directory)}
+    return {"execution_id": execution_id, "artifacts": artifacts.listing(directory), "artifact_state": row["artifact_state"],
+            "artifact_error": json.loads(row["artifact_error"]) if row["artifact_error"] else None}
+
+
+@router.get("/v1/executions/{execution_id}/artifacts/download")
+async def artifact_download(request: Request, execution_id: str, path: str = ""):
+    if not authorize(request):
+        return error(401, "unauthenticated", "Runner authentication required.")
+    if not artifacts.valid_path(path):
+        return error(400, "invalid_input", "Invalid artifact path.")
+    row = get_row(request.app.state.settings, execution_id)
+    if not row:
+        return error(404, "not_found", "Execution not found.")
+    if row["state"] not in TERMINAL:
+        return error(409, "execution_not_terminal", "Execution is not terminal.")
+    directory = Path(request.app.state.settings.data_dir) / "executions" / execution_id / "artifact-snapshot"
+    entry = next((item for item in artifacts.listing(directory) if item["path"] == path), None)
+    if entry is None:
+        return error(404, "not_found", "Artifact not found.")
+    try:
+        source = artifacts.open_regular_under(directory / "files", path)
+        if os.fstat(source.fileno()).st_size != entry["size"]:
+            source.close()
+            raise OSError("Artifact size mismatch")
+    except (OSError, artifacts.ArtifactError):
+        return error(503, "storage_unavailable", "Artifact snapshot is unavailable.")
+
+    def chunks():
+        while chunk := source.read(65536):
+            yield chunk
+
+    return StreamingResponse(chunks(), media_type="application/octet-stream",
+        headers={"Content-Length": str(entry["size"])}, background=BackgroundTask(source.close))
 
 
 @router.get("/v1/executions/{execution_id}/artifacts/content")
@@ -462,7 +575,7 @@ async def artifact_content(request: Request, execution_id: str, path: str = "", 
         start_offset, chunk_limit = int(offset), int(limit)
     except ValueError:
         return error(400, "invalid_input", "Invalid artifact range or path.")
-    if not artifacts.valid_path(path) or not 0 <= start_offset <= artifacts.MAX_FILE_BYTES or not 1 <= chunk_limit <= 16384:
+    if not artifacts.valid_path(path) or not 0 <= start_offset <= 9007199254740991 or not 1 <= chunk_limit <= 16384:
         return error(400, "invalid_input", "Invalid artifact range or path.")
     row = get_row(request.app.state.settings, execution_id)
     if not row:
@@ -479,3 +592,105 @@ async def artifact_content(request: Request, execution_id: str, path: str = "", 
     next_offset = start_offset + len(data)
     return {"execution_id": execution_id, "path": path, "offset": start_offset, "next_offset": next_offset,
             "data_base64": base64.b64encode(data).decode(), "eof": next_offset >= entry["size"]}
+
+
+def live_artifact(settings, execution_id, artifact_id):
+    with connection(settings) as conn:
+        return conn.execute("SELECT * FROM live_artifacts WHERE execution_id=? AND artifact_id=?", (execution_id, artifact_id)).fetchone()
+
+
+def live_snapshot(settings, execution_id, artifact_id, path, content_type):
+    if not valid_id(artifact_id) or not artifacts.valid_path(path) or content_type not in {"image/jpeg", "image/png", "application/octet-stream"}:
+        raise ValueError("Invalid live artifact")
+    row = get_row(settings, execution_id)
+    if not row or row["state"] != "running":
+        raise RuntimeError("Execution is not running")
+    existing = live_artifact(settings, execution_id, artifact_id)
+    if existing:
+        if existing["path"] != path or existing["content_type"] != content_type:
+            raise FileExistsError("Artifact ID conflict")
+        return dict(existing)
+    root = Path(settings.data_dir) / "executions" / execution_id / "artifact-output"
+    destination = Path(settings.data_dir) / "executions" / execution_id / "live-artifacts" / artifact_id
+    destination.mkdir(parents=True, exist_ok=False)
+    temporary = destination / "content.pending"
+    checksum = hashlib.sha256()
+    size = 0
+    try:
+        if not has_storage(settings):
+            raise artifacts.ArtifactError("Insufficient artifact storage")
+        with artifacts.open_regular_under(root, path) as source, temporary.open("xb") as output:
+            while chunk := source.read(65536):
+                size += len(chunk)
+                if size > artifacts.MAX_EXACT_SIZE or not has_storage(settings, len(chunk)):
+                    raise artifacts.ArtifactError("Artifact exceeds storage limits")
+                checksum.update(chunk)
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(destination / "content")
+        with connection(settings) as conn:
+            if conn.execute("SELECT count(*) FROM live_artifacts WHERE execution_id=?", (execution_id,)).fetchone()[0] >= 64:
+                raise artifacts.ArtifactError("Live artifact capacity reached")
+            conn.execute("INSERT INTO live_artifacts VALUES (?,?,?,?,?,?,?,?)",
+                (artifact_id, execution_id, path, size, checksum.hexdigest(), content_type, "pending", now()))
+        return dict(live_artifact(settings, execution_id, artifact_id))
+    except BaseException:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+
+
+@router.post("/v1/executions/{execution_id}/live-artifacts")
+async def finalize_live_artifact(request: Request, execution_id: str):
+    if not authorize(request):
+        return error(401, "unauthenticated", "Runner authentication required.")
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"artifact_id", "path", "content_type"}:
+            raise ValueError
+        row = await asyncio.to_thread(live_snapshot, request.app.state.settings, execution_id,
+                                      body["artifact_id"], body["path"], body["content_type"])
+    except RuntimeError:
+        return error(409, "execution_not_running", "Execution is not running.")
+    except FileExistsError:
+        return error(409, "conflict", "Artifact ID conflicts with an existing snapshot.")
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return error(400, "invalid_input", "Invalid live artifact request.")
+    except (OSError, sqlite3.Error, artifacts.ArtifactError):
+        return error(503, "storage_unavailable", "Artifact snapshot could not be finalized.")
+    return {"artifact_id": row["artifact_id"], "path": row["path"], "size": row["size"],
+            "sha256": row["sha256"], "content_type": row["content_type"], "state": "pending"}
+
+
+@router.get("/v1/executions/{execution_id}/live-artifacts/{artifact_id}/download")
+async def download_live_artifact(request: Request, execution_id: str, artifact_id: str):
+    if not authorize(request):
+        return error(401, "unauthenticated", "Runner authentication required.")
+    row = live_artifact(request.app.state.settings, execution_id, artifact_id)
+    if not row:
+        return error(404, "not_found", "Artifact not found.")
+    path = Path(request.app.state.settings.data_dir) / "executions" / execution_id / "live-artifacts" / artifact_id / "content"
+    try:
+        source = path.open("rb")
+        if os.fstat(source.fileno()).st_size != row["size"]:
+            raise OSError
+    except OSError:
+        return error(503, "storage_unavailable", "Artifact snapshot is unavailable.")
+    def chunks():
+        while chunk := source.read(65536):
+            yield chunk
+    return StreamingResponse(chunks(), media_type=row["content_type"], headers={"Content-Length": str(row["size"])},
+                             background=BackgroundTask(source.close))
+
+
+@router.post("/v1/executions/{execution_id}/live-artifacts/{artifact_id}/ack")
+async def acknowledge_live_artifact(request: Request, execution_id: str, artifact_id: str):
+    if not authorize(request):
+        return error(401, "unauthenticated", "Runner authentication required.")
+    row = live_artifact(request.app.state.settings, execution_id, artifact_id)
+    if not row:
+        return error(404, "not_found", "Artifact not found.")
+    with connection(request.app.state.settings) as conn:
+        conn.execute("UPDATE live_artifacts SET state='delivered' WHERE execution_id=? AND artifact_id=?", (execution_id, artifact_id))
+    shutil.rmtree(Path(request.app.state.settings.data_dir) / "executions" / execution_id / "live-artifacts" / artifact_id, ignore_errors=True)
+    return JSONResponse(status_code=204, content=None)

@@ -72,7 +72,9 @@ ringfour-cli whoami
 
 Follow the URL and enter the code displayed by `login`; use `login --no-browser`
 if the browser is on another machine. Auth0 tokens are stored in your OS
-credential store. `ringfour-cli logout` removes the stored login.
+credential store. `ringfour-cli logout` removes the stored login and clears
+the selected organization so a later login with another account cannot reuse
+an organization from the previous account.
 
 Instead of environment variables, you can put `api_url`, `auth0_domain`,
 `auth0_client_id` and `auth0_audience` in the JSON configuration file. Its
@@ -151,7 +153,9 @@ owned robot profile.
 Hidden files, `mission.toml` and `ringfour.context.json` are excluded from
 published source. Local development sync also excludes `__pycache__`. Paths
 must be relative, use ASCII letters, digits, `_`, `-`, `.`, and `/`, and must
-not contain symlinks. The bundle limit is 1 MiB total and 256 KiB per file.
+not contain symlinks. Published mission payloads stream through temporary disk
+and are constrained by available storage and infrastructure; local `dev sync`
+still has a 1 MiB total and 256 KiB per-file limit.
 Keep secrets out of mission source: excluding hidden files is not secret
 scanning.
 
@@ -311,8 +315,10 @@ ringfour-cli artifact list <execution-id>
 ringfour-cli artifact download <execution-id> result.txt --output ./result.txt
 ```
 
-Download verifies the size and SHA-256 and will not overwrite an existing
-local file. Development-session artifact access is not implemented yet.
+The list includes artifact delivery state independently of the process result;
+`ready` means collection and delivery completed. Download streams and verifies
+the size and SHA-256, and will not overwrite an existing local file.
+Development-session artifact access is not implemented yet.
 
 ## Troubleshooting and command reference
 

@@ -19,7 +19,7 @@ public static class LogbookEndpoints
     private const long MaxSequence = 9007199254740991;
     private static readonly Regex Timestamp = new(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$", RegexOptions.CultureInvariant);
     private static readonly HashSet<string> States = ["accepted", "running", "succeeded", "failed", "cancelled"];
-    private sealed record Event(Guid Id, Guid RobotId, Guid? OperationId, long Sequence, DateTimeOffset OccurredAt, string Type, string? State, Guid? ExecutionId, string? Payload);
+    private sealed record Event(Guid Id, Guid RobotId, Guid? OperationId, long Sequence, DateTimeOffset OccurredAt, string Type, int SchemaVersion, string? State, Guid? ExecutionId, string? Payload);
 
     private static bool ValidMotionPayload(JsonElement payload, Guid eventId, DateTimeOffset occurred)
     {
@@ -42,13 +42,20 @@ public static class LogbookEndpoints
         return true;
     }
 
-    private static bool ValidAuthorPayload(JsonElement payload)
+    private static bool ValidAuthorPayload(JsonElement payload, int version)
     {
-        if (!Fields(payload, "level", "message", "fields") || payload.GetProperty("level").ValueKind != JsonValueKind.String ||
+        if (!(version == 1 ? Fields(payload, "level", "message", "fields") : version == 2 && Fields(payload, "level", "message", "fields", "evidence")) || payload.GetProperty("level").ValueKind != JsonValueKind.String ||
             payload.GetProperty("level").GetString() != "info" || payload.GetProperty("message").ValueKind != JsonValueKind.String ||
             payload.GetProperty("message").GetString() is not { } message || string.IsNullOrWhiteSpace(message) ||
             message.Contains('\0') || message.EnumerateRunes().Count() > 500 || payload.GetProperty("fields").ValueKind != JsonValueKind.Object ||
             Encoding.UTF8.GetByteCount(payload.GetRawText()) > 8192) return false;
+        if (version == 2)
+        {
+            var evidence = payload.GetProperty("evidence");
+            if (evidence.ValueKind != JsonValueKind.Array || evidence.GetArrayLength() > 16) return false;
+            try { if (evidence.EnumerateArray().Select(Id).Distinct().Count() != evidence.GetArrayLength()) return false; }
+            catch (JsonException) { return false; }
+        }
         var fields = payload.GetProperty("fields").EnumerateObject().ToArray();
         if (fields.Length > 16 || fields.Select(f => f.Name).Distinct(StringComparer.Ordinal).Count() != fields.Length) return false;
         foreach (var field in fields)
@@ -129,7 +136,7 @@ public static class LogbookEndpoints
             if (kind is not ("device.operation.state_changed" or "mission.logbook.entry" or "agent.motion.event") ||
                 !(author ? Fields(item, "event_id", "robot_id", "local_sequence", "occurred_at", "type", "schema_version", "operation_id", "execution_id", "payload") :
                     Fields(item, "event_id", "robot_id", "local_sequence", "occurred_at", "type", "schema_version", "operation_id", "payload")) ||
-                !item.GetProperty("schema_version").TryGetInt32(out var version) || version != 1 ||
+                !item.GetProperty("schema_version").TryGetInt32(out var version) || (version != 1 && !(author && version == 2)) ||
                 !item.GetProperty("local_sequence").TryGetInt64(out var sequence) || sequence is < 1 or > MaxSequence ||
                 item.GetProperty("occurred_at").ValueKind != JsonValueKind.String ||
                 item.GetProperty("occurred_at").GetString() is not { } timestamp || !Timestamp.IsMatch(timestamp) ||
@@ -137,12 +144,12 @@ public static class LogbookEndpoints
             var payload = item.GetProperty("payload");
             var eventId = Id(item.GetProperty("event_id"));
             string? state = null;
-            if (author) { if (!ValidAuthorPayload(payload)) throw new JsonException(); }
+            if (author) { if (!ValidAuthorPayload(payload, version)) throw new JsonException(); }
             else if (motion) { if (item.GetProperty("operation_id").ValueKind != JsonValueKind.Null || !ValidMotionPayload(payload, eventId, occurred)) throw new JsonException(); }
             else if (!Fields(payload, "state") || payload.GetProperty("state").ValueKind != JsonValueKind.String ||
                 (state = payload.GetProperty("state").GetString()) is null || !States.Contains(state)) throw new JsonException();
             var record = new Event(eventId, Id(item.GetProperty("robot_id")), motion ? null : Id(item.GetProperty("operation_id")), sequence, occurred,
-                kind!, state, author ? Id(item.GetProperty("execution_id")) : null, author || motion ? payload.GetRawText() : null);
+                kind!, version, state, author ? Id(item.GetProperty("execution_id")) : null, author || motion ? payload.GetRawText() : null);
             if (events.Count > 0 && (events[^1].Sequence == MaxSequence || record.Sequence != events[^1].Sequence + 1))
                 throw ApiException.Conflict("sequence_gap", "The batch must contain consecutive ordered sequences.");
             events.Add(record);
@@ -178,7 +185,7 @@ public static class LogbookEndpoints
             if (item.Sequence <= sequence)
             {
                 var previous = await db.LogbookEvents.AsNoTracking().SingleOrDefaultAsync(e => e.RobotId == robot.Id && e.LocalSequence == item.Sequence, ct);
-                if (previous is null || previous.Id != item.Id || previous.OperationId != item.OperationId || previous.OccurredAt != item.OccurredAt || previous.State != item.State ||
+                if (previous is null || previous.Id != item.Id || previous.OperationId != item.OperationId || previous.OccurredAt != item.OccurredAt || previous.State != item.State || previous.SchemaVersion != item.SchemaVersion ||
                     previous.Type != item.Type || previous.ExecutionId != item.ExecutionId || !JsonNode.DeepEquals(previous.Payload is null ? null : JsonNode.Parse(previous.Payload), item.Payload is null ? null : JsonNode.Parse(item.Payload)))
                     throw ApiException.Conflict("event_conflict", "An event ID or sequence was reused with different content.");
                 continue;
@@ -187,7 +194,7 @@ public static class LogbookEndpoints
             if (await db.LogbookEvents.AnyAsync(e => e.Id == item.Id, ct))
                 throw ApiException.Conflict("event_conflict", "An event ID or sequence was reused with different content.");
             db.LogbookEvents.Add(new LogbookEvent { Id = item.Id, RobotId = robot.Id, OperationId = item.OperationId, LocalSequence = item.Sequence,
-                OccurredAt = item.OccurredAt, ReceivedAt = DateTimeOffset.UtcNow, Type = item.Type, SchemaVersion = 1, State = item.State, ExecutionId = item.ExecutionId, Payload = item.Payload });
+                OccurredAt = item.OccurredAt, ReceivedAt = DateTimeOffset.UtcNow, Type = item.Type, SchemaVersion = item.SchemaVersion, State = item.State, ExecutionId = item.ExecutionId, Payload = item.Payload });
             sequence = item.Sequence;
         }
         if (checkpoint is null) db.LogbookCheckpoints.Add(new LogbookCheckpoint { RobotId = robot.Id, Sequence = sequence });

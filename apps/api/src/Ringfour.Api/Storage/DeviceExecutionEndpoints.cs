@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Amazon.Runtime;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Persistence;
@@ -18,6 +19,7 @@ public static class DeviceExecutionEndpoints
         group.MapGet("/{executionId:guid}/revision", Revision);
         group.MapPut("/{executionId:guid}/output/{stream}", Output);
         group.MapPut("/{executionId:guid}/artifacts", Artifact);
+        group.MapPut("/{executionId:guid}/artifact-status", ArtifactStatus);
         group.MapPut("/{executionId:guid}/status", Status);
     }
 
@@ -44,13 +46,8 @@ public static class DeviceExecutionEndpoints
         if (ScriptRunEndpoints.Terminal(execution.State))
             throw ApiException.Conflict("conflict", "Execution is terminal.");
         var revision = await db.ScriptRevisions.SingleAsync(candidate => candidate.Id == execution.RevisionId, ct);
-        byte[] data;
-        try { data = await store.GetAsync($"revisions/{revision.Id:N}", ct); }
-        catch (Exception exception) when (exception is IOException or AmazonServiceException or AmazonClientException or HttpRequestException)
-        { throw new ApiException(503, "storage_unavailable", "The artifact store is unavailable."); }
-        if (data.Length != revision.ArchiveSize || Convert.ToHexStringLower(SHA256.HashData(data)) != revision.ArchiveSha256)
-            throw new ApiException(503, "storage_unavailable", "The artifact store returned invalid bytes.");
-        return Results.File(data, "application/zip");
+        return await TemporaryTransfer.VerifiedResponseAsync(context, store, $"revisions/{revision.Id:N}",
+            revision.ArchiveSize, revision.ArchiveSha256, "application/zip", null, ct);
     }
 
     private static async Task<IResult> Output(HttpContext context, RingfourDbContext db, Guid executionId, string stream, int offset, CancellationToken ct)
@@ -93,29 +90,92 @@ public static class DeviceExecutionEndpoints
         Guid executionId, string path, string sha256, CancellationToken ct)
     {
         var execution = await Authenticate(context, db, executionId, ct);
-        if (!ValidArtifactPath(path) || sha256.Length != 64 || sha256.Any(c => !char.IsAsciiHexDigitLower(c)))
+        var artifactIdText = context.Request.Query["artifact_id"].ToString();
+        var contentType = context.Request.Query["content_type"].ToString();
+        var hasArtifactId = !string.IsNullOrEmpty(artifactIdText);
+        if (!hasArtifactId) contentType = "application/octet-stream";
+        if (!ValidArtifactPath(path) || sha256.Length != 64 || sha256.Any(c => !char.IsAsciiHexDigitLower(c)) ||
+            (hasArtifactId && (!Guid.TryParseExact(artifactIdText, "D", out _) || Guid.Parse(artifactIdText).ToString() != artifactIdText)) ||
+            contentType is not ("image/jpeg" or "image/png" or "application/octet-stream"))
             throw ApiException.InvalidInput("Invalid artifact path or digest.");
-        var data = await ScriptRevisionEndpoints.ReadLimited(context.Request.Body, 262144, ct);
-        if (Convert.ToHexStringLower(SHA256.HashData(data)) != sha256)
-            throw ApiException.InvalidInput("Artifact digest mismatch.");
+        var artifactId = hasArtifactId ? Guid.Parse(artifactIdText) : Guid.NewGuid();
+        var maxBody = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (maxBody is { IsReadOnly: false }) maxBody.MaxRequestBodySize = null;
+        TemporaryTransfer temporary;
+        try { temporary = await TemporaryTransfer.FromRequestAsync(context.Request.Body, 9007199254740991, ct); }
+        catch (InvalidDataException) { throw new ApiException(413, "size_limit", "Request body exceeds its byte limit."); }
+        catch (InsufficientTransferStorageException) { throw new ApiException(503, "insufficient_storage", "Not enough temporary storage for this artifact."); }
+        catch (IOException) { throw new ApiException(503, "storage_unavailable", "Unable to stage the artifact."); }
+        await using var data = temporary;
+        if (data.Sha256 != sha256) throw ApiException.InvalidInput("Artifact digest mismatch.");
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await Lock(db, execution, ct);
         var existing = await db.ScriptArtifacts.SingleOrDefaultAsync(candidate => candidate.ExecutionId == executionId && candidate.Path == path, ct);
         if (existing is not null)
         {
-            if (existing.Sha256 != sha256 || existing.Size != data.Length)
+            if (existing.Sha256 != sha256 || existing.Size != data.Length || (hasArtifactId && (existing.Id != artifactId || existing.ContentType != contentType)))
                 throw ApiException.Conflict("conflict", "Artifact replay conflicts with stored bytes.");
             await transaction.CommitAsync(ct);
             return Results.NoContent();
         }
-        if (ScriptRunEndpoints.Terminal(execution.State)) throw ApiException.Conflict("conflict", "Execution is terminal.");
+        if (hasArtifactId && await db.ScriptArtifacts.AnyAsync(candidate => candidate.Id == artifactId, ct))
+            throw ApiException.Conflict("conflict", "Artifact ID belongs to another publication.");
+        if (execution.ArtifactState == "ready") throw ApiException.Conflict("conflict", "Artifact delivery is already complete.");
         var current = await db.ScriptArtifacts.Where(candidate => candidate.ExecutionId == executionId).ToListAsync(ct);
-        if (current.Count >= 16 || current.Sum(item => item.Size) + data.Length > 1048576)
+        if (current.Count >= 16)
             throw new ApiException(413, "size_limit", "Artifact retention capacity reached.");
-        try { await store.PutAsync(ScriptRunEndpoints.ArtifactKey(executionId, path), data, ct); }
+        try { await store.PutFileAsync(ScriptRunEndpoints.ArtifactKey(executionId, path), data.Path, ct); }
+        catch (InsufficientTransferStorageException) { throw new ApiException(503, "insufficient_storage", "Not enough object storage for this artifact."); }
         catch (Exception exception) when (exception is IOException or AmazonServiceException or AmazonClientException or HttpRequestException)
         { throw new ApiException(503, "storage_unavailable", "The artifact store is unavailable."); }
-        db.ScriptArtifacts.Add(new ScriptArtifact { ExecutionId = executionId, Path = path, Size = data.Length, Sha256 = sha256 });
+        db.ScriptArtifacts.Add(new ScriptArtifact { Id = artifactId, ExecutionId = executionId, Path = path, Size = data.Length,
+            Sha256 = sha256, ContentType = contentType, State = "available" });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            try { await store.DeleteAsync(ScriptRunEndpoints.ArtifactKey(executionId, path), CancellationToken.None); }
+            catch { }
+            throw;
+        }
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> ArtifactStatus(HttpContext context, RingfourDbContext db, Guid executionId, CancellationToken ct)
+    {
+        var execution = await Authenticate(context, db, executionId, ct);
+        JsonObject? payload;
+        string? state;
+        JsonObject? failure;
+        try
+        {
+            payload = JsonNode.Parse(await ScriptRevisionEndpoints.ReadLimited(context.Request.Body, 4096, ct)) as JsonObject;
+            if (payload is null || payload.Count != 2 || payload.Any(pair => pair.Key is not ("state" or "error"))) throw new JsonException();
+            state = payload["state"]?.GetValue<string>();
+            failure = payload["error"] as JsonObject;
+            if (payload["error"] is not null && failure is null) throw new JsonException();
+            if (state is not ("uploading" or "ready" or "failed") || (state == "failed") != (failure is not null)) throw new JsonException();
+            if (failure is not null && (failure.Count != 2 || failure.Any(pair => pair.Key is not ("code" or "message")) ||
+                failure["code"]?.GetValue<string>() is not { Length: > 0 and <= 100 } ||
+                failure["message"]?.GetValue<string>() is not { Length: > 0 and <= 500 })) throw new JsonException();
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or FormatException)
+        { throw ApiException.InvalidInput("Invalid artifact delivery status."); }
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await Lock(db, execution, ct);
+        if (!ScriptRunEndpoints.Terminal(execution.State)) throw ApiException.Conflict("conflict", "Execution is not terminal.");
+        if (execution.ArtifactState == "ready")
+        {
+            if (state == "failed") throw ApiException.Conflict("conflict", "Artifact delivery is already complete.");
+            await transaction.CommitAsync(ct);
+            return Results.NoContent(); // Retry after the ready response was lost.
+        }
+        execution.ArtifactState = state;
+        execution.ArtifactError = failure?.ToJsonString(RingfourJson.Options);
+        execution.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Results.NoContent();

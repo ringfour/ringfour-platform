@@ -2,11 +2,13 @@
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import shutil
 import sqlite3
 import stat
+import time
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,13 +16,21 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
-from .executions import authorize, connection, error, safe_relative, valid_id
+from .executions import (
+    authorize,
+    connection,
+    error,
+    has_storage,
+    safe_relative,
+    valid_id,
+)
 
 router = APIRouter()
 MAX_ARCHIVE = 1048576
 MAX_FILE = 262144
 MAX_FILES = 1024
-MAX_GENERATIONS = 20
+logger = logging.getLogger(__name__)
+SNAPSHOT_RETRY_SECONDS = 24 * 60 * 60
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _COMPONENT = re.compile(r"[A-Za-z0-9_.-]+\Z")
 
@@ -130,6 +140,30 @@ def read_staged(settings, reference):
         return handle.read(MAX_ARCHIVE + 1)
 
 
+def cleanup_old_snapshots(settings, session_id, current_generation):
+    """Retain replay metadata, recent snapshots and any source of an active run."""
+    with connection(settings) as conn:
+        rows = conn.execute("""SELECT g.generation,g.directory FROM dev_source_generations g
+            WHERE g.session_id=? AND g.generation<? AND NOT EXISTS (
+                SELECT 1 FROM dev_execution_sessions d JOIN executions e ON e.execution_id=d.execution_id
+                WHERE d.session_id=g.session_id AND d.generation=g.generation
+                    AND e.state IN ('queued','preparing','running'))""", (session_id, current_generation)).fetchall()
+    root = Path(settings.data_dir) / "dev-sessions"
+    workspace = root / session_id
+    if root.is_symlink() or workspace.is_symlink():
+        return
+    for row in rows:
+        name = row["directory"]
+        if not re.fullmatch(r"generation-[1-9][0-9]*-[0-9a-f-]{36}", name):
+            continue
+        path = workspace / name
+        try:
+            if not path.is_symlink() and path.is_dir() and path.stat().st_mtime < time.time() - SNAPSHOT_RETRY_SECONDS:
+                shutil.rmtree(path)
+        except OSError:
+            logger.warning("Could not clean old development snapshot %s", path, exc_info=True)
+
+
 @router.post("/v1/dev-sessions/sync")
 async def sync(request: Request):
     if not authorize(request):
@@ -144,7 +178,7 @@ async def sync(request: Request):
         required = {"operation_id", "session_id", "base_generation", "generation", "archive_sha256", "archive_size", "staged_archive", "manifest"}
         if (not isinstance(body, dict) or set(body) != required or not valid_id(body["operation_id"]) or not valid_id(body["session_id"])
                 or type(body["base_generation"]) is not int or body["base_generation"] < 0
-                or type(body["generation"]) is not int or body["generation"] != body["base_generation"] + 1
+                or type(body["generation"]) is not int or not 1 <= body["generation"] <= 2147483647 or body["generation"] != body["base_generation"] + 1
                 or type(body["archive_size"]) is not int or not 1 <= body["archive_size"] <= MAX_ARCHIVE
                 or not isinstance(body["archive_sha256"], str) or not _DIGEST.fullmatch(body["archive_sha256"])):
             raise ValueError("Invalid sync request")
@@ -173,14 +207,14 @@ async def sync(request: Request):
             generation = prior["generation"] if prior else 0
             if body["base_generation"] != generation:
                 return error(409, "stale_generation", "The base generation is stale.")
-            if generation >= MAX_GENERATIONS:
-                return error(409, "capacity_exceeded", "The session generation limit has been reached.")
             old_paths = {item["path"] for item in json.loads(prior["manifest"])["files"]} if prior else set()
             if set(body["manifest"]["deleted_paths"]) != old_paths - files.keys():
                 return error(400, "invalid_source", "The deletion list does not match the previous generation.")
             if not operation:
                 conn.execute("INSERT INTO dev_session_operations VALUES (?,?,?,'running',NULL)", (operation_id, session_id, canonical))
             conn.commit()
+        if not has_storage(settings, sum(len(data) for data in files.values())):
+            return error(503, "insufficient_storage", "Runner storage is below the configured free-space reserve.")
         workspace = Path(settings.data_dir) / "dev-sessions" / session_id
         directory_name = f"generation-{body['generation']}-{operation_id}"
         destination = workspace / directory_name
@@ -221,6 +255,7 @@ async def sync(request: Request):
                 conn.execute("INSERT INTO dev_source_generations VALUES (?,?,?,?,?,?)", (session_id, body["generation"], operation_id,
                     body["archive_sha256"], json.dumps(body["manifest"], sort_keys=True, separators=(",", ":")), directory_name))
                 conn.execute("UPDATE dev_session_operations SET state='succeeded',result=? WHERE operation_id=?", (json.dumps(result, separators=(",", ":")), operation_id))
+            cleanup_old_snapshots(settings, session_id, body["generation"])
             return result
         except (OSError, sqlite3.Error):
             return error(503, "storage_unavailable", "Session storage is unavailable.")

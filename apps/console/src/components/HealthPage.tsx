@@ -11,10 +11,7 @@ type ServiceHealth = {
   checks?: Record<string, string>;
 };
 
-const SERVICES: { name: string; base: string }[] = [
-  { name: "api", base: "/api" },
-  { name: "daemon", base: "/daemon" },
-];
+const SERVICES: { name: string; base: string }[] = [{ name: "api", base: "/api" }];
 
 async function fetchServiceHealth(
   name: string,
@@ -47,7 +44,7 @@ export function HealthPage() {
     <main className="workspace-page">
       <PageHeading
         title="System health"
-        description="Check the services connected to this Console."
+        description="Check the Platform API and its dependencies."
       />
       <Card>
         <CardHeader>

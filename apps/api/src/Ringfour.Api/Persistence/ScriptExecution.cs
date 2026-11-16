@@ -13,6 +13,8 @@ public sealed class ScriptExecution
     public DateTimeOffset UpdatedAt { get; set; }
     public int? ExitCode { get; set; }
     public string? Error { get; set; }
+    public string ArtifactState { get; set; } = "pending";
+    public string? ArtifactError { get; set; }
     public byte[] Stdout { get; set; } = [];
     public byte[] Stderr { get; set; } = [];
     public bool StdoutTruncated { get; set; }
@@ -27,10 +29,13 @@ public sealed class ScriptExecution
 
 public sealed class ScriptArtifact
 {
+    public Guid Id { get; set; }
     public Guid ExecutionId { get; set; }
     public required string Path { get; set; }
-    public int Size { get; set; }
+    public long Size { get; set; }
     public required string Sha256 { get; set; }
+    public required string ContentType { get; set; }
+    public required string State { get; set; }
     public ScriptExecution Execution { get; set; } = null!;
 }
 

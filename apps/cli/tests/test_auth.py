@@ -172,11 +172,14 @@ def test_login_command_stores_tokens_in_credential_store(monkeypatch, settings, 
 
 def test_logout_command_clears_credentials(settings, keyring):
     REAL_TOKEN_STORE(keyring).save(settings, {"access_token": "at"})
+    settings.config_path.write_text(json.dumps({"selected_org": "old-org"}))
 
     result = runner.invoke(app, ["logout"])
 
     assert result.exit_code == 0
     assert keyring.store == {}
+    assert "cleared the selected organization" in result.output
+    assert json.loads(settings.config_path.read_text()) == {}
 
     result = runner.invoke(app, ["logout"])
     assert "No stored credentials" in result.output

@@ -39,10 +39,36 @@ are dealing with:
 | `npm run test:e2e:pairing` | Device pairing through the Console proxy and isolated daemon (requires owner login and selected org) |
 | `npm run test:e2e:03` | Milestone 03 connectivity acceptance (requires `ringfour-cli login`; resets the daemon volume; ~4 min, includes two 45 s offline-threshold waits) |
 | `npm run test:e2e:04` | Local Runner acceptance with isolated daemon/Runner containers and volumes; requires an owner login and selected organization |
-| `npm run compose:up` | Build and start the full stack (postgres, api, daemon, runner, console) |
+| `npm run compose:up` | Build and start the local integration stack (postgres, api, daemon, runner, console) |
 | `npm run compose:down` | Stop the stack (volumes kept) |
 | `npm run compose:clean` | Stop and delete all volumes (fresh start) |
 | `npm run compose:logs` | Follow stack logs |
+
+## Start the server stack
+
+Run `./up.sh` from the Platform repository root (or call it by absolute path).
+It loads `.auth.env` and then root `.env` when present, and starts PostgreSQL,
+the Platform API, and the internal Console from `infra/server/docker-compose.yml`.
+The root `.env` takes precedence. Set `AUTH0_DOMAIN` and
+`AUTH0_WEB_CLIENT_ID` before starting. If
+`POSTGRES_PASSWORD` is unset, the script creates a persistent random password
+in the ignored `.env.server` file. Local filesystem artifact storage is the
+default; set `STORAGE_BACKEND=s3` plus the `STORAGE_S3_*` settings to use an
+S3-compatible store. Existing server Compose volumes are preserved. Pass
+additional Compose `up` options or service names after the script name, for
+example `./up.sh api`.
+Open the Console at `http://localhost:5173/` (or the configured
+`CONSOLE_ORIGIN`).
+
+For the Base101 virtual device, initialize and start the pinned simulator in
+`../ringfour-virtual/dependencies/base101` (see its README), then run
+`../ringfour-virtual/up.sh`. That project builds Agent with SDK source and
+daemon and Runner from their own directories. It joins the simulator's ROS
+network and connects to the server over the device protocol; it has no shared
+source, package, database, or Docker network with the server.
+
+`infra/compose/docker-compose.yml` remains available for older milestone
+integration scripts; it is not the recommended development stack.
 
 ## Dependency updates and quality gate
 
@@ -164,6 +190,25 @@ conflicts on divergence), `GET /v1/robots/{id}/operations/{op_id}`.
 CLI: `ringfour-cli robot status <robot-id>`. See `docs/human-testing/03.md` for
 the manual flow and `docs/evidence/03.md` for acceptance results.
 
+## Live Logbook acceptance (milestone 08a)
+
+The selected Console timeline polls the existing organization history endpoint
+every three seconds; 08a adds no new wire contract. Run the isolated real-process
+acceptance with live Auth0 credentials, or use the API's Development-only test
+signer with already-built local images:
+
+```sh
+RINGFOUR_TEST_LOGBOOK=1 bash tests/e2e/07-cli-dev.sh
+RINGFOUR_TEST_SKIP_BUILD=1 RINGFOUR_TEST_LOCAL_AUTH=1 \
+  RINGFOUR_TEST_LOGBOOK=1 bash tests/e2e/07-cli-dev.sh
+```
+
+The test verifies two mission-authored entries through Runner, daemon, API,
+PostgreSQL and the authorized history endpoint while the execution is still
+running, then stops it. Test signing mode cannot start in hosted configuration
+and is not evidence for the separate live Auth0 gate. See
+`docs/human-testing/08.md` and `docs/evidence/08.md`.
+
 
 ## Layout
 
@@ -173,7 +218,9 @@ the manual flow and `docs/evidence/03.md` for acceptance results.
 - `apps/cli` — Python Typer/Rich CLI, the only host-run component
 - `apps/console` — React/TS/Vite internal dev console (development-only)
 - `packages/contracts` — OpenAPI + JSON Schema + fixtures, language-independent
-- `infra/compose` — local stack
+- `infra/server` — independent server-side Compose deployment
+- `../ringfour-virtual` — Base101 simulator and device-side Compose stack
+- `infra/compose` — legacy integrated acceptance stack
 - `tests/e2e` — integrated acceptance scripts
 
 ## Device pairing page

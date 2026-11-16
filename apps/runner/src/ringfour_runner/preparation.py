@@ -1,6 +1,5 @@
 """Authenticated, atomic candidate environment preparation and cache GC."""
 import asyncio
-import hashlib
 import json
 import os
 import re
@@ -84,7 +83,16 @@ def collect_cache(settings, retain):
 @router.post("/v1/revisions/prepare")
 async def prepare(request: Request):
     # Imported here to keep the existing execution router independently usable.
-    from .executions import authorize, bundle_files, connection, error
+    from .executions import (
+        authorize,
+        bundle_files,
+        connection,
+        copy_entry,
+        entry_size,
+        error,
+        has_storage,
+        verify_lock,
+    )
 
     if not authorize(request):
         return error(401, "unauthenticated", "Runner authentication required.")
@@ -105,11 +113,11 @@ async def prepare(request: Request):
             raise ValueError("Incompatible Python")
         if not isinstance(retain, list) or len(retain) > 2 or any(not isinstance(item, str) or not _DIGEST.fullmatch(item) for item in retain) or len(set(retain)) != len(retain):
             raise ValueError("Invalid retained digests")
-        files, actual = bundle_files(request.app.state.settings, body["code_ref"], body["entrypoint"])
-        lock_bytes = next((data for name, data in files if name == "requirements.lock"), None)
-        if actual != digest or lock_bytes is None or hashlib.sha256(lock_bytes).hexdigest() != lock:
+        files, actual = await asyncio.to_thread(bundle_files, request.app.state.settings, body["code_ref"], body["entrypoint"])
+        lock_entry = next((data for name, data in files if name == "requirements.lock"), None)
+        if actual != digest or lock_entry is None:
             raise ValueError("Staged bundle mismatch")
-        lock_bytes.decode("utf-8")
+        await asyncio.to_thread(verify_lock, lock_entry, lock)
     except (ValueError, OSError, UnicodeError, InvalidSpecifier):
         return error(400, "invalid_input", "Invalid staged revision or prepare request.")
     app = request.app
@@ -125,6 +133,8 @@ async def prepare(request: Request):
             os.utime(existing.parent, None)
             collect_cache(settings, set(retain) | {digest})
             return {"revision_digest": digest, "state": "ready"}
+        if not has_storage(settings, sum(entry_size(data) for _, data in files)):
+            return error(503, "insufficient_storage", "Runner storage is below the configured free-space reserve.")
         root = Path(settings.data_dir)
         generation = uuid.uuid4().hex
         parent = root / "prepared-envs" / digest
@@ -135,10 +145,7 @@ async def prepare(request: Request):
         try:
             for name, data in files:
                 target = temp_source / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
-                if hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(data).digest():
-                    raise OSError("Candidate copy failed verification")
+                await asyncio.to_thread(copy_entry, name, data, target)
             if await _command(app, "uv", "venv", "--no-python-downloads", "--python", sys.executable, str(environment)):
                 return error(503, "preparation_failed", "Unable to prepare the candidate environment.")
             if await _command(app, "uv", "pip", "sync", "--require-hashes", "--python", str(environment / "bin" / "python"), str(temp_source / "requirements.lock")):

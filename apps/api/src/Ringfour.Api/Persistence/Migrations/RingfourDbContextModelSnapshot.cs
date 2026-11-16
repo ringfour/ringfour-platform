@@ -369,7 +369,7 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.ToTable("dev_session_runs", null, t =>
                         {
-                            t.HasCheckConstraint("ck_dev_run_generation", "generation BETWEEN 1 AND 20");
+                            t.HasCheckConstraint("ck_dev_run_generation", "generation > 0");
 
                             t.HasCheckConstraint("ck_dev_run_state", "state IN ('queued','preparing','running','succeeded','failed','cancelled')");
                         });
@@ -557,7 +557,7 @@ namespace Ringfour.Api.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')");
 
-                            t.HasCheckConstraint("ck_logbook_version", "schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL))");
+                            t.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)");
                         });
                 });
 
@@ -1060,20 +1060,41 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("path");
 
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content_type");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("sha256");
 
-                    b.Property<int>("Size")
-                        .HasColumnType("integer")
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint")
                         .HasColumnName("size");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
 
                     b.HasKey("ExecutionId", "Path");
 
+                    b.HasIndex("Id")
+                        .IsUnique();
+
                     b.ToTable("script_artifacts", null, t =>
                         {
-                            t.HasCheckConstraint("ck_script_artifact_size", "size BETWEEN 0 AND 262144");
+                            t.HasCheckConstraint("ck_script_artifact_content_type", "content_type IN ('image/jpeg', 'image/png', 'application/octet-stream')");
+
+                            t.HasCheckConstraint("ck_script_artifact_size", "size BETWEEN 0 AND 9007199254740991");
+
+                            t.HasCheckConstraint("ck_script_artifact_state", "state IN ('pending', 'uploading', 'available', 'failed')");
                         });
                 });
 
@@ -1086,6 +1107,15 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Property<Guid>("ActorUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("actor_user_id");
+
+                    b.Property<string>("ArtifactError")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("artifact_error");
+
+                    b.Property<string>("ArtifactState")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("artifact_state");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1160,6 +1190,8 @@ namespace Ringfour.Api.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_execution_mission_attribution", "(deployment_id IS NULL) = (mission_revision_id IS NULL)");
 
+                            t.HasCheckConstraint("ck_script_execution_artifact_state", "artifact_state IN ('unknown', 'pending', 'uploading', 'ready', 'failed')");
+
                             t.HasCheckConstraint("ck_script_execution_output", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536");
 
                             t.HasCheckConstraint("ck_script_execution_state", "state IN ('queued', 'preparing', 'running', 'succeeded', 'failed', 'cancelled')");
@@ -1212,8 +1244,8 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("archive_sha256");
 
-                    b.Property<int>("ArchiveSize")
-                        .HasColumnType("integer")
+                    b.Property<long>("ArchiveSize")
+                        .HasColumnType("bigint")
                         .HasColumnName("archive_size");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -1284,7 +1316,7 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.ToTable("script_revisions", null, t =>
                         {
-                            t.HasCheckConstraint("ck_script_revision_size", "archive_size BETWEEN 1 AND 1048576");
+                            t.HasCheckConstraint("ck_script_revision_size", "archive_size BETWEEN 1 AND 9007199254740991");
 
                             t.HasCheckConstraint("ck_script_revision_state", "(state = 'uploading' AND finalized_at IS NULL) OR (state = 'ready' AND finalized_at IS NOT NULL)");
                         });

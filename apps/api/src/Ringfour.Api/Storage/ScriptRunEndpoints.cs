@@ -89,8 +89,6 @@ public static class ScriptRunEndpoints
         if (await db.ScriptExecutions.AnyAsync(candidate => candidate.RobotId == robotId &&
             (candidate.State == "queued" || candidate.State == "preparing" || candidate.State == "running"), ct))
             throw ApiException.Conflict("execution_conflict", "Another execution is active.");
-        if (await db.ScriptExecutions.CountAsync(candidate => candidate.RobotId == robotId, ct) >= 100)
-            throw new ApiException(503, "capacity_exceeded", "Execution retention capacity reached.");
         var id = Guid.NewGuid();
         var payload = JsonSerializer.Serialize(new
         {
@@ -210,10 +208,12 @@ public static class ScriptRunEndpoints
 
     private static async Task<IResult> ListArtifacts(HttpContext context, RingfourDbContext db, Guid executionId, CancellationToken ct)
     {
-        await RequireExecution(context, db, executionId, OrgRole.Operator, ct);
+        var execution = await RequireExecution(context, db, executionId, OrgRole.Operator, ct);
         var artifacts = await db.ScriptArtifacts.Where(candidate => candidate.ExecutionId == executionId).OrderBy(candidate => candidate.Path)
-            .Select(candidate => new { path = candidate.Path, size = candidate.Size, sha256 = candidate.Sha256 }).ToArrayAsync(ct);
-        return Results.Ok(new { execution_id = executionId, artifacts });
+            .Select(candidate => new { artifact_id = candidate.Id, path = candidate.Path, size = candidate.Size, sha256 = candidate.Sha256,
+                content_type = candidate.ContentType, state = candidate.State }).ToArrayAsync(ct);
+        return Results.Ok(new { execution_id = executionId, artifacts, artifact_state = execution.ArtifactState,
+            artifact_error = execution.ArtifactError is null ? null : JsonNode.Parse(execution.ArtifactError) });
     }
 
     private static async Task<IResult> DownloadArtifact(HttpContext context, RingfourDbContext db, IObjectStore store,
@@ -222,13 +222,8 @@ public static class ScriptRunEndpoints
         await RequireExecution(context, db, executionId, OrgRole.Operator, ct);
         var artifact = await db.ScriptArtifacts.SingleOrDefaultAsync(candidate => candidate.ExecutionId == executionId && candidate.Path == path, ct)
             ?? throw ApiException.NotFound("The requested resource does not exist in this organization.");
-        byte[] data;
-        try { data = await store.GetAsync(ArtifactKey(executionId, path), ct); }
-        catch (Exception exception) when (exception is IOException or Amazon.Runtime.AmazonServiceException or Amazon.Runtime.AmazonClientException or HttpRequestException)
-        { throw new ApiException(503, "storage_unavailable", "The artifact store is unavailable."); }
-        if (data.Length != artifact.Size || Convert.ToHexStringLower(SHA256.HashData(data)) != artifact.Sha256)
-            throw new ApiException(503, "storage_unavailable", "The artifact store returned invalid bytes.");
-        return Results.File(data, "application/octet-stream", Path.GetFileName(path));
+        return await TemporaryTransfer.VerifiedResponseAsync(context, store, ArtifactKey(executionId, path),
+            artifact.Size, artifact.Sha256, artifact.ContentType, Path.GetFileName(path), ct);
     }
 
     private static async Task<IResult> Stop(HttpContext context, RingfourDbContext db, DeviceConnectionManager manager,

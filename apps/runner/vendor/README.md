@@ -10,7 +10,7 @@ new missions should use the Ringfour SDK. Agent and profiles remain separate.
 
 `ringfour_platform_runtime-0.1.0.dev0-py3-none-any.whl` is built from the
 separate `packages/python-runtime` project, SHA-256
-`781fcebf64494ed5106f47aa4a656a37fc7aef5ed32bd4ce6f0ed77e8d8972b7`.
+`d0e666f1358f659cb42bfadc785d0f4b064b73495fae3da5234c6139ff95df34`.
 Missions install it explicitly through a hash-pinned lock; the standalone SDK
 and Agent do not require it. Images must be rebuilt to include it.
 

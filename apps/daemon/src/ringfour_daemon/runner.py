@@ -24,7 +24,7 @@ def reject_response(response):
     if response.status_code in (409, 503):
         try:
             candidate = response.json()["error"]["code"]
-            if candidate in {"conflict", "execution_conflict", "preparation_failed", "capacity_exceeded"}:
+            if candidate in {"conflict", "execution_conflict", "preparation_failed", "capacity_exceeded", "insufficient_storage"}:
                 code = candidate
         except (KeyError, TypeError, ValueError):
             pass

@@ -1,6 +1,8 @@
 name: ringfour
 
-# Local development stack. All services run here; only the CLI runs on the host.
+# Local development/integration test stack. Includes simulated device services;
+# not the server deployment. Server-side services are in infra/server.
+# All services run here; only the CLI runs on the host.
 # No Docker socket is mounted anywhere — infrastructure owns containers.
 services:
   postgres:
@@ -77,6 +79,7 @@ services:
       VITE_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN; see .auth.env}
       VITE_AUTH0_CLIENT_ID: ${AUTH0_WEB_CLIENT_ID:?Set AUTH0_WEB_CLIENT_ID; see .auth.env}
       VITE_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
+      VITE_CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:5173}
     volumes:
       - ../../apps/console:/app
       - /app/node_modules

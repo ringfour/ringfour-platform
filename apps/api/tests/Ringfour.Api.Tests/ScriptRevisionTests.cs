@@ -82,6 +82,45 @@ public sealed class ScriptRevisionTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task FinalizedRevisionsDoNotExhaustARecordCountQuota()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ringfour-revisions-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            await using var factory = new ApiFactory(postgres.ConnectionString, storageRoot: root);
+            var owner = factory.CreateAuthenticatedClient($"auth0|{Guid.NewGuid()}");
+            var outsider = factory.CreateAuthenticatedClient($"auth0|{Guid.NewGuid()}");
+            var org = await OrganizationTests.CreateOrganization(owner, "many revisions");
+            var (archive, digest, lockHash) = CreateArchive();
+            var request = new { organization_id = org, archive_sha256 = Hash(archive), archive_size = archive.Length,
+                revision_digest = digest, entrypoint = "main.py", python_requirement = ">=3.13,<3.14", lock_sha256 = lockHash };
+            var ids = new List<Guid>();
+            for (var index = 0; index < 101; index++)
+            {
+                owner.DefaultRequestHeaders.Remove("Idempotency-Key");
+                owner.DefaultRequestHeaders.Add("Idempotency-Key", $"revision-{index}");
+                var created = await owner.PostAsJsonAsync("/v1/script-revisions", request, RingfourJson.Options);
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+                ids.Add(id);
+                Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsync($"/v1/script-revisions/{id}/content", new ByteArrayContent(archive))).StatusCode);
+                Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"/v1/script-revisions/{id}/finalize", null)).StatusCode);
+            }
+            Assert.Equal(101, ids.Distinct().Count());
+            Assert.Equal(archive, await File.ReadAllBytesAsync(Path.Combine(root, "revisions", ids[0].ToString("N"))));
+            Assert.Equal(archive, await File.ReadAllBytesAsync(Path.Combine(root, "revisions", ids[^1].ToString("N"))));
+            Assert.Equal(HttpStatusCode.NotFound, (await outsider.PutAsync($"/v1/script-revisions/{ids[0]}/content", new ByteArrayContent(archive))).StatusCode);
+            var replay = await owner.PostAsJsonAsync("/v1/script-revisions", request, RingfourJson.Options);
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            Assert.Equal(ids[^1], JsonDocument.Parse(await replay.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task MigratesFromPairingSchemaAndPreservesData()
     {
         var database = $"scripts_{Guid.NewGuid():N}";
@@ -199,11 +238,13 @@ public sealed class ScriptRevisionTests(PostgresFixture postgres)
         public Task CheckReadyAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PutAsync(string key, byte[] data, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<byte[]> GetAsync(string key, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task PutFileAsync(string key, string sourcePath, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task CopyToAsync(string key, Stream destination, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task DeleteAsync(string key, CancellationToken cancellationToken) => throw new IOException("temporary failure");
     }
 
     [Fact]
-    public async Task RevisionQuotaRejectsNewWorkButAllowsIdempotentReplay()
+    public async Task RevisionHistoryAllowsNewWorkAndIdempotentReplay()
     {
         var root = Path.Combine(Path.GetTempPath(), "ringfour-script-quota-" + Guid.NewGuid().ToString("N"));
         try
@@ -236,7 +277,7 @@ public sealed class ScriptRevisionTests(PostgresFixture postgres)
             Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync("/v1/script-revisions", request, RingfourJson.Options)).StatusCode);
             owner.DefaultRequestHeaders.Remove("Idempotency-Key");
             owner.DefaultRequestHeaders.Add("Idempotency-Key", "new");
-            Assert.Equal(HttpStatusCode.ServiceUnavailable, (await owner.PostAsJsonAsync("/v1/script-revisions", request, RingfourJson.Options)).StatusCode);
+            Assert.Equal(HttpStatusCode.Created, (await owner.PostAsJsonAsync("/v1/script-revisions", request, RingfourJson.Options)).StatusCode);
         }
         finally
         {

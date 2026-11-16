@@ -6,6 +6,28 @@ info:
     New Ringfour-local design, separate from the Agent API. The daemon control
     listener accepts execution-scoped credentials, separate from human and LAN grants.
 paths:
+  /v1/runtime/artifacts:
+    post:
+      operationId: publishMissionArtifact
+      summary: Finalize and durably queue one execution artifact
+      description: A successful response means an immutable Runner snapshot and daemon queue row exist; it does not mean hosted availability.
+      security:
+        - ExecutionCredential: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/artifacts/v1/runtime-publish-request.schema.json }
+      responses:
+        '200':
+          description: Locally finalized and durably queued, or identical replay
+          content:
+            application/json:
+              schema: { $ref: ../schemas/artifacts/v1/artifact.schema.json }
+        '400': { description: Invalid path, ID or content type }
+        '401': { description: Missing, invalid or expired execution credential }
+        '409': { description: Artifact ID conflicts with an earlier publication }
+        '503': { description: Runner snapshot or daemon queue unavailable }
   /v1/runtime/logbook/entries:
     post:
       operationId: recordMissionLogbookEntry
@@ -21,7 +43,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: ../schemas/logbook/v1/runtime-entry-request.schema.json }
+            schema:
+              oneOf:
+                - { $ref: ../schemas/logbook/v1/runtime-entry-request.schema.json }
+                - { $ref: ../schemas/logbook/v2/runtime-entry-request.schema.json }
       responses:
         '200':
           description: Entry durably recorded or identical replay

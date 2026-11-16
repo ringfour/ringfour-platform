@@ -1,13 +1,13 @@
 import base64
+import sqlite3
 import time
 import uuid
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from test_dev_source import make_snapshot
-
 from ringfour_runner.config import Settings
 from ringfour_runner.main import create_app
+from test_dev_source import make_snapshot
 
 
 def wait_state(client, execution_id, wanted, headers):
@@ -171,3 +171,23 @@ def test_expiry_stops_running_code_without_platform(tmp_path):
             if not (Path(settings.data_dir) / "dev-sessions" / session).exists(): break
             time.sleep(0.05)
         assert not (Path(settings.data_dir) / "dev-sessions" / session).exists()
+
+
+def test_more_than_one_hundred_sequential_development_executions(tmp_path):
+    from test_executions import wait_terminal
+
+    settings = Settings(str(tmp_path / "data"), str(tmp_path / "stage"), "secret")
+    headers = {"authorization": "Bearer secret"}
+    session, robot = str(uuid.uuid4()), str(uuid.uuid4())
+    create = {"session_id": session, "operation_id": str(uuid.uuid4()), "reason": "create", "expires_at": "2099-01-01T00:00:00Z"}
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/v1/dev-sessions/lifecycle", json=create, headers=headers).status_code == 200
+        source = make_snapshot(settings, session, {"main.py": b"print('ok')\n", "requirements.lock": b""})
+        assert client.post("/v1/dev-sessions/sync", json=source, headers=headers).status_code == 200
+        for _ in range(101):
+            request = {"session_id": session, "robot_id": robot, "operation_id": str(uuid.uuid4()), "execution_id": str(uuid.uuid4()), "generation": 1}
+            response = client.post("/v1/dev-sessions/restart", json=request, headers=headers)
+            assert response.status_code == 200, response.text
+            assert wait_terminal(client, request["execution_id"], headers)["state"] == "succeeded"
+        with sqlite3.connect(Path(settings.data_dir) / "executions.db") as db:
+            assert db.execute("SELECT count(*) FROM executions").fetchone()[0] == 101

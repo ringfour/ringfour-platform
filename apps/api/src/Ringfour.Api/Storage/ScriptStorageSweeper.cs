@@ -18,6 +18,9 @@ public sealed class ScriptStorageSweeper(IServiceScopeFactory scopeFactory, ICon
                     using var scope = scopeFactory.CreateScope();
                     await SweepOnceAsync(scope.ServiceProvider.GetRequiredService<RingfourDbContext>(),
                         scope.ServiceProvider.GetRequiredService<IObjectStore>(), DateTimeOffset.UtcNow, stoppingToken);
+                    TemporaryTransfer.CleanupInterrupted(DateTimeOffset.UtcNow.AddHours(-48));
+                    if (scope.ServiceProvider.GetRequiredService<IObjectStore>() is IInterruptedTransferCleanup cleanup)
+                        await cleanup.CleanupInterruptedAsync(DateTimeOffset.UtcNow.AddHours(-48), stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 catch (Exception) { logger.LogWarning("Script upload cleanup failed; it will retry"); }

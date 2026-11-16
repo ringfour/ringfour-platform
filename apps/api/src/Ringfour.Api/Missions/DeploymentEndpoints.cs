@@ -149,7 +149,7 @@ public static class DeploymentEndpoints
             State = OperationState.Queued,
             CreatedAt = now,
             UpdatedAt = now,
-            DeadlineAt = now.AddSeconds(configuration.GetValue("Missions:PrepareTimeoutSeconds", 600)),
+            DeadlineAt = now.AddSeconds(configuration.GetValue("Missions:PrepareTimeoutSeconds", 86400)),
             RequestedByUserId = user.Id
         });
         db.OperationIdempotencyRecords.Add(new OperationIdempotencyRecord
@@ -217,12 +217,7 @@ public static class DeploymentEndpoints
             ?? throw ApiException.NotFound("The requested resource does not exist for this robot.");
         var source = await db.MissionRevisions.Where(item => item.Id == deployment.CandidateRevisionId)
             .Select(item => item.ScriptRevision).SingleAsync(ct);
-        byte[] archive;
-        try { archive = await store.GetAsync($"revisions/{source.Id:N}", ct); }
-        catch (Exception exception) when (exception is IOException or AmazonServiceException or AmazonClientException or HttpRequestException)
-        { throw new ApiException(503, "storage_unavailable", "The artifact store is unavailable."); }
-        if (archive.Length != source.ArchiveSize || Convert.ToHexStringLower(SHA256.HashData(archive)) != source.ArchiveSha256)
-            throw new ApiException(503, "storage_unavailable", "The artifact store returned invalid bytes.");
-        return Results.File(archive, "application/zip");
+        return await TemporaryTransfer.VerifiedResponseAsync(context, store, $"revisions/{source.Id:N}",
+            source.ArchiveSize, source.ArchiveSha256, "application/zip", null, ct);
     }
 }

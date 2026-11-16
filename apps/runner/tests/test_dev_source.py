@@ -6,7 +6,6 @@ import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-
 from ringfour_runner.config import Settings
 from ringfour_runner.main import create_app
 
@@ -104,16 +103,41 @@ def test_interrupted_staging_retries_without_publishing_partial_generation(tmp_p
             assert db.execute("SELECT count(*) FROM dev_source_generations").fetchone()[0] == 1
 
 
-def test_session_generation_limit_is_enforced(tmp_path):
+def test_many_generations_preserve_replay_and_clean_only_safe_old_snapshots(tmp_path):
+    import os
+    import time
+
     settings = Settings(str(tmp_path / "data"), str(tmp_path / "stage"), "secret")
     headers = {"authorization": "Bearer secret"}
     session = str(uuid.uuid4())
     create = {"session_id": session, "operation_id": str(uuid.uuid4()), "reason": "create", "expires_at": "2099-01-01T00:00:00Z"}
     with TestClient(create_app(settings)) as client:
         assert client.post("/v1/dev-sessions/lifecycle", json=create, headers=headers).status_code == 200
-        for generation in range(20):
+        bodies = []
+        for generation in range(25):
             body = make_snapshot(settings, session, {"main.py": b"pass", "requirements.lock": b""}, base=generation)
             assert client.post("/v1/dev-sessions/sync", json=body, headers=headers).status_code == 200
-        over = make_snapshot(settings, session, {"main.py": b"pass", "requirements.lock": b""}, base=20)
-        response = client.post("/v1/dev-sessions/sync", json=over, headers=headers)
-        assert response.status_code == 409 and response.json()["error"]["code"] == "capacity_exceeded"
+            bodies.append(body)
+        restart = {"session_id": session, "robot_id": str(uuid.uuid4()), "operation_id": str(uuid.uuid4()), "execution_id": str(uuid.uuid4()), "generation": 25}
+        result = client.post("/v1/dev-sessions/restart", json=restart, headers=headers)
+        assert result.status_code == 200, result.text
+        from test_executions import wait_terminal
+        assert wait_terminal(client, restart["execution_id"], headers)["state"] == "succeeded"
+        workspace = Path(settings.data_dir) / "dev-sessions" / session
+        with sqlite3.connect(Path(settings.data_dir) / "executions.db") as db:
+            dirs = dict(db.execute("SELECT generation,directory FROM dev_source_generations").fetchall())
+            execution = str(uuid.uuid4())
+            db.execute("INSERT INTO executions(execution_id,robot_id,request,revision_digest,state,created_at,updated_at) VALUES (?, ?, '{}', ?, 'running', '2026-01-01', '2026-01-01')", (execution, str(uuid.uuid4()), 'a' * 64))
+            db.execute("INSERT INTO dev_execution_sessions VALUES (?, ?, ?)", (execution, session, 1))
+        old_time = time.time() - 25 * 60 * 60
+        for generation in (1, 2, 25):
+            os.utime(workspace / dirs[generation], (old_time, old_time))
+        next_body = make_snapshot(settings, session, {"main.py": b"pass", "requirements.lock": b""}, base=25)
+        assert client.post("/v1/dev-sessions/sync", json=next_body, headers=headers).status_code == 200
+        assert (workspace / dirs[1]).is_dir()
+        assert not (workspace / dirs[2]).exists()
+        assert not (workspace / dirs[25]).exists()
+        assert (workspace / dirs[24]).is_dir()
+        assert client.post("/v1/dev-sessions/sync", json=bodies[1], headers=headers).json()["generation"] == 2
+        stale = make_snapshot(settings, session, {"main.py": b"pass", "requirements.lock": b""}, base=2)
+        assert client.post("/v1/dev-sessions/sync", json=stale, headers=headers).status_code == 409

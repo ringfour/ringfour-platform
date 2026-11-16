@@ -1,0 +1,54 @@
+name: ringfour-server
+
+# Hosted/server-side services only. Device daemon and Runner run on each robot.
+# The separate local integration stack is in infra/compose.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ringfour
+      POSTGRES_USER: ringfour
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ringfour -d ringfour"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: ../../apps/api
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD}
+      Auth0__Domain: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN}
+      Auth0__Audience: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
+      Storage__Backend: ${STORAGE_BACKEND:-filesystem}
+      Storage__FilesystemRoot: /storage
+      Storage__S3__Endpoint: ${STORAGE_S3_ENDPOINT:-}
+      Storage__S3__Region: ${STORAGE_S3_REGION:-}
+      Storage__S3__Bucket: ${STORAGE_S3_BUCKET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - api-storage:/storage
+
+  console:
+    build: ../../apps/console
+    environment:
+      API_PROXY_TARGET: http://api:8080
+      VITE_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN}
+      VITE_AUTH0_CLIENT_ID: ${AUTH0_WEB_CLIENT_ID:?Set AUTH0_WEB_CLIENT_ID}
+      VITE_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
+      VITE_CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:5173}
+    depends_on:
+      - api
+    ports:
+      - "${CONSOLE_PORT:-5173}:5173"
+
+volumes:
+  pgdata:
+  api-storage:

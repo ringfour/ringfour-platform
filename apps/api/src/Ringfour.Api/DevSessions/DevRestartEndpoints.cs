@@ -33,7 +33,7 @@ public static class DevRestartEndpoints
         JsonObject body;
         try { body = JsonNode.Parse(await ScriptRevisionEndpoints.ReadLimited(context.Request.Body, 4096, ct)) as JsonObject ?? throw new JsonException(); }
         catch (JsonException) { throw ApiException.InvalidInput("Invalid development restart request."); }
-        if (body.Count != 1 || body["generation"] is not JsonValue value || !value.TryGetValue<int>(out var generation) || generation is < 1 or > 20)
+        if (body.Count != 1 || body["generation"] is not JsonValue value || !value.TryGetValue<int>(out var generation) || generation < 1)
             throw ApiException.InvalidInput("Invalid development restart request.");
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(generation.ToString(System.Globalization.CultureInfo.InvariantCulture))));
         var now = DateTimeOffset.UtcNow;
@@ -64,8 +64,6 @@ public static class DevRestartEndpoints
         var deployment = await db.MissionDeployments.SingleOrDefaultAsync(item => item.RobotId == robot.Id, ct);
         if (deployment?.CandidateRevisionId is not null || (deployment is not null && await db.DeploymentActions.AnyAsync(item => item.DeploymentId == deployment.Id && (item.State == "pending" || item.State == "starting"), ct)))
             throw ApiException.Conflict("deployment_in_progress", "A mission deployment or restart is in progress.");
-        if (await db.DevSessionRuns.CountAsync(item => item.RobotId == robot.Id, ct) >= 100)
-            throw new ApiException(503, "capacity_exceeded", "Development execution retention capacity reached.");
         var opId = Guid.NewGuid();
         var executionId = Guid.NewGuid();
         var payload = JsonSerializer.Serialize(new { operation_id = opId, session_id = sessionId, robot_id = robot.Id, generation, execution_id = executionId }, RingfourJson.Options);

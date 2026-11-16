@@ -496,7 +496,7 @@ public static class DeviceSocketEndpoints
                     var code = "execution_start_failed";
                     if (payload["result"] is JsonObject result && result["error"] is JsonObject error &&
                         error["code"] is JsonValue errorCode && errorCode.TryGetValue<string>(out var candidate) &&
-                        candidate is "execution_conflict" or "invalid_input" or "runner_unauthenticated" or "capacity_exceeded" or "not_found" or "runner_error")
+                        candidate is "execution_conflict" or "invalid_input" or "runner_unauthenticated" or "capacity_exceeded" or "insufficient_storage" or "not_found" or "runner_error")
                         code = candidate;
                     execution.Error = JsonSerializer.Serialize(new { code, message = "The device could not start the execution." }, options);
                     db.ScriptExecutionEvents.Add(new ScriptExecutionEvent

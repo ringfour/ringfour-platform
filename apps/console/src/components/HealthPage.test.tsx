@@ -27,11 +27,7 @@ test("renders ok status and checks for healthy services", async () => {
           checks: { postgresql: "ok" },
         });
       }
-      return readyResponse({
-        status: "ok",
-        version: "0.1.0",
-        checks: { sqlite: "ok", runner: "ok" },
-      });
+      throw new Error(`Unexpected health endpoint: ${url}`);
     }),
   );
 
@@ -41,12 +37,7 @@ test("renders ok status and checks for healthy services", async () => {
     "textContent",
     "ok",
   );
-  expect(await screen.findByTestId("daemon-status")).toHaveProperty(
-    "textContent",
-    "ok",
-  );
   expect(screen.getByText("postgresql=ok")).toBeTruthy();
-  expect(screen.getByText("sqlite=ok, runner=ok")).toBeTruthy();
 });
 
 test("renders fail when a service reports failed readiness", async () => {
@@ -60,11 +51,7 @@ test("renders fail when a service reports failed readiness", async () => {
           503,
         );
       }
-      return readyResponse({
-        status: "ok",
-        version: "0.1.0",
-        checks: { sqlite: "ok", runner: "ok" },
-      });
+      throw new Error(`Unexpected health endpoint: ${url}`);
     }),
   );
 
@@ -73,10 +60,6 @@ test("renders fail when a service reports failed readiness", async () => {
   expect(await screen.findByTestId("api-status")).toHaveProperty(
     "textContent",
     "fail",
-  );
-  expect(await screen.findByTestId("daemon-status")).toHaveProperty(
-    "textContent",
-    "ok",
   );
 });
 
@@ -91,10 +74,6 @@ test("handles unreachable services", async () => {
   render(<HealthPage />);
 
   expect(await screen.findByTestId("api-status")).toHaveProperty(
-    "textContent",
-    "unreachable",
-  );
-  expect(await screen.findByTestId("daemon-status")).toHaveProperty(
     "textContent",
     "unreachable",
   );

@@ -113,7 +113,7 @@ test("lists robots with enrollment status", async () => {
   render(<RobotsPage />);
 
   expect(
-    await screen.findByRole("button", { name: "warehouse-01" }),
+    await screen.findByRole("button", { name: /warehouse-01/ }),
   ).toBeTruthy();
   expect(screen.getByText("not enrolled")).toBeTruthy();
   // Organization picker defaults to the first org.
@@ -160,7 +160,7 @@ test("owner pairs a previously created unregistered robot", async () => {
         : undefined,
   });
   render(<RobotsPage />);
-  await screen.findByRole("button", { name: "warehouse-01" });
+  await screen.findByRole("button", { name: /warehouse-01/ });
   await userEvent.type(
     screen.getByLabelText(/pairing code/i),
     "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ",
@@ -225,7 +225,7 @@ test("owner issues an enrollment token shown exactly once", async () => {
   render(<RobotsPage />);
 
   await userEvent.click(
-    await screen.findByRole("button", { name: "warehouse-01" }),
+    await screen.findByRole("button", { name: /warehouse-01/ }),
   );
   await userEvent.click(
     await screen.findByRole("button", { name: /issue enrollment token/i }),
@@ -268,7 +268,7 @@ test("owner rotates and revokes credentials", async () => {
   render(<RobotsPage />);
 
   await userEvent.click(
-    await screen.findByRole("button", { name: "warehouse-01" }),
+    await screen.findByRole("button", { name: /warehouse-01/ }),
   );
   await screen.findByText("Robot detail");
 
@@ -295,12 +295,14 @@ test("device status inspector shows observed presence", async () => {
   render(<RobotsPage />);
 
   await userEvent.click(
-    await screen.findByRole("button", { name: "warehouse-01" }),
+    await screen.findByRole("button", { name: /warehouse-01/ }),
   );
   const panel = await screen.findByTestId("device-status");
 
   expect(panel.textContent).toContain("online");
-  expect(panel.textContent).toContain("2026-11-10T09:00:14Z");
+  expect(
+    panel.querySelector('time[datetime="2026-11-10T09:00:14Z"]'),
+  ).toBeTruthy();
   expect(panel.textContent).toContain("0.1.0");
   expect(panel.textContent).toContain("v1");
 });
@@ -318,12 +320,12 @@ test("device status inspector shows never-connected robots as offline", async ()
   render(<RobotsPage />);
 
   await userEvent.click(
-    await screen.findByRole("button", { name: "warehouse-01" }),
+    await screen.findByRole("button", { name: /warehouse-01/ }),
   );
   const panel = await screen.findByTestId("device-status");
 
   expect(panel.textContent).toContain("offline");
-  expect(panel.textContent).toContain("never");
+  expect(panel.textContent).toContain("Never seen");
 });
 
 test("non-owner members see a read-only view", async () => {
@@ -331,7 +333,7 @@ test("non-owner members see a read-only view", async () => {
   render(<RobotsPage />);
 
   await userEvent.click(
-    await screen.findByRole("button", { name: "warehouse-01" }),
+    await screen.findByRole("button", { name: /warehouse-01/ }),
   );
   await screen.findByText("Robot detail");
 

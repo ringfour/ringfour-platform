@@ -7,8 +7,8 @@ import stat
 from pathlib import Path
 
 MAX_FILES = 16
-MAX_FILE_BYTES = 262144
-MAX_TOTAL_BYTES = 1048576
+MAX_EXACT_SIZE = 9007199254740991
+MIN_FREE_BYTES = 268435456
 
 
 class ArtifactError(Exception):
@@ -48,7 +48,7 @@ def open_regular_under(root, relative):
         os.close(current)
 
 
-def collect(root, destination):
+def collect(root, destination, min_free_bytes=MIN_FREE_BYTES):
     """Copy and hash a bounded snapshot; publish it only when fully valid."""
     root = Path(root)
     destination = Path(destination)
@@ -58,6 +58,8 @@ def collect(root, destination):
     entries = []
     total = 0
     try:
+        if shutil.disk_usage(pending).free < min_free_bytes:
+            raise ArtifactError("Insufficient artifact storage")
         if root.is_symlink() or not root.is_dir():
             raise ArtifactError("Invalid artifact directory")
         for current, dirs, files in os.walk(root, followlinks=False):
@@ -71,15 +73,21 @@ def collect(root, destination):
                 relative = path.relative_to(root).as_posix()
                 if not valid_path(relative) or len(entries) >= MAX_FILES:
                     raise ArtifactError("Invalid artifact path or file count")
-                with open_regular_under(root, relative) as source:
-                    data = source.read(MAX_FILE_BYTES + 1)
-                total += len(data)
-                if len(data) > MAX_FILE_BYTES or total > MAX_TOTAL_BYTES:
-                    raise ArtifactError("Artifact byte limit exceeded")
                 target = pending / "files" / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
-                entries.append({"path": relative, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+                length = 0
+                checksum = hashlib.sha256()
+                with open_regular_under(root, relative) as source, target.open("xb") as output:
+                    while chunk := source.read(65536):
+                        length += len(chunk)
+                        total += len(chunk)
+                        if length > MAX_EXACT_SIZE or total > MAX_EXACT_SIZE:
+                            raise ArtifactError("Artifact size exceeds the supported exact integer range")
+                        if length % (16 * 1024 * 1024) < len(chunk) and shutil.disk_usage(pending).free < min_free_bytes + len(chunk):
+                            raise ArtifactError("Insufficient artifact storage")
+                        checksum.update(chunk)
+                        output.write(chunk)
+                entries.append({"path": relative, "size": length, "sha256": checksum.hexdigest()})
         entries.sort(key=lambda item: item["path"])
         (pending / "manifest.json").write_text(json.dumps(entries, separators=(",", ":")), encoding="utf-8")
         pending.replace(destination)

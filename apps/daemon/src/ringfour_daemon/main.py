@@ -23,7 +23,9 @@ from .local_source import reconcile as reconcile_local_source
 from .logbook import deliver as deliver_logbook
 from .pairing import run_pairing
 from .runtime_logbook import router as runtime_logbook_router
-from .scripts import run_sync
+from .runtime_artifacts import deliver as deliver_artifacts
+from .runtime_artifacts import router as runtime_artifacts_router
+from .scripts import cleanup_interrupted_stages, run_sync
 from .status_page import create_status_app
 
 
@@ -39,6 +41,7 @@ async def lifespan(app: FastAPI):
     execution_task = asyncio.create_task(reconcile_local_execution(settings))
     advertisement_task = asyncio.create_task(publish_local_endpoint(settings))
     logbook_task = asyncio.create_task(deliver_logbook(settings))
+    artifact_task = asyncio.create_task(deliver_artifacts(settings))
     agent_motion_task = asyncio.create_task(run_agent_motion(settings))
     try:
         yield
@@ -51,8 +54,9 @@ async def lifespan(app: FastAPI):
         execution_task.cancel()
         advertisement_task.cancel()
         logbook_task.cancel()
+        artifact_task.cancel()
         agent_motion_task.cancel()
-        await asyncio.gather(pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, agent_motion_task, return_exceptions=True)
+        await asyncio.gather(pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, artifact_task, agent_motion_task, return_exceptions=True)
         try:
             await task
         except asyncio.CancelledError:
@@ -63,12 +67,14 @@ def create_app(settings: Settings | None = None, http_client_factory=None) -> Fa
     settings = settings or Settings.from_env()
     migrate(settings.db_path)
     check_device_state(settings.db_path, settings.credential_path)
+    cleanup_interrupted_stages(settings.stage_dir)
     app = FastAPI(title="ringfour-daemon", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.http_client_factory = http_client_factory or (lambda: httpx.Client(timeout=2.0))
     app.include_router(health_router)
     app.include_router(enrollment_router)
     app.include_router(runtime_logbook_router)
+    app.include_router(runtime_artifacts_router)
     return app
 
 

@@ -67,14 +67,16 @@ test("Runner artifact fixtures enforce bounds", async () => {
   assert.ok(list(listing));
   assert.ok(chunk(output));
   assert.equal(list({ ...listing, artifacts: Array(17).fill(listing.artifacts[0]) }), false);
-  assert.equal(chunk({ ...output, next_offset: 262145 }), false);
+  assert.equal(chunk({ ...output, next_offset: 262145 }), true);
+  assert.equal(chunk({ ...output, next_offset: 9007199254740992 }), false);
 });
 
 test("script revision request enforces upload bounds", async () => {
   const validate = await validatorFor("schemas/scripts/v1/create-revision-request.schema.json");
   const request = await loadJson("fixtures/scripts/v1/create-revision.json");
   assert.ok(validate(request));
-  assert.equal(validate({ ...request, archive_size: 1048577 }), false);
+  assert.equal(validate({ ...request, archive_size: 2147483648 }), true);
+  assert.equal(validate({ ...request, archive_size: 9007199254740992 }), false);
   assert.equal(validate({ ...request, archive_sha256: "wrong" }), false);
   assert.equal(validate({ ...request, unexpected: true }), false);
 });
@@ -502,6 +504,12 @@ test("development session proposal fixtures and source bounds validate", async (
     assert.ok(validate(fixture), `${name}: ${JSON.stringify(validate.errors)}`);
     assert.equal(validate({ ...fixture, unexpected: true }), false);
   }
+  const status = await validatorFor("schemas/dev-sessions/v1/local-status.schema.json");
+  const localStatus = await loadJson("fixtures/dev-sessions/v1/local-status.json");
+  assert.ok(status({ ...localStatus, generation: 25, report_pending: 25 }));
+  const restart = await validatorFor("schemas/dev-sessions/v1/restart-request.schema.json");
+  assert.ok(restart({ generation: 25 }));
+  assert.equal(restart({ generation: 2147483648 }), false);
   const source = await validatorFor("schemas/dev-sessions/v1/source-request.schema.json");
   const input = await loadJson("fixtures/dev-sessions/v1/source-request.json");
   assert.equal(source({ ...input, base_generation: -1 }), false);
@@ -524,6 +532,7 @@ test("development session proposal fixtures and source bounds validate", async (
 
 test("proposed Logbook event and batch fixtures enforce the allowlisted payload", async () => {
   await validatorFor("schemas/logbook/v1/agent-motion-event.schema.json");
+  await validatorFor("schemas/logbook/v2/device-event.schema.json");
   const event = await validatorFor("schemas/logbook/v1/device-event.schema.json");
   const batch = await validatorFor("schemas/logbook/v1/device-batch.schema.json");
   const checkpoint = await validatorFor("schemas/logbook/v1/device-checkpoint.schema.json");
@@ -546,6 +555,18 @@ test("proposed Logbook event and batch fixtures enforce the allowlisted payload"
   for (const name of ["sequence-gap", "event-conflict"]) {
     assert.ok(error(await loadJson(`fixtures/logbook/v1/error-${name}.json`)));
   }
+});
+
+test("live artifact publication and Logbook evidence are versioned", async () => {
+  const publish = await validatorFor("schemas/artifacts/v1/runtime-publish-request.schema.json");
+  const artifact = await validatorFor("schemas/artifacts/v1/artifact.schema.json");
+  const entry = await validatorFor("schemas/logbook/v2/runtime-entry-request.schema.json");
+  const id = "123e4567-e89b-12d3-a456-426614174000";
+  assert.ok(publish({ artifact_id: id, path: "photo.png", content_type: "image/png" }));
+  assert.ok(artifact({ artifact_id: id, path: "photo.png", size: 3, sha256: "0".repeat(64), content_type: "image/png", state: "available" }));
+  assert.ok(entry({ entry_id: id, level: "info", message: "Photo captured", fields: {}, evidence: [id] }));
+  assert.equal(publish({ artifact_id: id, path: "../photo.png", content_type: "image/png" }), false);
+  assert.equal(entry({ entry_id: id, level: "info", message: "Photo captured", fields: {}, evidence: [id, id] }), false);
 });
 
 test("proposed mission Logbook entries preserve author fields and reject forged context", async () => {

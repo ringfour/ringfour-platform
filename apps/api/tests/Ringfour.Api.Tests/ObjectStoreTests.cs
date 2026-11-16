@@ -39,6 +39,53 @@ public class ObjectStoreTests
         }
     }
 
+    [Fact]
+    public async Task FilesystemFileTransfersAreStreamedAndPublishAtomically()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ringfour-stream-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            IObjectStore store = new FileObjectStore(Path.Combine(root, "store"));
+            var source = Path.Combine(root, "source");
+            var payload = new byte[3 * 1024 * 1024];
+            Random.Shared.NextBytes(payload);
+            await File.WriteAllBytesAsync(source, payload);
+            await store.PutFileAsync("revisions/one", source, CancellationToken.None);
+            using var copied = new MemoryStream();
+            await store.CopyToAsync("revisions/one", copied, CancellationToken.None);
+            Assert.Equal(payload, copied.ToArray());
+            await Assert.ThrowsAsync<FileNotFoundException>(() => store.PutFileAsync("revisions/one", Path.Combine(root, "missing"), CancellationToken.None));
+            using var afterFailure = new MemoryStream();
+            await store.CopyToAsync("revisions/one", afterFailure, CancellationToken.None);
+            Assert.Equal(payload, afterFailure.ToArray());
+            Assert.Empty(Directory.GetFiles(Path.Combine(root, "store", "revisions"), "*.tmp"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task InterruptedFileCleanupRemovesOnlyOldRecognizedTemporaryFiles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ringfour-cleanup-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var incoming = Directory.CreateDirectory(Path.Combine(root, "incoming")).FullName;
+            var stale = Path.Combine(incoming, Guid.NewGuid().ToString("N") + "." + Guid.NewGuid().ToString("N") + ".tmp");
+            var fresh = Path.Combine(incoming, Guid.NewGuid().ToString("N") + "." + Guid.NewGuid().ToString("N") + ".tmp");
+            var unrelated = Path.Combine(root, "notes.tmp");
+            foreach (var path in new[] { stale, fresh, unrelated }) await File.WriteAllTextAsync(path, "data");
+            File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddDays(-3));
+            File.SetLastWriteTimeUtc(unrelated, DateTime.UtcNow.AddDays(-3));
+            await new FileObjectStore(root).CleanupInterruptedAsync(DateTimeOffset.UtcNow.AddDays(-2), CancellationToken.None);
+            Assert.False(File.Exists(stale));
+            Assert.True(File.Exists(fresh));
+            Assert.True(File.Exists(unrelated));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Theory]
     [InlineData("../secret")]
     [InlineData("/absolute")]

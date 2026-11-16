@@ -25,7 +25,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _request(message: str, fields: dict) -> tuple[str, bytes]:
+def _request(message: str, fields: dict, evidence: tuple[str, ...]) -> tuple[str, bytes]:
     if not isinstance(message, str) or not message.strip() or "\x00" in message or len(message) > 500:
         raise LogbookError("Logbook message must contain 1–500 characters.")
     if len(fields) > 16:
@@ -42,9 +42,19 @@ def _request(message: str, fields: dict) -> tuple[str, bytes]:
         if type(value) is float and math.isfinite(value) and abs(value) <= 2 ** 53 - 1:
             continue
         raise LogbookError("Logbook fields must be bounded strings or JSON scalars.")
+    if len(evidence) > 16 or len(set(evidence)) != len(evidence):
+        raise LogbookError("Logbook evidence allows at most 16 unique artifact IDs.")
+    try:
+        if any(str(uuid.UUID(item)) != item for item in evidence):
+            raise ValueError
+    except (ValueError, AttributeError):
+        raise LogbookError("Logbook evidence must contain lowercase artifact UUIDs.") from None
     entry_id = str(uuid.uuid4())
     try:
-        body = json.dumps({"entry_id": entry_id, "level": "info", "message": message, "fields": fields},
+        value = {"entry_id": entry_id, "level": "info", "message": message, "fields": fields}
+        if evidence:
+            value["evidence"] = list(evidence)
+        body = json.dumps(value,
                           ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
     except (TypeError, ValueError, UnicodeError):
         raise LogbookError("Logbook entry cannot be encoded as JSON.") from None
@@ -53,13 +63,13 @@ def _request(message: str, fields: dict) -> tuple[str, bytes]:
     return entry_id, body
 
 
-def info(message: str, **fields: object) -> str:
+def info(message: str, *, evidence: list[str] | tuple[str, ...] = (), **fields: object) -> str:
     """Record one meaningful entry and return its ID after local durable acknowledgement.
 
     Raises LogbookError when running outside a configured Ringfour execution or
     if the runtime rejects the entry. A transport retry uses the same entry ID.
     """
-    entry_id, body = _request(message, fields)
+    entry_id, body = _request(message, fields, tuple(evidence))
     base = os.environ.get("RINGFOUR_LOGBOOK_URL", "")
     token = os.environ.get("RINGFOUR_LOGBOOK_TOKEN", "")
     try:

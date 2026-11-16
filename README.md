@@ -31,14 +31,14 @@ apps/api/                            # .NET solution, API project and xUnit test
   tests/Ringfour.Api.Tests/          # unit and Testcontainers coverage
 apps/{daemon,runner,cli,console}/     # independently packaged applications
 packages/contracts/                  # OpenAPI + JSON Schema and fixtures
-infra/{compose,balena}/
+infra/{server,compose,balena}/           # server, legacy integration, robot deployment
 tests/e2e/
 docs/architecture.md
 docs/milestones/
 AGENTS.md
 ```
 
-Applications communicate through versioned contracts, never imports of another application's implementation. The Ringfour SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts.
+Applications communicate through versioned contracts, never imports of another application's implementation. The Ringfour SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. `../ringfour-virtual` owns the local Base101 simulator/device stack and builds those projects from source. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts.
 
 ## Reading and execution order
 

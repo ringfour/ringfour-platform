@@ -55,7 +55,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasOne(item => item.Operation).WithMany().HasForeignKey(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
             entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "local_sequence BETWEEN 1 AND 9007199254740991"));
             entity.ToTable(table => table.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL))"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)"));
         });
         modelBuilder.Entity<LogbookCheckpoint>(entity =>
         {
@@ -88,7 +88,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(item => item.Operation).WithOne().HasForeignKey<DevSessionRun>(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
             entity.ToTable(table => table.HasCheckConstraint("ck_dev_run_state", "state IN ('queued','preparing','running','succeeded','failed','cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_run_generation", "generation BETWEEN 1 AND 20"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_dev_run_generation", "generation > 0"));
         });
         modelBuilder.Entity<DevLocalEndpoint>(entity =>
         {
@@ -279,6 +279,8 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.Property(execution => execution.UpdatedAt).HasColumnName("updated_at");
             entity.Property(execution => execution.ExitCode).HasColumnName("exit_code");
             entity.Property(execution => execution.Error).HasColumnName("error").HasColumnType("jsonb");
+            entity.Property(execution => execution.ArtifactState).HasColumnName("artifact_state");
+            entity.Property(execution => execution.ArtifactError).HasColumnName("artifact_error").HasColumnType("jsonb");
             entity.Property(execution => execution.Stdout).HasColumnName("stdout");
             entity.Property(execution => execution.Stderr).HasColumnName("stderr");
             entity.Property(execution => execution.StdoutTruncated).HasColumnName("stdout_truncated");
@@ -292,18 +294,25 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.ToTable(table => table.HasCheckConstraint("ck_execution_mission_attribution", "(deployment_id IS NULL) = (mission_revision_id IS NULL)"));
             entity.HasOne(execution => execution.Operation).WithOne().HasForeignKey<ScriptExecution>(execution => execution.Id).OnDelete(DeleteBehavior.Restrict);
             entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_state", "state IN ('queued', 'preparing', 'running', 'succeeded', 'failed', 'cancelled')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_artifact_state", "artifact_state IN ('unknown', 'pending', 'uploading', 'ready', 'failed')"));
             entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_output", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536"));
         });
         modelBuilder.Entity<ScriptArtifact>(entity =>
         {
             entity.ToTable("script_artifacts");
             entity.HasKey(artifact => new { artifact.ExecutionId, artifact.Path });
+            entity.Property(artifact => artifact.Id).HasColumnName("id");
             entity.Property(artifact => artifact.ExecutionId).HasColumnName("execution_id");
             entity.Property(artifact => artifact.Path).HasColumnName("path");
             entity.Property(artifact => artifact.Size).HasColumnName("size");
             entity.Property(artifact => artifact.Sha256).HasColumnName("sha256");
+            entity.Property(artifact => artifact.ContentType).HasColumnName("content_type");
+            entity.Property(artifact => artifact.State).HasColumnName("state");
+            entity.HasIndex(artifact => artifact.Id).IsUnique();
             entity.HasOne(artifact => artifact.Execution).WithMany().HasForeignKey(artifact => artifact.ExecutionId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_size", "size BETWEEN 0 AND 262144"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_size", "size BETWEEN 0 AND 9007199254740991"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_content_type", "content_type IN ('image/jpeg', 'image/png', 'application/octet-stream')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_state", "state IN ('pending', 'uploading', 'available', 'failed')"));
         });
         modelBuilder.Entity<ScriptRevision>(entity =>
         {
@@ -330,7 +339,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasOne(revision => revision.Organization).WithMany().HasForeignKey(revision => revision.OrganizationId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(revision => revision.CreatedBy).WithMany().HasForeignKey(revision => revision.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
             entity.ToTable(table => table.HasCheckConstraint("ck_script_revision_state", "(state = 'uploading' AND finalized_at IS NULL) OR (state = 'ready' AND finalized_at IS NOT NULL)"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_revision_size", "archive_size BETWEEN 1 AND 1048576"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_script_revision_size", "archive_size BETWEEN 1 AND 9007199254740991"));
         });
         modelBuilder.Entity<User>(entity =>
         {

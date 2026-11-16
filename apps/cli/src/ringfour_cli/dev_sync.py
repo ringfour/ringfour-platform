@@ -123,7 +123,7 @@ def build_snapshot(directory: Path, prior_paths: list[str], generation: int):
                 files[relative] = value
         if entrypoint not in files:
             raise ValueError("Mission entrypoint is missing or excluded.")
-        if type(generation) is not int or not 0 <= generation <= 20 or not isinstance(prior_paths, list) or any(not _valid_relative(item) for item in prior_paths) or len(set(prior_paths)) != len(prior_paths):
+        if type(generation) is not int or not 0 <= generation < 2147483647 or not isinstance(prior_paths, list) or any(not _valid_relative(item) for item in prior_paths) or len(set(prior_paths)) != len(prior_paths):
             raise ValueError("Daemon returned invalid source state.")
         bundle = pack_bundle(files, entrypoint)
         with zipfile.ZipFile(io.BytesIO(bundle.archive)) as archive:

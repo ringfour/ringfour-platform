@@ -179,6 +179,16 @@ public sealed class LogbookIngestionTests(PostgresFixture postgres)
         var filtered = (await owner.GetFromJsonAsync<JsonObject>($"{historyUrl}?execution_id={execution}"))!;
         Assert.Single(filtered["items"]!.AsArray());
         Assert.Equal("Inspection skipped", filtered["items"]![0]!["payload"]!["message"]!.GetValue<string>());
+        var evidenceId = Guid.NewGuid();
+        var withEvidence = (JsonObject)authored.DeepClone();
+        withEvidence["event_id"] = Guid.NewGuid().ToString(); withEvidence["local_sequence"] = 5;
+        withEvidence["schema_version"] = 2;
+        withEvidence["payload"]!["evidence"] = new JsonArray(evidenceId.ToString());
+        Assert.Equal(HttpStatusCode.OK, (await device.PostAsJsonAsync(url, Batch(withEvidence))).StatusCode);
+        var evidenceHistory = (await owner.GetFromJsonAsync<JsonObject>($"{historyUrl}?execution_id={execution}"))!["items"]!.AsArray();
+        Assert.Equal(2, evidenceHistory.Count);
+        Assert.Equal(2, evidenceHistory[1]!["schema_version"]!.GetValue<int>());
+        Assert.Equal(evidenceId.ToString(), evidenceHistory[1]!["payload"]!["evidence"]![0]!.GetValue<string>());
         Assert.Equal(HttpStatusCode.BadRequest, (await owner.GetAsync($"{historyUrl}?limit=101")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await owner.GetAsync($"{historyUrl}?cursor=bad")).StatusCode);
         var oversized = new StringContent(new string('x', 65537), Encoding.UTF8, "application/json");

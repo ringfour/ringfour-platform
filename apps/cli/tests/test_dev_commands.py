@@ -5,10 +5,9 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from typer.testing import CliRunner
-
 from ringfour_cli import dev_sync, main
 from ringfour_cli.mission_context import read_context
+from typer.testing import CliRunner
 
 
 @pytest.fixture
@@ -223,3 +222,10 @@ def test_restart_rejects_source_generation_mismatch(project, monkeypatch):
     result = CliRunner().invoke(main.app, ["dev", "restart"])
     assert result.exit_code == 1
     assert "generations do not match" in result.output
+
+
+def test_snapshot_generation_above_twenty_is_supported(project):
+    body = dev_sync.build_snapshot(project, [], 25)
+    assert body["base_generation"] == 25
+    with pytest.raises(ValueError):
+        dev_sync.build_snapshot(project, [], 2147483647)

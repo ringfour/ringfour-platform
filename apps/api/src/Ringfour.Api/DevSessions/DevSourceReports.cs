@@ -29,7 +29,7 @@ public static class DevSourceReports
             body["grant_id"] is not JsonValue grantValue || !grantValue.TryGetValue<string>(out var grantText) ||
             !Guid.TryParseExact(grantText, "D", out var grantId) || grantId.ToString() != grantText ||
             body["base_generation"] is not JsonValue baseValue || !baseValue.TryGetValue<int>(out var baseline) || baseline < 0 ||
-            body["generation"] is not JsonValue numberValue || !numberValue.TryGetValue<int>(out var number) || (long)number != (long)baseline + 1 || number > 20 ||
+            body["generation"] is not JsonValue numberValue || !numberValue.TryGetValue<int>(out var number) || (long)number != (long)baseline + 1 ||
             body["archive_size"] is not JsonValue sizeValue || !sizeValue.TryGetValue<int>(out var size) || size is < 1 or > 1048576 ||
             body["archive_sha256"] is not JsonValue hashValue || !hashValue.TryGetValue<string>(out var hash) || !Digest.IsMatch(hash) ||
             body["lock_sha256"] is not JsonValue lockValue || !lockValue.TryGetValue<string>(out var lockHash) || !Digest.IsMatch(lockHash))

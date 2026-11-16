@@ -38,7 +38,7 @@ def prepare(settings, session_id, grant_id, key, body):
     if not isinstance(key, str) or not key.strip() or len(key) > 200:
         raise ValueError("invalid_key")
     expected = {"base_generation", "archive_sha256", "archive_size", "archive_base64", "manifest"}
-    if not isinstance(body, dict) or set(body) != expected or type(body["base_generation"]) is not int or body["base_generation"] < 0:
+    if not isinstance(body, dict) or set(body) != expected or type(body["base_generation"]) is not int or not 0 <= body["base_generation"] < 2147483647:
         raise ValueError("invalid_source")
     if ((type(body["archive_size"]) is int and body["archive_size"] > source_validation.MAX_ARCHIVE)
             or (isinstance(body["archive_base64"], str) and len(body["archive_base64"]) > 1398104)):
@@ -74,8 +74,6 @@ def prepare(settings, session_id, grant_id, key, body):
         generation = previous["generation"] if previous else 0
         if body["base_generation"] != generation:
             raise ValueError("stale_generation")
-        if generation >= 20:
-            raise ValueError("capacity_exceeded")
         prior_paths = {item["path"] for item in json.loads(previous["manifest"])["files"]} if previous else set()
         if set(body["manifest"]["deleted_paths"]) != prior_paths - files.keys():
             raise ValueError("invalid_source")
@@ -141,6 +139,11 @@ async def process(settings, operation_id):
             async with httpx.AsyncClient(base_url=settings.runner_url, headers={"authorization": f"Bearer {settings.runner_auth_token}"}, timeout=20) as client:
                 response = await client.post("/v1/dev-sessions/sync", json=payload)
                 if response.status_code >= 500:
+                    try:
+                        if response.json().get("error", {}).get("code") == "insufficient_storage":
+                            return {"error": "insufficient_storage"}
+                    except (ValueError, TypeError, AttributeError):
+                        pass
                     return None
                 if response.status_code != 200:
                     try:

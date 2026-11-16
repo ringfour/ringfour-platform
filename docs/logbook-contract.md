@@ -1,6 +1,6 @@
 # Logbook — meaningful mission and robot history
 
-Status: **mission-authored entries, selected Agent motion records and Console history locally integrated; motion coverage and CLI remain incomplete**. These are new Ringfour interfaces, separate from the
+Status: **mission-authored entries, selected Agent motion records and live-polling Console history locally integrated; motion coverage and CLI remain incomplete**. These are new Ringfour interfaces, separate from the
 Agent API. Milestone 07 remains incomplete; its artifact, credential and
 retention work and outstanding acceptance gates are not satisfied by this work.
 
@@ -95,24 +95,28 @@ execution returns 409. Once acknowledged and 24 hours old, replay records can
 be collected. Retention is bounded to 8192 records; if the queue or replay
 capacity is exhausted, new entries return 503 rather than reporting success.
 
-The request permits at most 16 named fields; values are JSON scalars and strings
-are bounded. Nested objects, arrays, arbitrary execution identity and extra
-properties are rejected. The request limit is 8192 UTF-8 bytes. This is the
-first proposed entry type, not a claim that other levels or richer fields exist.
-The device event `mission.logbook.entry` carries the author payload, execution
-ID and its associated durable start/restart operation ID. Its event ID is the
-entry ID. PostgreSQL stores the execution ID and JSON payload separately from
-the prototype state, checks that the execution and operation belong together
-and to the robot, and derives the human actor and revision from the associated
-hosted execution. Development executions refer to their restart operation and
-do not imply a production revision. Existing operation-state prototype records
-remain readable and are not emitted automatically. Local SQLite stores the
-payload in the existing sequence stream and retains a bounded entry-ID/replay
-record after acknowledgement, so a lost response cannot append the entry twice.
-The outbox event limit is 12288 UTF-8 bytes, while the author request remains
-capped at 8192 bytes. Strings cannot contain NUL, and numeric values must be
-finite and no larger in magnitude than 9007199254740991; these limits prevent
-entries accepted locally from becoming unstoreable on the Platform.
+The version 1 request permits at most 16 named fields; values are JSON scalars
+and strings are bounded. Nested objects, arrays, arbitrary execution identity
+and extra properties are rejected. The request limit is 8192 UTF-8 bytes.
+Version 2 adds an `evidence` array of at most 16 unique artifact UUIDs; all other
+request bounds remain. The version 2 device event carries that payload with the
+author entry, execution ID and associated durable start/restart operation ID.
+Its event ID is the entry ID. PostgreSQL stores the execution ID and JSON
+payload separately from the prototype state, checks that the execution and
+operation belong together and to the robot, and derives the human actor and
+revision from the associated hosted execution. Development executions refer to
+their restart operation and do not imply a production revision. Existing
+operation-state prototype records remain readable and are not emitted
+automatically. Local SQLite stores the payload in the existing sequence stream
+and retains a bounded entry-ID/replay record after acknowledgement, so a lost
+response cannot append the entry twice. The outbox event limit is 12288 UTF-8
+bytes, while the author request remains capped at 8192 bytes. Strings cannot
+contain NUL, and numeric values must be finite and no larger in magnitude than
+9007199254740991; these limits prevent entries accepted locally from becoming
+unstorable on the Platform. The PostgreSQL `ck_logbook_version` constraint
+allows schema version 2 only for mission-authored entries; migration
+`20261116154130_LogbookEvidenceVersion` adds this rule while preserving the
+version 1 operation and Agent event checks.
 
 ## Existing Agent audit interface and integration gap
 
@@ -232,12 +236,21 @@ history. Mission-author calls return an explicit error when capacity is full.
 Logbook is a first-class Console destination with its own sidebar item. Its
 view must use the authorized organization-scoped history API rather than test
 fixtures, and expose entry content and available robot, execution and actor
-context. The initial history query and Console sidebar/detail view are implemented. A test
-mission must exercise the shipped capabilities using the separately installed
-runtime package and the real SDK, without assuming that a lifted robot's sensor
-readings or odometry change; physical movement is not required to verify authored
-entries. Automatic motion examples must wait for the Agent handoff and report
-only events actually observed.
+context. The initial history query and Console sidebar/detail view are implemented.
+While an execution or unlinked robot timeline is selected, Console reloads all
+matching history pages every three seconds. It permits only one history request
+at a time, retains the last successful snapshot when a refresh fails, reports
+the failure, and clears the timer when the selection changes or the component
+unmounts. Polling is a bounded v0.1 presentation choice, not a realtime delivery
+guarantee; the manual refresh still reloads the execution catalog.
+
+The 08a live-history slice reuses the existing runtime entry, device ingestion,
+and organization history contracts without changing their schemas or state
+transitions. A test mission must exercise the shipped capabilities using the
+separately installed runtime package and the real SDK, without assuming that a
+lifted robot's sensor readings or odometry change; physical movement is not
+required to verify authored entries. Automatic motion examples must wait for
+the Agent handoff and report only events actually observed.
 
 ### Initial history query
 

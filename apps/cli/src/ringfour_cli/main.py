@@ -3,6 +3,8 @@ import codecs
 import hashlib
 import os
 import secrets
+import shutil
+import tempfile
 import time
 import tomllib
 import uuid
@@ -170,7 +172,8 @@ def _api_request(
         console.print("[red]Not logged in. Run `ringfour-cli login` first.[/red]")
         raise typer.Exit(code=1)
     extra_headers = kwargs.pop("headers", {})
-    with httpx.Client(base_url=settings.api_url, timeout=15.0) as client:
+    request_timeout = kwargs.pop("_timeout", 15.0)
+    with httpx.Client(base_url=settings.api_url, timeout=request_timeout) as client:
         response = client.request(
             method, path, headers={**extra_headers, "Authorization": f"Bearer {tokens['access_token']}"}, **kwargs
         )
@@ -294,12 +297,37 @@ def _pages(path: str, settings, store):
             break
 
 
+class _MissionArchiveStream(httpx.SyncByteStream):
+    def __init__(self, archive, size=0):
+        self.archive = archive
+        self.size = size
+
+    def __iter__(self):
+        # Auth refresh may retry the request; each iteration starts from zero.
+        self.archive.seek(0)
+        sent = 0
+        next_report = 64 * 1024 * 1024
+        while chunk := self.archive.read(65536):
+            sent += len(chunk)
+            if self.size >= 64 * 1024 * 1024 and sent >= next_report:
+                typer.echo(f"Uploading mission: {sent * 100 // self.size}% ({sent // 1048576} MiB)", err=True)
+                next_report = sent + 64 * 1024 * 1024
+            yield chunk
+
+
 def _publish_mission(directory: Path, settings, store, org_id: str, key: str) -> dict:
     try:
-        packaged = build_mission_bundle(directory)
+        packaged = build_mission_bundle(directory, progress=lambda count: typer.echo(f"Packaging mission: {count // 1048576} MiB processed", err=True))
     except (OSError, ValueError) as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from error
+    try:
+        return _publish_packaged_mission(packaged, settings, store, org_id, key)
+    finally:
+        packaged.bundle.close()
+
+
+def _publish_packaged_mission(packaged, settings, store, org_id: str, key: str) -> dict:
     manifest, bundle = packaged.manifest, packaged.bundle
     missions = _pages(f"/v1/organizations/{org_id}/missions", settings, store)
     mission = next((item for item in missions if item["name"] == manifest["name"]), None)
@@ -318,9 +346,11 @@ def _publish_mission(directory: Path, settings, store, org_id: str, key: str) ->
         console.print("[red]The Platform returned an invalid revision response.[/red]")
         raise typer.Exit(1) from error
     if revision["state"] != "ready":
-        _api_request("PUT", revision["upload_url"], settings, store, content=bundle.archive,
-            headers={"Content-Type": "application/zip"})
-        _api_request("POST", f"/v1/script-revisions/{source_id}/finalize", settings, store)
+        _api_request("PUT", revision["upload_url"], settings, store, content=_MissionArchiveStream(bundle.archive, bundle.archive_size),
+            headers={"Content-Type": "application/zip", "Content-Length": str(bundle.archive_size)},
+            _timeout=httpx.Timeout(None, connect=15.0, write=300.0))
+        _api_request("POST", f"/v1/script-revisions/{source_id}/finalize", settings, store,
+            _timeout=httpx.Timeout(None, connect=15.0, write=300.0))
     # A retry may follow a successful publish whose response was lost. Reuse its
     # original expected version so the server can validate the idempotency key.
     existing = next((item for item in _pages(f"/v1/missions/{mission['id']}/revisions", settings, store)
@@ -463,7 +493,8 @@ def mission_push(directory: Path, robot: str | None = typer.Option(None, "--robo
     console.print_json(data={"mission_revision_id": revision["id"], **body})
     if start:
         typer.echo(f"Waiting for preparation on {robot_name or target}…", err=True)
-        deadline = time.monotonic() + 600
+        deadline = time.monotonic() + 86400
+        next_report = time.monotonic() + 60
         while time.monotonic() < deadline:
             current = _api_request("GET", f"/v1/deployments/{body['deployment_id']}", settings, store).json()
             if current.get("candidate_revision_id") is None:
@@ -472,6 +503,9 @@ def mission_push(directory: Path, robot: str | None = typer.Option(None, "--robo
                     console.print(f"[red]Preparation did not select this revision: {error.get('message', 'check deployment status')}[/red]")
                     raise typer.Exit(1)
                 break
+            if time.monotonic() >= next_report:
+                typer.echo("Preparation is still in progress; see the robot daemon for transfer details.", err=True)
+                next_report = time.monotonic() + 60
             time.sleep(1)
         else:
             console.print("[red]Preparation is still pending; use status to check it. The mission was not started.[/red]")
@@ -611,16 +645,54 @@ def artifact_download(execution_id: str, path: str, output: Path = typer.Option(
     if item is None:
         console.print("[red]Artifact not found.[/red]")
         raise typer.Exit(1)
-    data = _api_request("GET", f"/v1/executions/{execution_id}/artifacts/content", settings, store, params={"path": path}).content
-    if len(data) != item["size"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
-        console.print("[red]Downloaded artifact failed verification.[/red]")
+    if type(item.get("size")) is not int or not 0 <= item["size"] <= 9007199254740991:
+        console.print("[red]Server returned an invalid artifact size.[/red]")
         raise typer.Exit(1)
+    tokens = store.load(settings)
+    if tokens is None:
+        console.print("[red]Not logged in. Run `ringfour-cli login` first.[/red]")
+        raise typer.Exit(1)
+    temporary = None
     try:
-        with output.open("xb") as target:
-            target.write(data)
-    except OSError as error:
-        console.print(f"[red]Cannot write artifact: {error}[/red]")
+        if output.exists():
+            raise FileExistsError(f"{output} already exists")
+        if shutil.disk_usage(output.parent).free < item["size"] + 268435456:
+            raise OSError("Not enough free space to download the artifact")
+        with tempfile.NamedTemporaryFile(mode="w+b", dir=output.parent, prefix=".ringfour-artifact-", delete=False) as target:
+            temporary = Path(target.name)
+            with httpx.Client(base_url=settings.api_url, timeout=httpx.Timeout(None, connect=15, write=300)) as client:
+                for attempt in range(2):
+                    with client.stream("GET", f"/v1/executions/{execution_id}/artifacts/content", params={"path": path},
+                                       headers={"Authorization": f"Bearer {tokens['access_token']}"}) as response:
+                        if response.status_code == 401 and attempt == 0:
+                            tokens = auth.refresh_tokens(client, settings, tokens)
+                            store.save(settings, tokens)
+                            continue
+                        response.raise_for_status()
+                        checksum = hashlib.sha256()
+                        length = 0
+                        next_report = 64 * 1024 * 1024
+                        for chunk in response.iter_bytes(65536):
+                            length += len(chunk)
+                            if length > item["size"]:
+                                raise ValueError("Downloaded artifact exceeds its declared size")
+                            target.write(chunk)
+                            checksum.update(chunk)
+                            if length >= next_report:
+                                typer.echo(f"Downloading artifact: {length // 1048576} MiB", err=True)
+                                next_report = length + 64 * 1024 * 1024
+                        if length != item["size"] or checksum.hexdigest() != item["sha256"]:
+                            raise ValueError("Downloaded artifact failed verification")
+                        break
+            target.flush()
+            os.fsync(target.fileno())
+        os.link(temporary, output)  # Atomic publication without replacing an existing file.
+    except (OSError, ValueError, httpx.HTTPError, auth.DeviceAuthError) as error:
+        console.print(f"[red]Cannot download artifact: {error}[/red]")
         raise typer.Exit(1) from error
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     console.print(f"Saved {output}")
 
 
@@ -669,11 +741,19 @@ def login(
 
 @app.command()
 def logout() -> None:
-    """Remove stored credentials from the OS credential store."""
+    """Remove stored credentials and the selected organization."""
     settings = _settings()
     store = auth.TokenStore()
-    if store.clear(settings):
+    had_credentials = store.clear(settings)
+    had_selected_org = selected_org(settings) is not None
+    if had_selected_org:
+        update_config(settings, selected_org=None)
+    if had_credentials and had_selected_org:
+        console.print("[green]Logged out and cleared the selected organization.[/green]")
+    elif had_credentials:
         console.print("[green]Logged out.[/green]")
+    elif had_selected_org:
+        console.print("[green]Cleared the selected organization.[/green]")
     else:
         console.print("No stored credentials.")
 
@@ -1239,7 +1319,7 @@ def dev_restart(
     try:
         status, source = local_request(*connection, "GET", f"/v1/local/dev-sessions/{session_id}/source")
         generation = source.get("generation") if isinstance(source, dict) else None
-        if status != 200 or type(generation) is not int or not 1 <= generation <= 20:
+        if status != 200 or type(generation) is not int or not 1 <= generation <= 2147483647:
             raise ValueError("No synced source is available; run `dev sync` first.")
         for _ in range(60):
             state = _api_request("GET", f"/v1/dev-sessions/{session_id}", settings, store).json()

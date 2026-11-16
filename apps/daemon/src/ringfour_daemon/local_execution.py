@@ -39,7 +39,7 @@ async def restart(settings, operation):
     keys = {"operation_id", "session_id", "robot_id", "generation", "execution_id"}
     if (not isinstance(payload, dict) or set(payload) != keys or payload["operation_id"] != operation.operation_id
             or payload["robot_id"] != operation.robot_id or not all(valid_id(payload[key]) for key in ("operation_id", "session_id", "robot_id", "execution_id"))
-            or type(payload["generation"]) is not int or not 1 <= payload["generation"] <= 20):
+            or type(payload["generation"]) is not int or not 1 <= payload["generation"] <= 2147483647):
         raise runner.RunnerRejected("invalid_input", "Invalid development restart.")
     if not settings.runner_auth_token:
         raise runner.RunnerRejected("runner_unauthenticated", "Runner credential unavailable.")
@@ -47,6 +47,11 @@ async def restart(settings, operation):
     async with httpx.AsyncClient(base_url=settings.runner_url, headers={"authorization": f"Bearer {settings.runner_auth_token}"}, timeout=20) as client:
         response = await client.post("/v1/dev-sessions/restart", json=payload)
         if response.status_code >= 500:
+            try:
+                if response.json().get("error", {}).get("code") == "insufficient_storage":
+                    runner.reject_response(response)
+            except (ValueError, TypeError, AttributeError):
+                pass
             response.raise_for_status()
         if response.status_code != 200:
             runner.reject_response(response)

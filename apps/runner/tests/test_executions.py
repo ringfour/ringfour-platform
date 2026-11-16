@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from ringfour_runner.artifacts import open_regular_under
 from ringfour_runner.config import Settings
 from ringfour_runner.executions import bundle_files
@@ -99,9 +98,16 @@ def test_nonzero_exit_and_restart_reconciliation(tmp_path):
         assert final["state"] == "failed" and final["exit_code"] == 7
     with sqlite3.connect(Path(settings.data_dir) / "executions.db") as conn:
         conn.execute("UPDATE executions SET state='running' WHERE execution_id=?", (body["execution_id"],))
+    execution_dir = Path(settings.data_dir) / "executions" / body["execution_id"]
+    partial = execution_dir / "artifact-snapshot.pending"
+    partial.mkdir()
+    (partial / "incomplete").write_text("partial")
+    retained = execution_dir / "artifact-output" / "recovery.txt"
+    retained.write_text("keep")
     with TestClient(create_app(settings)) as client:
         final = client.get(f"/v1/executions/{body['execution_id']}", headers=headers).json()
         assert final["state"] == "failed" and final["error"]["code"] == "interrupted_unknown_outcome"
+        assert not partial.exists() and retained.read_text() == "keep"
 
 
 def test_preparation_failure_is_explicit(tmp_path, monkeypatch):
@@ -124,6 +130,13 @@ def test_artifact_snapshot_persists_and_reads_bounded_chunks(tmp_path):
         assert wait_terminal(client, execution_id, headers)["state"] == "succeeded"
         listing = client.get(f"/v1/executions/{execution_id}/artifacts", headers=headers).json()
         assert listing["artifacts"] == [{"path": "sub/report.txt", "size": 5, "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"}]
+        download = f"/v1/executions/{execution_id}/artifacts/download"
+        assert client.get(download, params={"path": "sub/report.txt"}).status_code == 401
+        assert client.get(download, params={"path": "../secret"}, headers=headers).status_code == 400
+        assert client.get(download, params={"path": "missing"}, headers=headers).status_code == 404
+        streamed = client.get(download, params={"path": "sub/report.txt"}, headers=headers)
+        assert streamed.status_code == 200 and streamed.content == b"hello"
+        assert streamed.headers["content-length"] == "5"
         params = {"path": "sub/report.txt", "offset": 1, "limit": 2}
         chunk = client.get(f"/v1/executions/{execution_id}/artifacts/content", params=params, headers=headers).json()
         assert base64.b64decode(chunk["data_base64"]) == b"el"
@@ -135,18 +148,42 @@ def test_artifact_snapshot_persists_and_reads_bounded_chunks(tmp_path):
         assert client.get(f"/v1/executions/{execution_id}/artifacts/content", params={**params, "offset": 5}, headers=headers).json()["eof"]
 
 
+def test_live_artifact_is_immutable_idempotent_and_cleaned_after_ack(tmp_path):
+    settings, body = setup(tmp_path, "import os,pathlib,time\np=pathlib.Path(os.environ['RINGFOUR_ARTIFACT_DIR'])/'photo.png'\np.write_bytes(b'first')\ntime.sleep(60)\n")
+    headers = {"authorization": "Bearer test-secret"}
+    execution_id, artifact_id = body["execution_id"], str(uuid.uuid4())
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/v1/executions", json=body, headers=headers).status_code == 201
+        source = Path(settings.data_dir) / "executions" / execution_id / "artifact-output" / "photo.png"
+        for _ in range(100):
+            if source.exists() and client.get(f"/v1/executions/{execution_id}", headers=headers).json()["state"] == "running":
+                break
+            time.sleep(0.02)
+        request = {"artifact_id": artifact_id, "path": "photo.png", "content_type": "image/png"}
+        first = client.post(f"/v1/executions/{execution_id}/live-artifacts", json=request, headers=headers)
+        assert first.status_code == 200 and first.json()["sha256"] == hashlib.sha256(b"first").hexdigest()
+        source.write_bytes(b"changed")
+        assert client.post(f"/v1/executions/{execution_id}/live-artifacts", json=request, headers=headers).json() == first.json()
+        download = client.get(f"/v1/executions/{execution_id}/live-artifacts/{artifact_id}/download", headers=headers)
+        assert download.content == b"first" and download.headers["content-type"] == "image/png"
+        assert client.post(f"/v1/executions/{execution_id}/live-artifacts/{artifact_id}/ack", headers=headers).status_code == 204
+        assert not (Path(settings.data_dir) / "executions" / execution_id / "live-artifacts" / artifact_id).exists()
+        assert client.post(f"/v1/executions/{execution_id}/stop", headers=headers).status_code == 200
+
+
 def test_invalid_artifacts_fail_without_exposing_partial_snapshot(tmp_path):
     settings, body = setup(tmp_path, "import os,pathlib\np=pathlib.Path(os.environ['RINGFOUR_ARTIFACT_DIR'])\n(p/'good').write_text('ok')\n(p/'bad').symlink_to('/etc/passwd')\n")
     headers = {"authorization": "Bearer test-secret"}
     with TestClient(create_app(settings)) as client:
         assert client.post("/v1/executions", json=body, headers=headers).status_code == 201
         final = wait_terminal(client, body["execution_id"], headers)
-        assert final["state"] == "failed" and final["error"]["code"] == "artifact_collection_failed"
+        assert final["state"] == "succeeded" and final["exit_code"] == 0
         listing = client.get(f"/v1/executions/{body['execution_id']}/artifacts", headers=headers).json()
-        assert listing["artifacts"] == []
+        assert listing["artifacts"] == [] and listing["artifact_state"] == "failed"
+        assert listing["artifact_error"]["code"] == "artifact_collection_failed"
 
 
-def test_artifact_limits_and_not_terminal_response(tmp_path):
+def test_large_artifact_and_not_terminal_response(tmp_path):
     settings, body = setup(tmp_path, "import os,pathlib,time\np=pathlib.Path(os.environ['RINGFOUR_ARTIFACT_DIR'])\n(p/'too-big').write_bytes(b'x' * 262145)\ntime.sleep(0.5)\n")
     headers = {"authorization": "Bearer test-secret"}
     with TestClient(create_app(settings)) as client:
@@ -155,8 +192,11 @@ def test_artifact_limits_and_not_terminal_response(tmp_path):
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "execution_not_terminal"
         final = wait_terminal(client, body["execution_id"], headers)
-        assert final["state"] == "failed" and final["error"]["code"] == "artifact_collection_failed"
-        assert client.get(f"/v1/executions/{body['execution_id']}/artifacts", headers=headers).json()["artifacts"] == []
+        assert final["state"] == "succeeded"
+        listing = client.get(f"/v1/executions/{body['execution_id']}/artifacts", headers=headers).json()["artifacts"]
+        assert len(listing) == 1 and listing[0]["size"] == 262145
+        response = client.get(f"/v1/executions/{body['execution_id']}/artifacts/download", params={"path": "too-big"}, headers=headers)
+        assert hashlib.sha256(response.content).hexdigest() == listing[0]["sha256"]
 
 
 def test_artifact_open_refuses_symlinked_parent(tmp_path):
@@ -185,7 +225,7 @@ def test_script_lock_and_python_requirement(tmp_path):
         assert result["state"] == "succeeded" and result["exit_code"] == 0
 
 
-def test_execution_retention_capacity_refuses_new_work(tmp_path):
+def test_many_retained_executions_do_not_block_new_work(tmp_path):
     settings, body = setup(tmp_path, "print('hello')\n")
     with TestClient(create_app(settings)) as client:
         with sqlite3.connect(Path(settings.data_dir) / "executions.db") as conn:
@@ -193,4 +233,33 @@ def test_execution_retention_capacity_refuses_new_work(tmp_path):
                 conn.execute("INSERT INTO executions(execution_id,robot_id,request,revision_digest,state,created_at,updated_at) VALUES (?, ?, '{}', ?, 'succeeded', '2026-01-01', '2026-01-01')",
                     (str(uuid.uuid4()), body["robot_id"], body["revision_digest"]))
         response = client.post("/v1/executions", json=body, headers={"authorization": "Bearer test-secret"})
-        assert response.status_code == 503 and response.json()["error"]["code"] == "capacity_exceeded"
+        assert response.status_code == 201
+        assert wait_terminal(client, body["execution_id"], {"authorization": "Bearer test-secret"})["state"] == "succeeded"
+        with sqlite3.connect(Path(settings.data_dir) / "executions.db") as conn:
+            assert conn.execute("SELECT count(*) FROM executions").fetchone()[0] == 101
+
+
+def test_low_disk_rejects_new_execution_but_not_replay_or_stop(tmp_path, monkeypatch):
+    from ringfour_runner import executions
+
+    settings, body = setup(tmp_path, "print('hello')\n")
+    headers = {"authorization": "Bearer test-secret"}
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/v1/executions", json=body, headers=headers).status_code == 201
+        wait_terminal(client, body["execution_id"], headers)
+        monkeypatch.setattr(executions.shutil, "disk_usage", lambda _: type("Usage", (), {"free": 0})())
+        response = client.post("/v1/executions", json={**body, "execution_id": str(uuid.uuid4())}, headers=headers)
+        assert response.status_code == 503 and response.json()["error"]["code"] == "insufficient_storage"
+        assert client.post("/v1/executions", json=body, headers=headers).status_code == 200
+        assert client.post(f"/v1/executions/{body['execution_id']}/stop", headers=headers).status_code == 200
+        assert client.get("/health/ready").json()["checks"]["disk"] == "fail"
+
+
+def test_streamed_staged_copy_detects_changed_source(tmp_path):
+    from ringfour_runner.executions import copy_entry
+
+    settings, body = setup(tmp_path, "print('original')\n")
+    files, _ = bundle_files(settings, body["code_ref"], body["entrypoint"])
+    (Path(settings.stage_dir) / "test" / "main.py").write_text("print('modified')\n")
+    with pytest.raises(OSError, match="changed"):
+        copy_entry(files[0][0], files[0][1], tmp_path / "copied.py")

@@ -14,12 +14,12 @@ from packaging.version import Version
 
 from .dev_source import valid_path
 from .executions import (
-    MAX_EXECUTIONS,
     TERMINAL,
     authorize,
     connection,
     error,
     get_row,
+    has_storage,
     now,
     record_event,
     run_execution,
@@ -113,7 +113,7 @@ async def restart(request: Request):
         required = {"operation_id", "session_id", "robot_id", "generation", "execution_id"}
         if (not isinstance(body, dict) or set(body) != required or
                 not all(valid_id(body[key]) for key in ("operation_id", "session_id", "robot_id", "execution_id")) or
-                type(body["generation"]) is not int or body["generation"] < 1):
+                type(body["generation"]) is not int or not 1 <= body["generation"] <= 2147483647):
             raise ValueError("Invalid restart")
     except (ValueError, UnicodeError):
         return error(400, "invalid_input", "Invalid restart request.")
@@ -166,6 +166,8 @@ async def restart(request: Request):
             env = environments / environment_key(manifest)
         except (OSError, ValueError, KeyError, TypeError):
             return error(400, "invalid_source", "The committed generation cannot be verified.")
+        if not has_storage(settings, sum(len(data) for _, data in files)):
+            return error(503, "insufficient_storage", "Runner storage is below the configured free-space reserve.")
         if not await stop_session_execution(app, session_id):
             return error(503, "stop_pending", "The previous session execution has not stopped.")
         request_body = {"execution_id": execution_id, "robot_id": body["robot_id"], "revision_digest": digest,
@@ -176,12 +178,12 @@ async def restart(request: Request):
             conn.execute("BEGIN IMMEDIATE")
             if conn.execute("SELECT 1 FROM executions WHERE state IN ('queued','preparing','running') LIMIT 1").fetchone():
                 return error(409, "execution_conflict", "Another execution is active.")
-            if conn.execute("SELECT count(*) FROM executions").fetchone()[0] >= MAX_EXECUTIONS:
-                return error(503, "capacity_exceeded", "Execution retention capacity reached.")
+            if not has_storage(settings, sum(len(data) for _, data in files)):
+                return error(503, "insufficient_storage", "Runner storage is below the configured free-space reserve.")
             if conn.execute("SELECT 1 FROM executions WHERE execution_id=?", (execution_id,)).fetchone():
                 return error(409, "conflict", "Execution ID was already used.")
             stamp = now()
-            conn.execute("INSERT INTO executions(execution_id,robot_id,request,revision_digest,state,created_at,updated_at) VALUES (?,?,?,?,'queued',?,?)",
+            conn.execute("INSERT INTO executions(execution_id,robot_id,request,revision_digest,state,created_at,updated_at,artifact_state) VALUES (?,?,?,?,'queued',?,?,'pending')",
                          (execution_id, body["robot_id"], request_fingerprint, digest, stamp, stamp))
             conn.execute("INSERT INTO dev_execution_sessions VALUES (?,?,?)", (execution_id, session_id, body["generation"]))
             record_event(conn, execution_id, "queued", stamp)

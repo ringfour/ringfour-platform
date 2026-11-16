@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
+from .executions import has_storage
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ def live() -> dict[str, str]:
 def ready(request: Request) -> JSONResponse:
     checks = {
         "volume": _check_volume(request.app.state.settings.data_dir),
+        "disk": "ok" if has_storage(request.app.state.settings) else "fail",
         "uv": _check_uv(),
         "auth": "ok" if request.app.state.settings.auth_token else "fail",
     }

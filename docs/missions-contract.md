@@ -20,8 +20,8 @@ from the mission directory, excluding `mission.toml`, `ringfour.context.json`, h
 specified lock source; it places the lock at `requirements.lock` in the bundle.
 An existing source file named `requirements.lock` is only accepted when it is
 the selected lock file. The generated manifest's `lock_file` is therefore
-always `requirements.lock`. The same archive, file-count, per-file, total and
-canonical SHA-256 rules as milestone 05 apply. A digest in the published
+always `requirements.lock`. The current archive and canonical SHA-256 rules
+are in `scripts-contract.md`. A digest in the published
 manifest covers the packaged source files and lock, not `mission.toml`, so it
 does not depend on itself. Published manifests and revision associations are
 immutable.
@@ -193,3 +193,13 @@ context. If no matching entry exists, the CLI can recover an unambiguous matchin
 mission and deployment from the selected organization; ambiguous matches require
 `--robot`. Malformed context fails clearly; secrets and bearer tokens are never stored. These are CLI-local behavior
 changes; the Platform API and authorization remain unchanged.
+
+
+### Revision storage
+
+Finalized script revisions and their immutable metadata are retained while referenced
+by mission history or executions. There is no fixed revision-count quota. Uploads
+that never finalize are still subject to the existing abandoned-upload cleanup.
+Operators can inspect consumption in the configured object store or filesystem
+storage and PostgreSQL; an application-level usage meter and finalized-revision
+deletion policy are not yet available.

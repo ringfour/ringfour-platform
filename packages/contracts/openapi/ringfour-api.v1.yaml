@@ -456,7 +456,6 @@ paths:
         '403': { description: Insufficient role }
         '404': { description: Organization is inaccessible }
         '409': { description: Idempotency key reused for different input }
-        '503': { description: Revision retention capacity reached }
   /v1/robots/{robot_id}/executions:
     parameters:
       - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -498,7 +497,7 @@ paths:
         '403': { description: Insufficient role }
         '404': { description: Robot or revision is inaccessible }
         '409': { description: Conflicting idempotency key or active execution }
-        '503': { description: Robot is offline or retention capacity reached }
+        '503': { description: Robot is offline }
   /v1/executions/{execution_id}:
     parameters:
       - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -626,13 +625,15 @@ paths:
       - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
       - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
       - { name: sha256, in: query, required: true, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+      - { name: artifact_id, in: query, required: false, schema: { type: string, format: uuid } }
+      - { name: content_type, in: query, required: false, schema: { enum: [image/jpeg, image/png, application/octet-stream] } }
     put:
       tags: [device, scripts]
       security:
         - deviceCredentialId: []
           deviceCredentialSecret: []
       operationId: putDeviceArtifact
-      description: Authenticated by robot credential headers; identical artifact replay is idempotent.
+      description: Authenticated by robot credential headers; identical artifact replay is idempotent. artifact_id and content_type identify live publications; omission preserves the completed-execution v1 upload behavior.
       requestBody:
         required: true
         content:
@@ -643,9 +644,44 @@ paths:
         '400': { description: Invalid path or digest }
         '401': { description: Invalid machine credential }
         '404': { description: Execution is inaccessible }
-        '409': { description: Conflicting replay or new artifact after terminal state }
-        '413': { description: Artifact or total byte limit exceeded }
+        '409': { description: Conflicting replay or new artifact after artifact delivery is ready }
+        '413': { description: Artifact count or representable size exceeded }
         '503': { description: Storage is unavailable }
+  /v1/device/executions/{execution_id}/artifact-status:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [device, scripts]
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      operationId: putDeviceArtifactStatus
+      description: Records artifact delivery independently of process status. Ready is immutable; failed delivery may be retried.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state, error]
+              properties:
+                state: { type: string, enum: [uploading, ready, failed] }
+                error:
+                  oneOf:
+                    - { type: 'null' }
+                    - type: object
+                      additionalProperties: false
+                      required: [code, message]
+                      properties:
+                        code: { type: string, maxLength: 100 }
+                        message: { type: string, maxLength: 500 }
+      responses:
+        '204': { description: State recorded or matching replay }
+        '400': { description: Invalid status }
+        '401': { description: Invalid machine credential }
+        '404': { description: Execution is inaccessible }
+        '409': { description: Conflicting transition }
   /v1/device/executions/{execution_id}/status:
     parameters:
       - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -655,7 +691,7 @@ paths:
         - deviceCredentialId: []
           deviceCredentialSecret: []
       operationId: putDeviceExecutionStatus
-      description: Authenticated by robot credential headers; terminal status follows output and artifact uploads.
+      description: Authenticated by robot credential headers; terminal status follows output synchronization and is independent of artifact delivery.
       requestBody:
         required: true
         content:

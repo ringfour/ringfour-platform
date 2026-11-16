@@ -16,6 +16,12 @@ daemon_data="$name-daemon-data"
 api_data="$name-api-data"
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/ringfour-06.XXXXXXXX")
 cleanup() {
+  result=$?
+  if [ "$result" -ne 0 ]; then
+    if [ -f "$test_dir/cli-time" ]; then tail -n 30 "$test_dir/cli-time" >&2; fi
+    for service in "$api" "$daemon" "$runner"; do docker logs --tail 25 "$service" >&2 2>/dev/null || true; done
+  fi
+  if [ -n "${monitor_pid:-}" ]; then kill "$monitor_pid" >/dev/null 2>&1 || true; wait "$monitor_pid" 2>/dev/null || true; fi
   docker rm -f "$daemon" "$runner" "$test_api" "$api" "$postgres" "$garage" >/dev/null 2>&1 || true
   docker volume rm "$stage" "$runner_data" "$daemon_data" "$api_data" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
@@ -114,12 +120,43 @@ print("mission running", flush=True)
 while True:
     time.sleep(1)
 EOF
-"${cli[@]}" "$test_dir/hello" push --org "$org" --robot "$robot" --idempotency-key smoke-push >"$test_dir/push.json"
+if [ -n "${RINGFOUR_TEST_LARGE_ASSET_BYTES:-}" ]; then
+  python3 - "$test_dir/hello" "$RINGFOUR_TEST_LARGE_ASSET_BYTES" <<'PY'
+import hashlib, os, pathlib, sys
+root, size = pathlib.Path(sys.argv[1]), int(sys.argv[2])
+if size <= 0: raise SystemExit('asset size must be positive')
+block = os.urandom(1024 * 1024)
+digest = hashlib.sha256()
+with (root / 'model.bin').open('wb') as out:
+    while size:
+        chunk = block[:min(size, len(block))]
+        out.write(chunk); digest.update(chunk); size -= len(chunk)
+(root / 'model.sha256').write_text(digest.hexdigest())
+PY
+  cat >"$test_dir/hello/main.py" <<'PY'
+import hashlib, os, pathlib
+digest = hashlib.sha256()
+with open('model.bin', 'rb') as source:
+    while chunk := source.read(65536): digest.update(chunk)
+assert digest.hexdigest() == pathlib.Path('model.sha256').read_text()
+with (pathlib.Path(os.environ['RINGFOUR_ARTIFACT_DIR']) / 'result.bin').open('wb') as out:
+    for _ in range(64): out.write(b'a' * (1024 * 1024))
+print('large asset verified', flush=True)
+PY
+  monitored=("$api" "$daemon" "$runner")
+  if [ "${RINGFOUR_TEST_STORAGE:-filesystem}" = garage ]; then monitored+=("$garage"); fi
+  (while :; do docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' "${monitored[@]}" 2>/dev/null >>"$test_dir/memory" || true; sleep 2; done) &
+  monitor_pid=$!
+  if [ "$(uname -s)" = Darwin ]; then time_flag=-l; else time_flag=-v; fi
+  /usr/bin/time "$time_flag" "${cli[@]}" "$test_dir/hello" push --org "$org" --robot "$robot" --idempotency-key smoke-push >"$test_dir/push.json" 2>"$test_dir/cli-time"
+else
+  "${cli[@]}" "$test_dir/hello" push --org "$org" --robot "$robot" --idempotency-key smoke-push >"$test_dir/push.json"
+fi
 deployment=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["deployment_id"])' "$test_dir/push.json")
 revision_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mission_revision_id"])' "$test_dir/push.json")
 wait_deployment() {
   wanted=$1
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "${RINGFOUR_TEST_WAIT_SECONDS:-90}"); do
     body=$(api_curl "$RINGFOUR_API_URL/v1/deployments/$deployment")
     state=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["observed_state"])' <<<"$body")
     [ "$state" = "$wanted" ] && return 0
@@ -133,7 +170,7 @@ wait_deployment() {
 }
 wait_execution() {
   execution=$1 wanted=$2
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "${RINGFOUR_TEST_WAIT_SECONDS:-90}"); do
     if ! body=$(api_curl "$RINGFOUR_API_URL/v1/executions/$execution" 2>/dev/null); then sleep 1; continue; fi
     state=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])' <<<"$body")
     [ "$state" = "$wanted" ] && return 0
@@ -145,6 +182,46 @@ wait_execution() {
 }
 wait_deployment ready
 python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["selected_revision_id"]==sys.argv[1]' "$revision_a" <<<"$body"
+if [ -n "${RINGFOUR_TEST_LARGE_ASSET_BYTES:-}" ]; then
+  (cd "$test_dir/hello" && "${cli[@]}" start --org "$org" --idempotency-key large-start) >"$test_dir/start.json"
+  execution=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_id"])' "$test_dir/start.json")
+  wait_execution "$execution" succeeded
+  for _ in $(seq 1 "${RINGFOUR_TEST_WAIT_SECONDS:-90}"); do
+    artifact_response=$(api_curl "$RINGFOUR_API_URL/v1/executions/$execution/artifacts")
+    artifact_state=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["artifact_state"])' <<<"$artifact_response")
+    [ "$artifact_state" = ready ] && break
+    [ "$artifact_state" != failed ] || { echo "artifact delivery failed: $artifact_response" >&2; exit 1; }
+    sleep 1
+  done
+  [ "$artifact_state" = ready ]
+  "${cli[@]}" artifact download "$execution" result.bin --output "$test_dir/result.bin"
+  python3 - "$test_dir/result.bin" <<'PY'
+import hashlib, pathlib, sys
+path = pathlib.Path(sys.argv[1]); digest = hashlib.sha256()
+with path.open('rb') as f:
+    while chunk := f.read(65536): digest.update(chunk)
+expected = hashlib.sha256()
+for _ in range(64): expected.update(b'a' * (1024 * 1024))
+assert path.stat().st_size == 64 * 1024 * 1024 and digest.digest() == expected.digest()
+PY
+  kill "$monitor_pid" >/dev/null 2>&1 || true; wait "$monitor_pid" 2>/dev/null || true; monitor_pid=
+  echo "PASS: $RINGFOUR_TEST_LARGE_ASSET_BYTES-byte mission asset and 67108864-byte artifact verified end to end"
+  cat "$test_dir/cli-time"
+  python3 - "$test_dir/memory" <<'PY'
+import re, sys
+peaks = {}
+for line in open(sys.argv[1]):
+    m = re.match(r'(\S+)\s+([\d.]+)([KMGT]i?B)', line)
+    if m:
+        name, number, unit = m.groups(); value = float(number) * {'K': 1/1024, 'M': 1, 'G': 1024, 'T': 1048576}[unit[0]]
+        peaks[name] = max(peaks.get(name, 0), value)
+for name, peak in sorted(peaks.items()): print(f'Peak sampled container memory: {name} {peak:.1f} MiB')
+PY
+  for service in "$api" "$daemon" "$runner"; do
+    docker exec "$service" cat /proc/1/status | awk -v name="$service" '$1 == "VmHWM:" { print "Process peak RSS:", name, $2, $3 }'
+  done
+  exit 0
+fi
 (cd "$test_dir/hello" && "${cli[@]}" start --org "$org" --idempotency-key smoke-start) >"$test_dir/start.json"
 execution_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_id"])' "$test_dir/start.json")
 wait_execution "$execution_a" running

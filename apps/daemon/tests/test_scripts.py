@@ -3,12 +3,13 @@ import base64
 import hashlib
 import io
 import json
+import os
+import time
 import zipfile
 from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-
 from ringfour_daemon import operations, runner, scripts
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import migrate
@@ -46,6 +47,29 @@ def test_staging_verifies_digest_and_reuses_immutable_bundle(tmp_path):
         scripts.unpack_verified(archive + b"x", payload, tmp_path)
 
 
+def test_old_interrupted_stages_are_cleaned_without_removing_published_or_recent(tmp_path):
+    root = tmp_path / "scripts"
+    root.mkdir()
+    old, recent, published = (root / name for name in (".stage-old", ".stage-new", "verified"))
+    for path in (old, recent, published): path.mkdir()
+    timestamp = time.time() - 3 * 86400
+    os.utime(old, (timestamp, timestamp))
+    os.utime(published, (timestamp, timestamp))
+    scripts.cleanup_interrupted_stages(tmp_path)
+    assert not old.exists() and recent.exists() and published.exists()
+
+
+def test_mission_staging_rejects_insufficient_storage_without_publishing(tmp_path, monkeypatch):
+    archive, payload = sample()
+    monkeypatch.setattr(scripts.shutil, "disk_usage", lambda _: type("Usage", (), {"free": scripts.MIN_FREE_BYTES})())
+    with pytest.raises(runner.RunnerRejected) as error:
+        scripts.unpack_verified(archive, payload, tmp_path)
+    assert error.value.code == "insufficient_storage"
+    root = tmp_path / "scripts"
+    assert not (root / payload["revision_digest"]).exists()
+    assert not list(root.glob(".stage-*"))
+
+
 def test_output_retry_resumes_without_duplicate_bytes(tmp_path, monkeypatch):
     db = str(tmp_path / "daemon.db")
     migrate(db)
@@ -59,6 +83,7 @@ def test_output_retry_resumes_without_duplicate_bytes(tmp_path, monkeypatch):
     identity = {"credential_id": "credential-id", "platform_url": "http://platform"}
     attempts = []
     uploaded = []
+    reported = []
     artifact = b"result"
     real_client = httpx.AsyncClient
 
@@ -71,9 +96,9 @@ def test_output_retry_resumes_without_duplicate_bytes(tmp_path, monkeypatch):
                 return httpx.Response(200, json={"offset": offset, "next_offset": offset + len(data),
                     "data_base64": base64.b64encode(data).decode(), "truncated": False})
             if path.endswith("/artifacts"):
-                return httpx.Response(200, json={"artifacts": [{"path": "result.txt", "size": len(artifact), "sha256": sha(artifact)}]})
-            if path.endswith("/artifacts/content"):
-                return httpx.Response(200, json={"offset": 0, "next_offset": len(artifact), "data_base64": base64.b64encode(artifact).decode()})
+                return httpx.Response(200, json={"artifact_state": "ready", "artifact_error": None, "artifacts": [{"path": "result.txt", "size": len(artifact), "sha256": sha(artifact)}]})
+            if path.endswith("/artifacts/download"):
+                return httpx.Response(200, content=artifact)
             return httpx.Response(200, json={"state": "succeeded", "exit_code": 0, "error": None})
         if "/output/" in path:
             attempts.append((request.url.params["offset"], request.content))
@@ -81,6 +106,10 @@ def test_output_retry_resumes_without_duplicate_bytes(tmp_path, monkeypatch):
                 return httpx.Response(503)
         if path.endswith("/artifacts"):
             uploaded.append(request.content)
+            if len(uploaded) == 1:
+                return httpx.Response(503)
+        if path.endswith("/status") or path.endswith("/artifact-status"):
+            reported.append((path.rsplit("/", 1)[-1], json.loads(request.content)["state"]))
         return httpx.Response(204)
 
     monkeypatch.setattr(scripts.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
@@ -88,9 +117,13 @@ def test_output_retry_resumes_without_duplicate_bytes(tmp_path, monkeypatch):
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(scripts.synchronize(settings, identity, row))
     assert scripts.sync_rows(db)[0][1] == 0
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(scripts.synchronize(settings, identity, scripts.sync_rows(db)[0]))
+    assert reported == [("status", "succeeded"), ("artifact-status", "uploading"), ("artifact-status", "failed")]
     asyncio.run(scripts.synchronize(settings, identity, scripts.sync_rows(db)[0]))
     assert attempts == [("0", b"hello"), ("0", b"hello")]
-    assert uploaded == [artifact]
+    assert uploaded == [artifact, artifact]
+    assert reported[-1] == ("artifact-status", "ready")
     assert scripts.sync_rows(db) == []
 
 

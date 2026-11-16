@@ -76,9 +76,7 @@
               "agent.motion.event"
             ]
           },
-          "schema_version": {
-            "const": 1
-          },
+          "schema_version": {"enum": [1, 2]},
           "occurred_at": {
             "type": "string",
             "minLength": 20,

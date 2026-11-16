@@ -9,7 +9,6 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi.testclient import TestClient
-
 from ringfour_daemon import local_source
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import migrate
@@ -138,3 +137,47 @@ def test_orphan_staging_cleanup_preserves_pending_and_recent_files(tmp_path):
     os.utime(referenced, (old, old))
     local_source.clean_orphaned_staging(settings)
     assert referenced.exists() and recent.exists() and not orphan.exists()
+
+
+def test_more_than_twenty_syncs_keep_stale_detection_and_replay(tmp_path, monkeypatch):
+    settings, session, token, initial = setup(tmp_path)
+    real_client = httpx.AsyncClient
+
+    def handler(request):
+        body = json.loads(request.content)
+        return httpx.Response(200, json={"session_id": session, "generation": body["generation"], "archive_sha256": body["archive_sha256"]})
+
+    monkeypatch.setattr(local_source.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    with TestClient(create_local_app(settings)) as client:
+        url = f"/v1/local/dev-sessions/{session}/source"
+        for generation in range(25):
+            body = {**initial, "base_generation": generation}
+            headers = {"authorization": f"Bearer {token}", "Idempotency-Key": f"sync-{generation}"}
+            response = client.put(url, json=body, headers=headers)
+            assert response.status_code == 200, response.text
+            assert response.json()["generation"] == generation + 1
+        assert client.put(url, json=initial, headers={"authorization": f"Bearer {token}", "Idempotency-Key": "sync-0"}).json()["generation"] == 1
+        stale = client.put(url, json=initial, headers={"authorization": f"Bearer {token}", "Idempotency-Key": "stale"})
+        assert stale.status_code == 409 and stale.json()["error"]["code"] == "stale_generation"
+
+
+def test_low_runner_storage_is_retryable_and_reported(tmp_path, monkeypatch):
+    settings, session, token, body = setup(tmp_path)
+    real_client = httpx.AsyncClient
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(503, json={"error": {"code": "insufficient_storage"}})
+        sent = json.loads(request.content)
+        return httpx.Response(200, json={"session_id": session, "generation": sent["generation"], "archive_sha256": sent["archive_sha256"]})
+
+    monkeypatch.setattr(local_source.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    headers = {"authorization": f"Bearer {token}", "Idempotency-Key": "same-key"}
+    with TestClient(create_local_app(settings)) as client:
+        path = f"/v1/local/dev-sessions/{session}/source"
+        response = client.put(path, json=body, headers=headers)
+        assert response.status_code == 503 and response.json()["error"]["code"] == "insufficient_storage"
+        assert client.put(path, json=body, headers=headers).json()["generation"] == 1

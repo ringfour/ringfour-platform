@@ -23,7 +23,7 @@ paths:
         '400': { description: Invalid generation or request }
         '401': { description: Missing or incorrect Runner credential }
         '409': { description: Stale generation, conflicting ID, closed session or active production execution }
-        '503': { description: Previous execution still stopping or retention capacity reached }
+        '503': { description: Previous execution still stopping or insufficient free storage }
   /v1/revisions/prepare:
     post:
       summary: Prepare a validated candidate without executing user code
@@ -122,11 +122,27 @@ paths:
         '401': { description: Missing or incorrect Runner credential }
         '404': { description: Unknown execution }
         '409': { description: Execution is not terminal }
+  /v1/executions/{execution_id}/artifacts/download:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
+    get:
+      summary: Stream one immutable artifact snapshot to the daemon
+      responses:
+        '200':
+          description: Artifact bytes; compare length and SHA-256 with the snapshot metadata
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '400': { description: Invalid path }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown execution or artifact }
+        '409': { description: Execution is not terminal }
   /v1/executions/{execution_id}/artifacts/content:
     parameters:
       - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
       - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
-      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 262144 } }
+      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 9007199254740991 } }
       - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 16384 } }
     get:
       summary: Read a bounded artifact chunk
@@ -140,6 +156,47 @@ paths:
         '401': { description: Missing or incorrect Runner credential }
         '404': { description: Unknown execution or artifact }
         '409': { description: Execution is not terminal }
+  /v1/executions/{execution_id}/live-artifacts:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Finalize one execution-relative file while the process is running
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/artifacts/v1/runtime-publish-request.schema.json }
+      responses:
+        '200':
+          description: Immutable snapshot created or identical replay
+          content:
+            application/json:
+              schema: { $ref: ../schemas/artifacts/v1/artifact.schema.json }
+        '400': { description: Invalid request }
+        '401': { description: Missing or incorrect Runner credential }
+        '409': { description: Execution is not running or ID conflicts }
+        '503': { description: Snapshot storage unavailable }
+  /v1/executions/{execution_id}/live-artifacts/{artifact_id}/download:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: artifact_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Stream a finalized live artifact to the daemon
+      responses:
+        '200': { description: Immutable artifact bytes }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown artifact }
+        '503': { description: Snapshot storage unavailable }
+  /v1/executions/{execution_id}/live-artifacts/{artifact_id}/ack:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: artifact_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Confirm hosted metadata/object commit and remove the local snapshot
+      responses:
+        '204': { description: Snapshot cleanup completed or matching acknowledgement replayed }
+        '401': { description: Missing or incorrect Runner credential }
+        '404': { description: Unknown artifact }
 components:
   securitySchemes:
     runnerBearer: { type: http, scheme: bearer }
