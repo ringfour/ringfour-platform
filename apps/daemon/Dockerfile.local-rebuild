@@ -1,0 +1,4 @@
+FROM ringfour-daemon:latest
+USER root
+COPY --chown=app:app src/ /app/src/
+USER app

@@ -1,0 +1,2 @@
+FROM ringfour-console:latest
+COPY . /app
