@@ -21,7 +21,7 @@ Build a hosted robotics application platform in small, sequential vertical slice
 | Robotics | Existing SDK and Agent stay separate projects; Agent owns ROS, capabilities and safety |
 | Robot profile | Owned by Agent/robot repository; Ringfour references its identity/version, never becomes its authoring authority |
 
-Infrastructure such as Balena owns service containers. Ringfour provisions Python application code inside the fixed Runner. v0.1 runs trusted customer-authored code. A virtual environment isolates dependencies, not hostile code. Studio, third-party mission distribution, WhatsApp integration and generalized execution backends are deferred.
+Deployment infrastructure owns service containers. Base101 owns robot deployment configuration; Platform owns the server stack. Ringfour provisions Python application code inside the fixed Runner. v0.1 runs trusted customer-authored code. A virtual environment isolates dependencies, not hostile code. Studio, third-party mission distribution, WhatsApp integration and generalized execution backends are deferred.
 
 ## Repository
 
@@ -31,14 +31,15 @@ apps/api/                            # .NET solution, API project and xUnit test
   tests/Ringfour.Api.Tests/          # unit and Testcontainers coverage
 apps/{daemon,runner,cli,console}/     # independently packaged applications
 packages/contracts/                  # OpenAPI + JSON Schema and fixtures
-infra/{server,compose,balena}/           # server, legacy integration, robot deployment
+infra/server/                            # API, PostgreSQL, Console
+tests/integration/compose/               # legacy full-stack E2E fixture
 tests/e2e/
 docs/architecture.md
 docs/milestones/
 AGENTS.md
 ```
 
-Applications communicate through versioned contracts, never imports of another application's implementation. The Ringfour SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. `../ringfour-virtual` owns the local Base101 simulator/device stack and builds those projects from source. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts.
+Applications communicate through versioned contracts, never imports of another application's implementation. The Ringfour SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. `../ringfour-virtual` owns the local Base101 simulator/device stack and builds those projects from source. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts. Platform contains no robot or Balena deployment manifests.
 
 ## Reading and execution order
 

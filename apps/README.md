@@ -17,8 +17,10 @@ The applications do not import each other's private implementations. Protocols
 and schemas live in [`packages/contracts`](../packages/contracts/).
 
 Start with the [repository overview](../README.md), [architecture](../docs/architecture.md),
-and [development setup](../docs/development.md). The local Compose stack is in
-[`infra/compose`](../infra/compose/); the separate robot fixture and Balena
-configuration are under [`infra`](../infra/). Human verification guides and
-actual test evidence live in [`docs/human-testing`](../docs/human-testing/) and
-[`docs/evidence`](../docs/evidence/).
+and [development setup](../docs/development.md). The server stack is in
+[`infra/server`](../infra/server/); the legacy E2E Compose fixture is in
+[`tests/integration/compose`](../tests/integration/compose/). Base101 simulation,
+Agent, daemon, and Runner orchestration live in the sibling
+[`ringfour-virtual`](../../ringfour-virtual/README.md) project. Human
+verification guides and evidence live in
+[`docs/human-testing`](../docs/human-testing/) and [`docs/evidence`](../docs/evidence/).

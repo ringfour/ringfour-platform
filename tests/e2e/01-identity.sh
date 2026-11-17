@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-COMPOSE="docker compose -f infra/compose/docker-compose.yml"
+COMPOSE="docker compose -f tests/integration/compose/docker-compose.yml"
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
 echo "==> stack readiness"

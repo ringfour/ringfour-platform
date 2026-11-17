@@ -25,6 +25,6 @@ behind the deployment's HTTPS ingress/reverse proxy. `up.sh` creates and reuses
 a random local PostgreSQL password in the ignored `.env.server` file unless
 `POSTGRES_PASSWORD` is already set.
 
-`infra/compose/docker-compose.yml` is the separate local integration stack. It
+`tests/integration/compose/docker-compose.yml` is the separate local integration stack. It
 also includes a local daemon and Runner to test device flows; do not deploy
 that test topology as the server.

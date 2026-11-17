@@ -1,8 +1,8 @@
 name: ringfour
 
-# Local development/integration test stack. Includes simulated device services;
-# not the server deployment. Server-side services are in infra/server.
-# All services run here; only the CLI runs on the host.
+# Legacy full-stack acceptance fixture, including API and device services.
+# Everyday local development uses infra/server and the sibling ringfour-virtual.
+# Only the CLI runs on the host.
 # No Docker socket is mounted anywhere — infrastructure owns containers.
 services:
   postgres:
@@ -23,7 +23,7 @@ services:
       retries: 30
 
   api:
-    build: ../../apps/api
+    build: ../../../apps/api
     environment:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:-ringfour_dev}
       # Auth0 tenant values come from .auth.env (symlinked as .env next to this file).
@@ -40,7 +40,7 @@ services:
       - api-storage:/storage
 
   runner:
-    build: ../../apps/runner
+    build: ../../../apps/runner
     environment:
       RUNNER_AUTH_TOKEN: ${RUNNER_AUTH_TOKEN:?Set a random RUNNER_AUTH_TOKEN before starting Compose}
       RUNNER_STAGE_DIR: /staged
@@ -53,7 +53,7 @@ services:
       - "8082"
 
   daemon:
-    build: ../../apps/daemon
+    build: ../../../apps/daemon
     environment:
       DAEMON_DB_PATH: /data/ringfour.db
       RUNNER_URL: http://runner:8082
@@ -71,7 +71,7 @@ services:
       - "8083:8083"
 
   console:
-    build: ../../apps/console
+    build: ../../../apps/console
     environment:
       API_PROXY_TARGET: http://api:8080
       DAEMON_PROXY_TARGET: http://daemon:8081
@@ -81,7 +81,7 @@ services:
       VITE_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
       VITE_CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:5173}
     volumes:
-      - ../../apps/console:/app
+      - ../../../apps/console:/app
       - /app/node_modules
     depends_on:
       - api

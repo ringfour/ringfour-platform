@@ -1,7 +1,7 @@
 name: ringfour-server
 
 # Hosted/server-side services only. Device daemon and Runner run on each robot.
-# The separate local integration stack is in infra/compose.
+# The legacy full-stack E2E fixture is in tests/integration/compose.
 services:
   postgres:
     image: postgres:18

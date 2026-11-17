@@ -8,12 +8,12 @@ sandbox. The Platform does not call the Runner directly.
 
 ## Get started
 
-Use [development setup](../../docs/development.md) to configure the local
-Compose stack and its shared `RUNNER_AUTH_TOKEN`, then start it from the
-repository root:
+Use the sibling [`ringfour-virtual` setup](../../../ringfour-virtual/README.md) to
+run the Runner with the Agent and daemon, separate from the server stack. For
+older milestone acceptance, the integrated test fixture can be started with:
 
 ```sh
-docker compose -f infra/compose/docker-compose.yml up -d --build
+docker compose -f tests/integration/compose/docker-compose.yml up -d --build
 ```
 
 The Runner listens privately on port 8082 in Compose and has no published host

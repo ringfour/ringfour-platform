@@ -8,20 +8,20 @@ Its small status page shows pairing information or device and execution status.
 
 ## Get started
 
-For a local stack, follow [development setup](../../docs/development.md) and
-start Compose from the repository root after configuring Auth0 and the shared
-`RUNNER_AUTH_TOKEN`:
+For the Base101 local simulator and device services, follow the sibling
+[`ringfour-virtual` setup](../../../ringfour-virtual/README.md). That Compose
+project builds the daemon, Runner and Agent separately from the server stack.
+The older full-stack E2E fixture remains at
+`tests/integration/compose/docker-compose.yml` for milestone regression scripts:
 
 ```sh
-docker compose -f infra/compose/docker-compose.yml up -d --build
+docker compose -f tests/integration/compose/docker-compose.yml up -d --build
 curl http://localhost:8081/health/ready
 ```
 
 The local status page is at `http://localhost:8083/`; it is a separate,
 unauthenticated, read-only listener, so limit network access appropriately.
-For robot-only testing and deployment see [the robot fixture](../../infra/robot/README.md)
-and [Balena notes](../../infra/balena/README.md). Persist the daemon's data
-volume across restarts. `PLATFORM_API_URL`, `RUNNER_URL`,
+Persist the daemon's data volume across restarts. `PLATFORM_API_URL`, `RUNNER_URL`,
 `RUNNER_AUTH_TOKEN`, `RUNNER_STAGE_DIR`, `DAEMON_DB_PATH`, and
 `DAEMON_CREDENTIAL_PATH` configure its main connections and state. The daemon
 and Runner must use the same private token and shared staging volume.

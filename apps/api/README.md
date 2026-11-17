@@ -10,15 +10,14 @@ credentials are separate from human tokens. Its public contract is maintained in
 ## Get started
 
 Use the [local stack instructions](../../docs/development.md) to configure Auth0
-and start Compose. From the repository root, after setting the required
-`RUNNER_AUTH_TOKEN` and Auth0 values:
+and start the independent server stack from the repository root:
 
 ```sh
-docker compose -f infra/compose/docker-compose.yml up -d --build
+./up.sh
 curl http://localhost:8080/health/ready
 ```
 
-The API Dockerfile builds with the .NET 10 SDK. Compose supplies PostgreSQL and
+The API Dockerfile builds with the .NET 10 SDK. Server Compose supplies PostgreSQL and
 uses a persistent filesystem artifact store for local development; hosted
 storage configuration is documented in [script testing](../../docs/human-testing/05.md).
 Do not disable authentication to work locally.

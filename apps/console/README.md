@@ -8,12 +8,12 @@ as a production Console.
 
 ## Get started
 
-Configure the Auth0 Web client and local stack as described in
+Configure the Auth0 Web client and server stack as described in
 [development setup](../../docs/development.md#auth0-milestone-01). From the
-repository root, with the required Auth0 configuration and shared Runner token:
+repository root:
 
 ```sh
-docker compose -f infra/compose/docker-compose.yml up -d --build
+./up.sh
 ```
 
 Open `http://localhost:5173/` and sign in. The Vite server proxies `/api` to

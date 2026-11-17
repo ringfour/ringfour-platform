@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-COMPOSE="docker compose -f infra/compose/docker-compose.yml"
+COMPOSE="docker compose -f tests/integration/compose/docker-compose.yml"
 API_URL=http://localhost:8080
 DAEMON_URL=http://localhost:8081
 RUNNER_PORT=8082
@@ -82,4 +82,4 @@ echo "    console serves and proxies api health"
 echo "==> 9. final state: all ready"
 uv run --project apps/cli ringfour-cli health
 
-echo "ACCEPTANCE PASSED — stack left running; clean up with: npm run compose:clean"
+echo "ACCEPTANCE PASSED — stack left running; clean up with: npm run integration:clean"

@@ -65,7 +65,7 @@ only robot-side services.
 simulated profile, and builds Agent with SDK source plus daemon and Runner from
 their own projects. Its containers join the simulator's ROS network and reach
 the server through the device protocol. The stacks share no source/package
-dependency, Docker network, or database. `infra/compose/docker-compose.yml` is
+dependency, Docker network, or database. `tests/integration/compose/docker-compose.yml` is
 retained only for older milestone integration scripts.
 
 Platform tests use xUnit; persistence, migrations and database-backed API tests use real PostgreSQL through Testcontainers. Component tests isolate other external boundaries. Local integration uses real service processes and PostgreSQL/SQLite, migrated from empty volumes; test-only Auth0-compatible fixtures cannot substitute for live Auth0 login acceptance. Balena smoke at 04 verifies container/network assumptions; 10 verifies actual SDK/Agent/ROS. Pin and record external versions. Do not publish the internal Console in production deployment manifests.

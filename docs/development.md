@@ -39,10 +39,10 @@ are dealing with:
 | `npm run test:e2e:pairing` | Device pairing through the Console proxy and isolated daemon (requires owner login and selected org) |
 | `npm run test:e2e:03` | Milestone 03 connectivity acceptance (requires `ringfour-cli login`; resets the daemon volume; ~4 min, includes two 45 s offline-threshold waits) |
 | `npm run test:e2e:04` | Local Runner acceptance with isolated daemon/Runner containers and volumes; requires an owner login and selected organization |
-| `npm run compose:up` | Build and start the local integration stack (postgres, api, daemon, runner, console) |
-| `npm run compose:down` | Stop the stack (volumes kept) |
-| `npm run compose:clean` | Stop and delete all volumes (fresh start) |
-| `npm run compose:logs` | Follow stack logs |
+| `npm run integration:up` | Start the legacy full-stack E2E fixture |
+| `npm run integration:down` | Stop that fixture (volumes kept) |
+| `npm run integration:clean` | Stop it and delete its volumes |
+| `npm run integration:logs` | Follow its logs |
 
 ## Start the server stack
 
@@ -67,8 +67,9 @@ daemon and Runner from their own directories. It joins the simulator's ROS
 network and connects to the server over the device protocol; it has no shared
 source, package, database, or Docker network with the server.
 
-`infra/compose/docker-compose.yml` remains available for older milestone
-integration scripts; it is not the recommended development stack.
+`tests/integration/compose/docker-compose.yml` is a legacy, combined test
+fixture used by older acceptance scripts. It is not deployment infrastructure
+or the recommended development stack.
 
 ## Dependency updates and quality gate
 
@@ -104,9 +105,10 @@ CLI configuration: `RINGFOUR_API_URL`, `RINGFOUR_DAEMON_URL`.
 ## Auth0 (milestone 01)
 
 `.auth.env` (gitignored, holds tenant identifiers) provides `AUTH0_DOMAIN`,
-`AUTH0_AUDIENCE`, `AUTH0_CLI_CLIENT_ID`, `AUTH0_WEB_CLIENT_ID`. Compose reads it via the
-gitignored symlink `infra/compose/.env`; the API gets `Auth0__Domain`/`Auth0__Audience`
-and the console `VITE_AUTH0_*` from it.
+`AUTH0_AUDIENCE`, `AUTH0_CLI_CLIENT_ID`, `AUTH0_WEB_CLIENT_ID`. The legacy test
+fixture reads it through the ignored symlink `tests/integration/compose/.env`;
+the server wrapper loads it directly. The API gets `Auth0__Domain`/
+`Auth0__Audience` and the Console `VITE_AUTH0_*` from it.
 
 The CLI reads `RINGFOUR_AUTH0_DOMAIN`, `RINGFOUR_AUTH0_CLIENT_ID`,
 `RINGFOUR_AUTH0_AUDIENCE` (plus `RINGFOUR_API_URL`) from the environment or
@@ -135,7 +137,7 @@ no committed default. For a disposable local shell, for example:
 
 ```bash
 export RUNNER_AUTH_TOKEN="$(openssl rand -hex 32)"
-docker compose -f infra/compose/docker-compose.yml up -d --build
+docker compose -f tests/integration/compose/docker-compose.yml up -d --build
 ```
 
 Keep the value consistent when recreating either service. Runner readiness
@@ -146,9 +148,10 @@ isolated, non-destructive local acceptance with `bash tests/e2e/04-runner.sh`;
 it creates a test robot and leaves that robot in the selected organization.
 The full manual flow and output-offset behavior are in `docs/human-testing/04.md`.
 
-For a separate Agent and empty ROS stack, see `infra/robot/README.md`.
-Balena preparation is described in `infra/balena/README.md`. The non-motion
-physical device smoke and its limits are recorded in `docs/evidence/04.md`.
+For the Agent, daemon, Runner, and Base101 simulator, use the sibling
+`ringfour-virtual` project. The physical non-motion smoke recorded in
+`docs/evidence/04.md` used Base101-maintained deployment configuration; this
+repository no longer owns robot Compose manifests or Balena build staging.
 
 ## Script execution (milestone 05)
 
@@ -220,7 +223,7 @@ and is not evidence for the separate live Auth0 gate. See
 - `packages/contracts` — OpenAPI + JSON Schema + fixtures, language-independent
 - `infra/server` — independent server-side Compose deployment
 - `../ringfour-virtual` — Base101 simulator and device-side Compose stack
-- `infra/compose` — legacy integrated acceptance stack
+- `tests/integration/compose` — legacy integrated acceptance fixture
 - `tests/e2e` — integrated acceptance scripts
 
 ## Device pairing page

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install all host-side dependencies for lint/typecheck/component tests.
-# Runtime services run in Docker (see npm run compose:up); the CLI is a host tool.
+# Runtime development uses separate server and ringfour-virtual stacks; the CLI is a host tool.
 # The .NET SDK runs in Docker via scripts/dotnet.sh; no host SDK is required.
 set -euo pipefail
 cd "$(dirname "$0")/.."
