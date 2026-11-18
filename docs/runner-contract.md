@@ -1,5 +1,25 @@
 # Runner v1 contract and persistence — milestone 04
 
+## Optional mission UI readiness
+
+`GET /v1/executions/{execution_id}/ui` requires the existing Runner bearer
+token and returns only the execution ID plus `starting`, `ready`,
+`unavailable`, or `ended`, matching
+`packages/contracts/schemas/runner/v1/ui-status.schema.json`; it does not
+disclose a host, port, or URL. Runner
+sets `RINGFOUR_UI_PORT` for each child mission to its configured loopback UI
+port (`RUNNER_UI_PORT`, default `7860`). While the execution is running, the
+route probes HTTP on `127.0.0.1` at that port. It reports `starting` during a
+30-second startup grace period, `unavailable` after an unsuccessful probe,
+and `ended` once the execution is terminal. This is local Runner readiness
+only. The authenticated `GET /v1/ui` returns up to 64 nonterminal execution UI
+status snapshots for daemon discovery, matching
+`packages/contracts/schemas/runner/v1/ui-status-list.schema.json`. The daemon
+reports these over its separate `/v1/device/ui-connect` socket. That socket
+currently carries status and heartbeat frames only; request proxying and the
+browser gateway remain future work. In `ringfour-virtual`, that container port
+is published only on host loopback (`RINGFOUR_UI_HOST_PORT`, default `7860`).
+
 These interfaces are **new Ringfour design**, not existing SDK or Agent APIs.
 Milestone 04 ships only the two fixed diagnostic Python fixtures; there is no
 user upload or dependency installation from untrusted requests. The code is

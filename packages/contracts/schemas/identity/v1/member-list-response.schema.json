@@ -11,7 +11,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["organization_id", "user_id", "role", "created_at"],
+        "required": ["organization_id", "user_id", "role", "created_at", "name", "email", "profile_picture_url"],
         "additionalProperties": false,
         "properties": {
           "organization_id": {
@@ -28,7 +28,10 @@
           "created_at": {
             "type": "string",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
-          }
+          },
+          "name": { "type": ["string", "null"], "maxLength": 120 },
+          "email": { "type": ["string", "null"], "format": "email", "maxLength": 320 },
+          "profile_picture_url": { "type": ["string", "null"], "format": "uri", "maxLength": 2048 }
         }
       }
     },

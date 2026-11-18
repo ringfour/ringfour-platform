@@ -42,8 +42,6 @@ public static class DevSourceReports
         if (credential.RevokedAt is not null || (credential.ExpiresAt is not null && credential.ExpiresAt <= DateTimeOffset.UtcNow))
             throw ApiException.InvalidToken("The robot credential is invalid, expired, or revoked.");
         session = await db.DevSessions.SingleAsync(item => item.Id == sessionId, ct);
-        var grant = await db.DevLocalGrants.Include(item => item.Operation).SingleOrDefaultAsync(item => item.Id == grantId && item.SessionId == sessionId, ct)
-            ?? throw ApiException.NotFound("The local grant does not exist for this robot.");
         var previous = await db.DevSessionGenerations.Include(item => item.Operation).SingleOrDefaultAsync(item => item.OperationId == opId, ct);
         if (previous is not null)
         {
@@ -54,6 +52,10 @@ public static class DevSourceReports
             await tx.CommitAsync(ct);
             return Results.NoContent();
         }
+        var grant = await db.DevLocalGrants.Include(item => item.Operation).SingleOrDefaultAsync(item => item.Id == grantId && item.SessionId == sessionId, ct)
+            ?? throw ApiException.NotFound("The local grant does not exist for this robot.");
+        if (grant.ExpiresAt.AddDays(7) < DateTimeOffset.UtcNow)
+            throw ApiException.Conflict("grant_unavailable", "The delivery window for this generation report has expired.");
         if (await db.Operations.AnyAsync(item => item.Id == opId, ct))
             throw ApiException.Conflict("conflict", "Generation operation ID is already in use.");
         if (grant.Operation.State != OperationState.Succeeded)

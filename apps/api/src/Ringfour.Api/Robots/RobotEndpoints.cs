@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Connectivity;
 using Ringfour.Api.Errors;
+using Ringfour.Api.DevSessions;
 using Ringfour.Api.Identity;
 using Ringfour.Api.Persistence;
 
@@ -185,6 +186,7 @@ public static class RobotEndpoints
     private static async Task<IResult> RotateCredential(
         HttpContext httpContext,
         RingfourDbContext db,
+        DeviceConnectionManager connectionManager,
         IConfiguration configuration,
         Guid robotId,
         CancellationToken cancellationToken)
@@ -199,6 +201,9 @@ public static class RobotEndpoints
 
         var overlapSeconds = configuration.GetValue("Enrollment:RotationOverlapSeconds", 300);
         var now = DateTimeOffset.UtcNow;
+
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM robots WHERE id = {robot.Id} FOR UPDATE", cancellationToken);
 
         var current = await db.RobotCredentials
             .Where(credential =>
@@ -231,7 +236,11 @@ public static class RobotEndpoints
         };
         db.RobotCredentials.Add(credential);
         Audit(db, robot.Id, RobotAuditTypes.CredentialRotated, user.Id, now);
+        var revoke = await DevGrantRevocations.ScheduleAsync(db, robot.Id, user.Id, now, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        if (revoke is not null)
+            await OperationEndpoints.DispatchAsync(db, connectionManager, robot.Id, revoke.Id, cancellationToken);
 
         return Results.Created(
             $"/v1/robots/{robot.Id}/credentials/{credential.Id}",
@@ -260,11 +269,21 @@ public static class RobotEndpoints
         if (credential.RevokedAt is null)
         {
             var now = DateTimeOffset.UtcNow;
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM robots WHERE id = {robot.Id} FOR UPDATE", cancellationToken);
+            await db.Entry(credential).ReloadAsync(cancellationToken);
+            if (credential.RevokedAt is not null)
+                return RobotCredentialResponse.FromEntity(credential);
             credential.RevokedAt = now;
             Audit(db, robot.Id, RobotAuditTypes.CredentialRevoked, user.Id, now);
+            var revoke = await DevGrantRevocations.ScheduleAsync(db, robot.Id, user.Id, now, cancellationToken);
             // The revocation is committed before any disconnect handling so a
             // crash between the two never leaves a revoked session alive.
             await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+
+            if (revoke is not null)
+                await OperationEndpoints.DispatchAsync(db, connectionManager, robot.Id, revoke.Id, cancellationToken);
 
             var session = connectionManager.FindByCredential(credential.Id);
             if (session is not null)

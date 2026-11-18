@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Persistence;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Ringfour.Api.Identity;
 
@@ -11,27 +13,59 @@ public static class IdentityEndpoints
         var group = endpoints.MapGroup("/v1").RequireAuthorization();
 
         group.MapGet("/me", GetMe);
+        group.MapPatch("/me", UpdateMe);
         group.MapPost("/organizations", CreateOrganization);
         group.MapGet("/organizations", ListOrganizations);
         group.MapGet("/organizations/{orgId:guid}/members", ListMembers);
         group.MapPost("/organizations/{orgId:guid}/members", AddMember);
         group.MapPatch("/organizations/{orgId:guid}/members/{userId:guid}", UpdateMemberRole);
         group.MapDelete("/organizations/{orgId:guid}/members/{userId:guid}", RemoveMember);
+        group.MapGet("/organizations/{orgId:guid}/invitations", ListInvitations);
+        group.MapPost("/organizations/{orgId:guid}/invitations", CreateInvitation);
+        group.MapPost("/organizations/{orgId:guid}/invitations/{invitationId:guid}/resend", ResendInvitation);
+        group.MapDelete("/organizations/{orgId:guid}/invitations/{invitationId:guid}", RevokeInvitation);
+        group.MapPost("/invitations/preview", PreviewInvitation);
+        group.MapPost("/invitations/accept", AcceptInvitation);
     }
 
     private static async Task<MeResponse> GetMe(
-        HttpContext httpContext, RingfourDbContext db, CancellationToken cancellationToken)
+        HttpContext httpContext,
+        RingfourDbContext db,
+        Auth0UserInfoClient userInfoClient,
+        CancellationToken cancellationToken)
     {
         var user = await IdentityAccess.ResolveOrCreateUser(
             db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        var profile = await userInfoClient.GetProfileAsync(httpContext, cancellationToken);
+        if (profile is not null)
+        {
+            user.Email = profile.EmailVerified ? profile.Email : null;
+            await db.SaveChangesAsync(cancellationToken);
+        }
         var memberships = await db.Memberships
             .Where(membership => membership.UserId == user.Id)
+            .Include(membership => membership.User)
             .OrderBy(membership => membership.CreatedAt)
             .ThenBy(membership => membership.OrganizationId)
             .ToListAsync(cancellationToken);
         return new MeResponse(
             UserResponse.FromEntity(user),
             memberships.Select(MembershipResponse.FromEntity).ToList());
+    }
+
+    private static async Task<UserResponse> UpdateMe(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        UpdateUserProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var user = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        user.Name = NormalizeOptional(request.Name, 120, "Name");
+        user.ProfilePictureUrl = NormalizePictureUrl(request.ProfilePictureUrl);
+        user.PhoneNumber = NormalizePhoneNumber(request.PhoneNumber);
+        await db.SaveChangesAsync(cancellationToken);
+        return UserResponse.FromEntity(user);
     }
 
     private static async Task<IResult> CreateOrganization(
@@ -133,6 +167,7 @@ public static class IdentityEndpoints
 
         var query = db.Memberships
             .Where(membership => membership.OrganizationId == orgId)
+            .Include(membership => membership.User)
             .OrderBy(membership => membership.CreatedAt)
             .ThenBy(membership => membership.UserId)
             .AsQueryable();
@@ -166,12 +201,9 @@ public static class IdentityEndpoints
             db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
         await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
 
-        var targetExists = await db.Users.AnyAsync(
-            user => user.Id == request.UserId, cancellationToken);
-        if (!targetExists)
-        {
-            throw ApiException.NotFound("The target user does not exist.");
-        }
+        var target = await db.Users.SingleOrDefaultAsync(
+            user => user.Id == request.UserId, cancellationToken)
+            ?? throw ApiException.NotFound("The target user does not exist.");
 
         var membership = new Membership
         {
@@ -179,6 +211,7 @@ public static class IdentityEndpoints
             UserId = request.UserId,
             Role = request.Role,
             CreatedAt = DateTimeOffset.UtcNow,
+            User = target,
         };
         db.Memberships.Add(membership);
         try
@@ -211,7 +244,7 @@ public static class IdentityEndpoints
             await db.Database.BeginTransactionAsync(cancellationToken);
         await LockOrganization(db, orgId, cancellationToken);
 
-        var target = await db.Memberships.SingleOrDefaultAsync(
+        var target = await db.Memberships.Include(membership => membership.User).SingleOrDefaultAsync(
             membership => membership.OrganizationId == orgId && membership.UserId == userId,
             cancellationToken);
         if (target is null)
@@ -272,6 +305,321 @@ public static class IdentityEndpoints
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
+    }
+
+    private static async Task<InvitationListResponse> ListInvitations(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        Guid orgId,
+        CancellationToken cancellationToken)
+    {
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        var invitations = await db.OrganizationInvitations
+            .Where(invitation => invitation.OrganizationId == orgId)
+            .OrderByDescending(invitation => invitation.CreatedAt)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+        return new InvitationListResponse(invitations.Select(OrganizationInvitationResponse.FromEntity).ToList());
+    }
+
+    private static async Task<IResult> CreateInvitation(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        InvitationEmailSender emailSender,
+        Guid orgId,
+        CreateInvitationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        if (!Enum.IsDefined(request.Role))
+        {
+            throw ApiException.InvalidInput("Invitation role must be owner, developer or operator.");
+        }
+        var email = NormalizeEmail(request.Email);
+        var organization = await db.Organizations.SingleOrDefaultAsync(
+            candidate => candidate.Id == orgId, cancellationToken)
+            ?? throw ApiException.NotFound("The organization does not exist.");
+
+        var now = DateTimeOffset.UtcNow;
+        var pending = await db.OrganizationInvitations.SingleOrDefaultAsync(invitation =>
+            invitation.OrganizationId == orgId && invitation.NormalizedEmail == email.Normalized &&
+            invitation.AcceptedAt == null && invitation.RevokedAt == null,
+            cancellationToken);
+        if (pending is not null)
+        {
+            throw ApiException.Conflict("invitation_pending", "An invitation already exists for this email. Resend it from the organization view.");
+        }
+
+        var token = CreateInviteToken();
+        var invitation = new OrganizationInvitation
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = orgId,
+            Email = email.Address,
+            NormalizedEmail = email.Normalized,
+            Role = request.Role,
+            InvitedByUserId = caller.Id,
+            TokenHash = HashToken(token),
+            CreatedAt = now,
+            ExpiresAt = now.AddDays(7),
+        };
+        db.OrganizationInvitations.Add(invitation);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IdentityAccess.IsUniqueViolation(exception))
+        {
+            throw ApiException.Conflict("invitation_pending", "An invitation already exists for this email. Resend it from the organization view.");
+        }
+        try
+        {
+            await emailSender.SendAsync(
+                invitation.Email, organization.Name, invitation.Role, token,
+                invitation.ExpiresAt, cancellationToken);
+        }
+        catch
+        {
+            db.OrganizationInvitations.Remove(invitation);
+            await db.SaveChangesAsync(cancellationToken);
+            throw;
+        }
+
+        return Results.Created(
+            $"/v1/organizations/{orgId}/invitations/{invitation.Id}",
+            OrganizationInvitationResponse.FromEntity(invitation));
+    }
+
+    private static async Task<IResult> ResendInvitation(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        InvitationEmailSender emailSender,
+        Guid orgId,
+        Guid invitationId,
+        CancellationToken cancellationToken)
+    {
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockInvitation(db, invitationId, cancellationToken);
+        var invitation = await db.OrganizationInvitations.Include(item => item.Organization)
+            .SingleOrDefaultAsync(item => item.Id == invitationId && item.OrganizationId == orgId, cancellationToken)
+            ?? throw ApiException.NotFound("The invitation does not exist in this organization.");
+        if (invitation.AcceptedAt is not null || invitation.RevokedAt is not null)
+        {
+            throw ApiException.Conflict("invitation_closed", "Accepted or revoked invitations cannot be resent.");
+        }
+
+        var token = CreateInviteToken();
+        invitation.TokenHash = HashToken(token);
+        invitation.ExpiresAt = DateTimeOffset.UtcNow.AddDays(7);
+        await db.SaveChangesAsync(cancellationToken);
+        await emailSender.SendAsync(
+            invitation.Email, invitation.Organization.Name, invitation.Role, token,
+            invitation.ExpiresAt, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(OrganizationInvitationResponse.FromEntity(invitation));
+    }
+
+    private static async Task<IResult> RevokeInvitation(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        Guid orgId,
+        Guid invitationId,
+        CancellationToken cancellationToken)
+    {
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockInvitation(db, invitationId, cancellationToken);
+        var invitation = await db.OrganizationInvitations.SingleOrDefaultAsync(
+            item => item.Id == invitationId && item.OrganizationId == orgId, cancellationToken)
+            ?? throw ApiException.NotFound("The invitation does not exist in this organization.");
+        if (invitation.AcceptedAt is not null)
+        {
+            throw ApiException.Conflict("invitation_accepted", "An accepted invitation cannot be revoked.");
+        }
+        invitation.RevokedAt ??= DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> PreviewInvitation(
+        RingfourDbContext db,
+        InvitationTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        var token = RequireInvitationToken(request.Token);
+        var invitation = await db.OrganizationInvitations.Include(item => item.Organization)
+            .SingleOrDefaultAsync(item => item.TokenHash == HashToken(token), cancellationToken)
+            ?? throw ApiException.NotFound("The invitation link is invalid or expired.");
+        EnsureInvitationOpen(invitation);
+        return Results.Ok(new InvitationPreviewResponse(
+            invitation.OrganizationId, invitation.Organization.Name,
+            invitation.Email, invitation.Role, invitation.ExpiresAt));
+    }
+
+    private static async Task<IResult> AcceptInvitation(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        Auth0UserInfoClient userInfoClient,
+        InvitationTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        var token = RequireInvitationToken(request.Token);
+        var subject = IdentityAccess.RequireSubject(httpContext);
+        var caller = await IdentityAccess.ResolveOrCreateUser(db, subject, cancellationToken);
+        var tokenHash = HashToken(token);
+        var invitation = await db.OrganizationInvitations.SingleOrDefaultAsync(
+            item => item.TokenHash == tokenHash, cancellationToken)
+            ?? throw ApiException.NotFound("The invitation link is invalid or expired.");
+
+        var profile = await userInfoClient.GetVerifiedEmailAsync(httpContext, cancellationToken);
+        if (profile.NormalizedAddress != invitation.NormalizedEmail)
+        {
+            throw ApiException.Forbidden("Sign in with the verified email address that received this invitation.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT id FROM organization_invitations WHERE id = {invitation.Id} FOR UPDATE", cancellationToken);
+        invitation = await db.OrganizationInvitations.SingleAsync(
+            item => item.Id == invitation.Id, cancellationToken);
+        if (invitation.TokenHash != tokenHash)
+        {
+            throw ApiException.NotFound("The invitation link is invalid or expired.");
+        }
+        if (invitation.AcceptedAt is not null)
+        {
+            if (invitation.AcceptedByUserId == caller.Id)
+            {
+                var prior = await db.Memberships.SingleAsync(
+                    item => item.OrganizationId == invitation.OrganizationId && item.UserId == caller.Id,
+                    cancellationToken);
+                return Results.Ok(MembershipResponse.FromEntity(prior));
+            }
+            throw ApiException.Conflict("invitation_accepted", "This invitation has already been accepted.");
+        }
+        EnsureInvitationOpen(invitation);
+        var existingMembership = await db.Memberships.AnyAsync(
+            item => item.OrganizationId == invitation.OrganizationId && item.UserId == caller.Id,
+            cancellationToken);
+        if (existingMembership)
+        {
+            throw ApiException.Conflict("already_a_member", "You are already a member of this organization.");
+        }
+
+        var membership = new Membership
+        {
+            OrganizationId = invitation.OrganizationId,
+            UserId = caller.Id,
+            Role = invitation.Role,
+            CreatedAt = DateTimeOffset.UtcNow,
+            User = caller,
+        };
+        caller.Email = profile.Address;
+        db.Memberships.Add(membership);
+        invitation.AcceptedAt = DateTimeOffset.UtcNow;
+        invitation.AcceptedByUserId = caller.Id;
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(MembershipResponse.FromEntity(membership));
+    }
+
+    private static (string Address, string Normalized) NormalizeEmail(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 320 ||
+            !System.Net.Mail.MailAddress.TryCreate(value.Trim(), out var parsed) ||
+            !string.Equals(parsed.Address, value.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            throw ApiException.InvalidInput("Enter a valid email address.");
+        }
+        return (parsed.Address, parsed.Address.ToUpperInvariant());
+    }
+
+    private static string? NormalizeOptional(string? value, int maxLength, string label)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrEmpty(normalized)) return null;
+        if (normalized.Length > maxLength)
+        {
+            throw ApiException.InvalidInput($"{label} must not exceed {maxLength} characters.");
+        }
+        return normalized;
+    }
+
+    private static string? NormalizePictureUrl(string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrEmpty(normalized)) return null;
+        if (normalized.Length > 2048 ||
+            !Uri.TryCreate(normalized, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            throw ApiException.InvalidInput("Profile picture must be an HTTPS URL without embedded credentials.");
+        }
+        return uri.AbsoluteUri;
+    }
+
+    private static string? NormalizePhoneNumber(string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrEmpty(normalized)) return null;
+        var digitCount = normalized.Count(char.IsDigit);
+        var validCharacters = normalized.All(character =>
+            char.IsDigit(character) || character is '+' or ' ' or '(' or ')' or '-');
+        if (normalized.Length > 32 || digitCount is < 7 or > 15 || !validCharacters ||
+            normalized.Skip(1).Contains('+'))
+        {
+            throw ApiException.InvalidInput("Phone number must contain 7 to 15 digits and may use +, spaces, parentheses or hyphens.");
+        }
+        return normalized;
+    }
+
+    private static string CreateInviteToken() =>
+        Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+
+    private static string RequireInvitationToken(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token) || token.Length > 128)
+        {
+            throw ApiException.InvalidInput("A valid invitation token is required.");
+        }
+        return token;
+    }
+
+    private static string HashToken(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+    private static async Task LockInvitation(
+        RingfourDbContext db, Guid invitationId, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT id FROM organization_invitations WHERE id = {invitationId} FOR UPDATE", cancellationToken);
+    }
+
+    private static void EnsureInvitationOpen(OrganizationInvitation invitation)
+    {
+        if (invitation.AcceptedAt is not null)
+        {
+            throw ApiException.Conflict("invitation_accepted", "This invitation has already been accepted.");
+        }
+        if (invitation.RevokedAt is not null)
+        {
+            throw ApiException.Conflict("invitation_revoked", "This invitation has been revoked.");
+        }
+        if (invitation.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            throw ApiException.Conflict("invitation_expired", "This invitation has expired.");
+        }
     }
 
     // Serializes membership changes per organization so concurrent removals or

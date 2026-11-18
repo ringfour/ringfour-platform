@@ -2,4 +2,5 @@ FROM ringfour-runner:latest
 USER root
 COPY --chown=app:app src/ /app/src/
 COPY vendor/ringfour_platform_runtime-0.1.0.dev0-py3-none-any.whl /opt/ringfour/sdk/
+COPY vendor/ringfour_ui-0.1.0.dev0-py3-none-any.whl /opt/ringfour/sdk/
 USER app

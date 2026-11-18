@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Connectivity;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Identity;
+using Ringfour.Api.Logbook;
 using Ringfour.Api.Persistence;
 using Ringfour.Api.Robots;
 
@@ -114,7 +115,7 @@ public static class ScriptRunEndpoints
             RequestedByUserId = user.Id
         };
         db.Operations.Add(operation);
-        db.ScriptExecutions.Add(new ScriptExecution
+        var execution = new ScriptExecution
         {
             Id = id,
             RobotId = robotId,
@@ -123,15 +124,18 @@ public static class ScriptRunEndpoints
             State = "queued",
             CreatedAt = now,
             UpdatedAt = now
-        });
+        };
+        db.ScriptExecutions.Add(execution);
+        var lifecycleEventId = Guid.NewGuid();
         db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
         {
-            Id = Guid.NewGuid(),
+            Id = lifecycleEventId,
             ExecutionId = id,
             ActorUserId = user.Id,
             State = "queued",
             OccurredAt = now
         });
+        MissionLifecycleLogbook.Record(db, execution, lifecycleEventId, "queued", now);
         db.OperationIdempotencyRecords.Add(new OperationIdempotencyRecord
         {
             Id = Guid.NewGuid(),

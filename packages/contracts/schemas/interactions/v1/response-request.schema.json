@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/interactions/v1/response-request.schema.json",
+  "title": "Submit an operator response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chosen_value"],
+  "properties": {
+    "chosen_value": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$"}
+  }
+}

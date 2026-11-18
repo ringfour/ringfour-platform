@@ -18,6 +18,7 @@ from .executions import initialize
 from .executions import router as executions_router
 from .health import router as health_router
 from .preparation import router as preparation_router
+from .ui import router as ui_router
 
 
 @asynccontextmanager
@@ -29,6 +30,8 @@ async def lifespan(app: FastAPI):
     app.state.dev_session_lock = asyncio.Lock()
     app.state.tasks = set()
     app.state.processes = {}
+    app.state.ui_started_at = {}
+    app.state.ui_proxy_semaphore = asyncio.Semaphore(16)
     app.state.prepare_lock = asyncio.Lock()
     expiry_task = asyncio.create_task(expire_sessions(app))
     yield
@@ -55,4 +58,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(dev_sessions_router)
     app.include_router(dev_source_router)
     app.include_router(dev_execution_router)
+    app.include_router(ui_router)
     return app

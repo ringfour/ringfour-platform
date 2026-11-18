@@ -8,7 +8,7 @@ Complete prerequisite milestone 06 before beginning. Shared schemas, authorizati
 
 ## Contracts
 
-POST /v1/robots/{id}/dev-sessions; GET session; PUT /v1/dev-sessions/{id}/source with base generation and file manifest; POST restart; DELETE session. Define session ID, owner, workspace generation, dependency digest and expiry. Reject stale generations with 409. Exclude secrets, .git and venv from sync; deletion list is explicit.
+POST /v1/robots/{id}/dev-sessions; GET session; PUT /v1/dev-sessions/{id}/source with base generation and file manifest; POST restart; DELETE session. The local API exposes session-bound execution status/output and terminal artifact-list/download routes. Define session ID, owner, workspace generation, dependency digest and expiry. Reject stale generations with 409. Exclude secrets, .git and venv from sync; deletion list is explicit. Artifact bytes stay on the device and use the Runner's bounded immutable snapshot.
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.
 

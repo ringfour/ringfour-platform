@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -7,9 +8,19 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from ringfour_daemon import local_execution, operations, runner
-from ringfour_daemon.local_control import create_local_app
 from test_local_source import setup
+
+from ringfour_daemon import local_control, local_execution, operations, runner
+from ringfour_daemon.local_control import create_local_app
+
+
+class ArtifactStream(httpx.AsyncByteStream):
+    def __init__(self, content):
+        self.content = content
+
+    async def __aiter__(self):
+        for offset in range(0, len(self.content), 5):
+            yield self.content[offset:offset + 5]
 
 
 def test_restart_records_before_runner_and_reports_only_status(tmp_path, monkeypatch):
@@ -66,3 +77,36 @@ def test_restart_reports_low_storage_but_preserves_ambiguous_server_failures(tmp
     assert rejected.value.code == "insufficient_storage"
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(local_execution.restart(settings, item))
+
+
+def test_local_artifact_list_and_download_are_session_scoped_and_streamed(tmp_path, monkeypatch):
+    settings, session, token, _ = setup(tmp_path)
+    execution, operation = str(uuid.uuid4()), str(uuid.uuid4())
+    local_execution.record(settings.db_path, {"session_id": session, "execution_id": execution, "operation_id": operation})
+    content = b"development artifact bytes\n"
+    digest = hashlib.sha256(content).hexdigest()
+    artifact_list = {"execution_id": execution, "artifacts": [{"path": "results/report.txt", "size": len(content), "sha256": digest}],
+                     "artifact_state": "ready", "artifact_error": None}
+    requests = []
+    real_client = httpx.AsyncClient
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/download"):
+            assert request.url.params["path"] == "results/report.txt"
+            return httpx.Response(200, stream=ArtifactStream(content), headers={"content-length": str(len(content))})
+        return httpx.Response(200, json=artifact_list)
+
+    monkeypatch.setattr(local_control.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    headers = {"authorization": f"Bearer {token}"}
+    base = f"/v1/local/dev-sessions/{session}/executions/{execution}/artifacts"
+    with TestClient(create_local_app(settings)) as client:
+        assert client.get(base).status_code == 401
+        assert client.get(base.replace(execution, str(uuid.uuid4())), headers=headers).status_code == 404
+        listed = client.get(base, headers=headers)
+        assert listed.status_code == 200 and listed.json() == artifact_list
+        downloaded = client.get(base + "/download", params={"path": "results/report.txt"}, headers=headers)
+        assert downloaded.status_code == 200 and downloaded.content == content
+        assert downloaded.headers["content-length"] == str(len(content))
+    assert len(requests) == 2
+    assert all(request.headers["authorization"] == "Bearer secret" for request in requests)

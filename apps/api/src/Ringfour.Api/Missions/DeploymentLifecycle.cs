@@ -1,8 +1,10 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Connectivity;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Identity;
+using Ringfour.Api.Logbook;
 using Ringfour.Api.Persistence;
 using Ringfour.Api.Storage;
 
@@ -226,7 +228,7 @@ public sealed class DeploymentLifecycleWorker(IServiceScopeFactory scopes, Devic
                     DeadlineAt = now.AddSeconds(config.GetValue("Connectivity:OperationDeadlineSeconds", 60)),
                     RequestedByUserId = action.ActorUserId
                 });
-                db.ScriptExecutions.Add(new ScriptExecution
+                var execution = new ScriptExecution
                 {
                     Id = executionId,
                     RobotId = robotId,
@@ -237,15 +239,18 @@ public sealed class DeploymentLifecycleWorker(IServiceScopeFactory scopes, Devic
                     State = "queued",
                     CreatedAt = now,
                     UpdatedAt = now
-                });
+                };
+                db.ScriptExecutions.Add(execution);
+                var lifecycleEventId = Guid.NewGuid();
                 db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
                 {
-                    Id = Guid.NewGuid(),
+                    Id = lifecycleEventId,
                     ExecutionId = executionId,
                     ActorUserId = action.ActorUserId,
                     State = "queued",
                     OccurredAt = now
                 });
+                MissionLifecycleLogbook.Record(db, execution, lifecycleEventId, "queued", now);
                 action.State = "starting";
                 deployment.LastExecutionId = executionId;
                 deployment.ObservedState = "starting";
@@ -255,7 +260,16 @@ public sealed class DeploymentLifecycleWorker(IServiceScopeFactory scopes, Devic
         else
         {
             var execution = await db.ScriptExecutions.SingleAsync(item => item.Id == action.ExecutionId, ct);
-            if (execution.State == "failed" && execution.Error is not null) Fail(action, deployment, now, "start_failed", "The execution failed to start or run.");
+            if (execution.State == "failed" && execution.Error is not null)
+            {
+                var failure = JsonNode.Parse(execution.Error);
+                var code = failure?["code"]?.GetValue<string>();
+                if (code == "insufficient_storage")
+                    Fail(action, deployment, now, code, failure?["message"]?.GetValue<string>() ??
+                        "The Runner is low on free storage. Free space before starting another mission.");
+                else
+                    Fail(action, deployment, now, "start_failed", "The execution failed to start or run.");
+            }
             else if (execution.State != "queued") Complete(action, now);
         }
         action.UpdatedAt = now;

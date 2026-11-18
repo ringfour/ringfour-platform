@@ -90,6 +90,19 @@ def install(db_path, body, *, now=None):
     return {"grant_id": body["grant_id"]}
 
 
+def revoke(db_path, body):
+    """Remove only grants named by an authenticated durable revoke operation."""
+    if (not isinstance(body, dict) or set(body) != {"operation_id", "grant_ids"}
+            or not _id(body["operation_id"]) or not isinstance(body["grant_ids"], list)
+            or any(not _id(item) for item in body["grant_ids"])
+            or len(set(body["grant_ids"])) != len(body["grant_ids"])):
+        raise GrantRejected("Invalid grant revocation.")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.executemany("DELETE FROM local_dev_grants WHERE grant_id=?", ((item,) for item in body["grant_ids"]))
+    return {"revoked_grant_ids": body["grant_ids"]}
+
+
 def grant_identity(db_path, session_id, token, *, now=None):
     now = now or datetime.now(UTC)
     if not _id(session_id) or not isinstance(token, str) or not _TOKEN.fullmatch(token):

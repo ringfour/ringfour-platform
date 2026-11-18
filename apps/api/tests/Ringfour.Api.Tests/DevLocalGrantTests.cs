@@ -84,6 +84,13 @@ public sealed class DevLocalGrantTests(PostgresFixture postgres)
         var sessionState = JsonDocument.Parse(await owner.GetStringAsync($"/v1/dev-sessions/{session}")).RootElement;
         Assert.Equal(1, sessionState.GetProperty("generation").GetInt32());
         Assert.Equal(sync.lock_sha256, sessionState.GetProperty("dependency_digest").GetString());
+        Assert.Equal(HttpStatusCode.Created, (await owner.PostAsync($"/v1/robots/{robot}/credentials", content: null)).StatusCode);
+        using var revokeCommand = await DeviceSocket.ReceiveAsync(socket);
+        Assert.Equal("dev.session.grants.revoke", revokeCommand.Payload().GetProperty("kind").GetString());
+        var revokePayload = revokeCommand.Payload().GetProperty("payload");
+        ContractSchema.AssertValid("dev-sessions/v1/revoke-grants.schema.json", revokePayload.GetRawText());
+        Assert.Contains(grantId, revokePayload.GetProperty("grant_ids").EnumerateArray().Select(item => item.GetGuid()));
+        Assert.Equal(HttpStatusCode.NoContent, (await device.PostAsJsonAsync(reportUrl, sync)).StatusCode);
         await RobotTests.AssertError(await device.PutAsJsonAsync("/v1/device/local-dev-endpoint", new { certificate_sha256 = "invalid", daemon_url = (string?)null }), HttpStatusCode.BadRequest, "invalid_input");
     }
 }

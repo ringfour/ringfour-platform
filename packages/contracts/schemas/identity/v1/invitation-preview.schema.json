@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/invitation-preview.schema.json",
+  "title": "InvitationPreview",
+  "type": "object",
+  "required": [
+    "organization_id",
+    "organization_name",
+    "email",
+    "role",
+    "expires_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "organization_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "organization_name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "role": {
+      "enum": [
+        "owner",
+        "developer",
+        "operator"
+      ]
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

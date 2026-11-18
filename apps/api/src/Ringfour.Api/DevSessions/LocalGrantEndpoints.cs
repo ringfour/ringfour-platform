@@ -111,6 +111,10 @@ public static class LocalGrantEndpoints
         if (await db.DevLocalGrants.AnyAsync(item => item.Id == grantId, ct))
             throw ApiException.Conflict("conflict", "The local grant ID is already in use.");
         var expires = session.ExpiresAt < now.AddMinutes(5) ? session.ExpiresAt : now.AddMinutes(5);
+        // PostgreSQL timestamps have microsecond precision. Normalize before
+        // returning the first response so an idempotent replay serializes the
+        // exact same persisted instant instead of differing by 100 ns.
+        expires = new DateTimeOffset(expires.UtcDateTime.Ticks - expires.UtcDateTime.Ticks % 10, TimeSpan.Zero);
         var operationId = Guid.NewGuid();
         var payload = JsonSerializer.Serialize(new { operation_id = operationId, session_id = sessionId, grant_id = grantId,
             token_sha256 = hash, expires_at = RingfourJson.UtcTimestamp(expires), scopes = new[] { "source", "output" } }, RingfourJson.Options);

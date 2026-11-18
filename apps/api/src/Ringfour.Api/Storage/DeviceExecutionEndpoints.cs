@@ -6,6 +6,7 @@ using Amazon.Runtime;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Errors;
+using Ringfour.Api.Logbook;
 using Ringfour.Api.Persistence;
 using Ringfour.Api.Robots;
 
@@ -228,14 +229,19 @@ public static class DeviceExecutionEndpoints
         }
         if (Rank(state) < Rank(execution.State)) throw ApiException.Conflict("conflict", "Execution state cannot move backwards.");
         if (execution.State != state)
+        {
+            var occurredAt = DateTimeOffset.UtcNow;
+            var lifecycleEventId = Guid.NewGuid();
             db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
             {
-                Id = Guid.NewGuid(),
+                Id = lifecycleEventId,
                 ExecutionId = execution.Id,
                 ActorUserId = execution.ActorUserId,
                 State = state,
-                OccurredAt = DateTimeOffset.UtcNow
+                OccurredAt = occurredAt
             });
+            MissionLifecycleLogbook.Record(db, execution, lifecycleEventId, state, occurredAt);
+        }
         execution.State = state;
         execution.ExitCode = exitCode;
         execution.Error = failureJson;

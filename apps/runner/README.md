@@ -30,6 +30,17 @@ it does not pass the master Runner token. The local Compose stack sets this URL.
 The mission must separately pin the `ringfour-platform-runtime` integration
 wheel; the standalone SDK has no Platform dependency.
 
+Mission-authored Gradio interfaces may separately pin the optional
+`ringfour-ui` wheel from `/opt/ringfour/sdk/`. It provides theme and map
+helpers; it does not provide remote transport or a Console entry point. The
+Runner image receives the wheel from `vendor/` when `ringfour-virtual` builds
+the device stack.
+
+Milestone 09 human interactions use the same local listener and independently
+derived execution credential through `RINGFOUR_INTERACTION_URL` and
+`RINGFOUR_INTERACTION_TOKEN`. The daemon persists the request before returning;
+the mission never receives the Runner master credential.
+
 ## Develop
 
 ```sh

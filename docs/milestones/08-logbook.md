@@ -4,11 +4,14 @@
 
 07. Hosted durable searchable history, building on earlier event records.
 
-Complete prerequisite milestone 07 before beginning. Shared schemas, authorization, errors, limits, idempotency and durability rules in [architecture](../architecture.md) apply.
+Complete prerequisite milestone 07 before beginning. Physical-device acceptance
+has been retired by the user; use real local processes and protocols for
+integrated acceptance. Shared schemas, authorization, errors, limits,
+idempotency and durability rules in [architecture](../architecture.md) apply.
 
 ## Contracts
 
-Device event batches use event schema from architecture with acknowledged local sequence/checkpoint. GET /v1/organizations/{org_id}/events filters robot, execution, operation, actor, type and time with cursor pagination. GET execution history links revisions, lifecycle, output and artifacts. Events are append-only; corrections are new events.
+Device event batches use event schema from architecture with acknowledged local sequence/checkpoint. GET /v1/organizations/{org_id}/events filters robot, execution, operation, actor, event ID, type and time with cursor pagination. The CLI may aggregate multiple 100-event API pages. GET execution history links revisions, lifecycle, output and artifacts. Events are append-only; corrections are new events.
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.
 

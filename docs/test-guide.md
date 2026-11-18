@@ -1,6 +1,8 @@
 # 08b handoff and test guide
 
-Updated: 2026-11-16. This guide records the live artifact work in progress and a safe route to the Base101 acceptance test. The 08b acceptance target is: deploy `../missions/spin-photos` to Base101, run it, and see its real camera photos alongside linked Logbook entries in Console while the mission is still running. That physical test has **not** passed.
+Updated: 2026-11-17. This is a historical handoff for the 08b live-artifact work. The user retired physical-device acceptance for this project; the Base101 deployment and test instructions below are retained only as historical context and are not completion gates. Continue with local real-process and protocol acceptance.
+
+Track current remaining milestone gates in the [acceptance checklist](acceptance-checklist.md); this handoff's historical status text may be superseded by later evidence.
 
 ## Current implementation
 
@@ -86,7 +88,11 @@ The expected final output is a `PASS:` line describing live entries and image ev
 
 Then rerun the isolated outbox and API migration/test gates using the exact commands in [Milestone 08 evidence](evidence/08.md) and the component commands above. In particular, add a real PostgreSQL API integration test for live artifact replay, organization authorization, same-path/same-ID conflicts, object-store bytes and MIME type, v1 compatibility, schema v2 evidence, and migration of pre-existing artifact rows. Exercise an object write followed by DB failure and verify the orphan is safely reconciled. Test daemon restart/lost response with both the pending and uploaded checkpoints. Record actual commands/results in `docs/evidence/08.md` and human steps in `docs/human-testing/08.md`.
 
-## Base101 final acceptance
+## Retired: Base101 physical acceptance
+
+The user decided on 2026-11-17 that no further physical acceptance will be
+performed. The following steps are historical and must not be treated as
+required work or as a blocker for milestone completion.
 
 Do this only after the rebuilt production images and local real-process acceptance are sound:
 
@@ -100,4 +106,8 @@ Do not mark the Base101 gate passed from local mocks, a synthetic fixture image,
 
 ## Handoff state
 
-Implementation is in progress; local component checks pass, full API PostgreSQL tests are blocked on Testcontainers/Docker socket access, and the real-process image test has not produced an observed final result. The Base101 test, production deployment, evidence recording, human guide update and milestone commit are still outstanding. No 08b commit has been made. Preserve the dirty worktree and continue from this guide.
+At the time this handoff was written, implementation was in progress; API
+PostgreSQL tests were blocked on Testcontainers/Docker socket access and the
+real-process image test had no observed final result. These are historical
+status notes. See `docs/evidence/08.md` for current remaining gates. Physical
+acceptance is retired. Preserve the dirty worktree.

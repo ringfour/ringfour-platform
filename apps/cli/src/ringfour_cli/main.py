@@ -1,6 +1,7 @@
 import base64
 import codecs
 import hashlib
+import http.client
 import os
 import secrets
 import shutil
@@ -12,11 +13,13 @@ import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 from typer.core import TyperGroup
 
 from . import auth
@@ -27,7 +30,7 @@ from .config import (
     selected_org,
     update_config,
 )
-from .dev_sync import LocalTransportError, build_snapshot, local_request
+from .dev_sync import LocalTransportError, build_snapshot, local_request, local_stream
 from .dev_sync import daemon_url as validate_daemon_url
 from .mission_bundle import build_mission_bundle
 from .mission_context import (
@@ -67,8 +70,14 @@ artifact_app = typer.Typer(help="Download script artifacts.", no_args_is_help=Tr
 app.add_typer(artifact_app, name="artifact")
 dev_app = typer.Typer(help="Work on a robot over the local network.", no_args_is_help=True)
 app.add_typer(dev_app, name="dev")
+dev_artifact_app = typer.Typer(help="List and download local development artifacts.", no_args_is_help=True)
+dev_app.add_typer(dev_artifact_app, name="artifact")
 mission_app = typer.Typer(help="Publish and operate missions.", no_args_is_help=True)
 app.add_typer(mission_app, name="mission")
+hitl_app = typer.Typer(help="Inspect and answer human interactions.", no_args_is_help=True)
+app.add_typer(hitl_app, name="hitl")
+logbook_app = typer.Typer(help="Inspect robot and mission history.", no_args_is_help=True)
+app.add_typer(logbook_app, name="logbook")
 console = Console()
 
 # name -> (env var, default base URL)
@@ -703,6 +712,124 @@ def artifact_list(execution_id: str) -> None:
     console.print_json(data=body)
 
 
+@hitl_app.command("list")
+def hitl_list(
+    org: str | None = typer.Option(None, "--org", help="Organization ID (default: selected org)."),
+    state: str | None = typer.Option("pending", "--state", help="pending, answered, timed_out, cancelled, or all."),
+    robot: str | None = typer.Option(None, "--robot", help="Filter by robot ID."),
+) -> None:
+    """List organization human interactions, pending by default."""
+    settings, store = _settings(), auth.TokenStore()
+    org_id = _resolve_org(settings, org)
+    if state == "all":
+        state = None
+    if state is not None and state not in ("pending", "answered", "timed_out", "cancelled"):
+        raise typer.BadParameter("Must be pending, answered, timed_out, cancelled, or all.", param_hint="--state")
+    params = {key: value for key, value in {"state": state, "robot_id": robot}.items() if value is not None}
+    body = _api_request("GET", f"/v1/organizations/{org_id}/interactions", settings, store, params=params).json()
+    table = Table(title="Human interactions")
+    for heading in ("Request", "Robot", "State", "Deadline", "Prompt"):
+        table.add_column(heading)
+    for item in body["items"]:
+        table.add_row(item["request_id"], item["robot_id"], item["state"], item["deadline"], item["prompt"])
+    console.print(table)
+    if body.get("next_cursor"):
+        console.print("More interactions are available through cursor pagination.")
+
+
+@logbook_app.command("list")
+def logbook_list(
+    org: str | None = typer.Option(None, "--org", help="Organization ID (default: selected org)."),
+    robot: str | None = typer.Option(None, "--robot", help="Filter by robot ID."),
+    execution: str | None = typer.Option(None, "--execution", help="Filter by execution ID."),
+    operation: str | None = typer.Option(None, "--operation", help="Filter by operation ID."),
+    actor: str | None = typer.Option(None, "--actor", help="Filter by initiating user ID."),
+    event_type: str | None = typer.Option(None, "--type", help="Filter by event type."),
+    limit: int = typer.Option(100, min=1, max=1000, help="Total events to collect (1–1000; fetched in API pages of 100)."),
+    cursor: str | None = typer.Option(None, "--cursor", help="Continue from a previous page."),
+) -> None:
+    """List an organization timeline page in ingestion order."""
+    settings, store = _settings(), auth.TokenStore()
+    org_id = _resolve_org(settings, org)
+    base_params = {key: value for key, value in {
+        "robot_id": robot, "execution_id": execution, "operation_id": operation,
+        "actor_user_id": actor, "type": event_type,
+    }.items() if value is not None}
+    items = []
+    next_cursor = cursor
+    remaining = limit
+    while remaining > 0:
+        page_limit = min(100, remaining)
+        params = {**base_params, "limit": page_limit}
+        if next_cursor is not None:
+            params["cursor"] = next_cursor
+        body = _api_request("GET", f"/v1/organizations/{org_id}/events", settings, store, params=params).json()
+        items.extend(body["items"])
+        remaining -= len(body["items"])
+        next_cursor = body.get("next_cursor")
+        if not next_cursor or not body["items"]:
+            break
+    table = Table(title="Logbook")
+    for heading in ("Event ID", "Occurred", "Type", "Robot", "Execution", "Actor", "Event"):
+        table.add_column(heading)
+    for item in items:
+        payload = item.get("payload") or {}
+        if item["type"] == "device.operation.state_changed":
+            summary = payload.get("state", "-")
+        elif item["type"] == "mission.logbook.entry":
+            summary = payload.get("message", "-")
+        elif item["type"].startswith("mission."):
+            summary = payload.get("state", "-")
+        elif item["type"].startswith("human.interaction."):
+            summary = payload.get("message", payload.get("outcome", "-"))
+        else:
+            summary = payload.get("event_type", "-")
+        table.add_row(item["event_id"], item["occurred_at"], item["type"], item["robot_id"],
+            item.get("execution_id") or "-", item.get("actor_user_id") or "-", Text(str(summary)))
+    console.print(table)
+    if next_cursor:
+        console.print(f"Next page cursor: {next_cursor} (repeat the same filters with --cursor)")
+
+
+@logbook_app.command("show")
+def logbook_show(
+    event_id: str,
+    org: str | None = typer.Option(None, "--org", help="Organization ID (default: selected org)."),
+) -> None:
+    """Show one Logbook event by ID."""
+    settings, store = _settings(), auth.TokenStore()
+    org_id = _resolve_org(settings, org)
+    body = _api_request("GET", f"/v1/organizations/{org_id}/events", settings, store,
+        params={"event_id": event_id, "limit": 1}).json()
+    if not body["items"]:
+        console.print(f"[yellow]No Logbook event {event_id} is visible in organization {org_id}.[/yellow]")
+        raise typer.Exit(code=1)
+    console.print_json(data=body["items"][0])
+
+
+@hitl_app.command("show")
+def hitl_show(request_id: str) -> None:
+    """Show one human interaction and its device-confirmed state."""
+    body = _api_request("GET", f"/v1/interactions/{request_id}", _settings(), auth.TokenStore()).json()
+    console.print_json(data=body)
+
+
+@hitl_app.command("respond")
+def hitl_respond(
+    request_id: str,
+    choice: str,
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key", help="Stable key for retrying this response."),
+) -> None:
+    """Submit a listed choice; daemon confirmation remains authoritative."""
+    key = idempotency_key or str(uuid.uuid4())
+    if not key.strip() or len(key) > 200:
+        raise typer.BadParameter("Must be nonblank and at most 200 characters.", param_hint="--idempotency-key")
+    body = _api_request("POST", f"/v1/interactions/{request_id}/responses", _settings(), auth.TokenStore(),
+        headers={"Idempotency-Key": key}, json={"chosen_value": choice}).json()
+    console.print_json(data=body)
+    console.print("[yellow]Response submitted; it is not applied until the daemon confirms it.[/yellow]")
+
+
 @app.command()
 def login(
     no_browser: bool = typer.Option(
@@ -1302,6 +1429,136 @@ def _dev_output(settings, store, target, execution_id, connection, *, follow):
         if not follow and not waiting and not more:
             return
         time.sleep(0.5)
+
+
+def _valid_dev_artifact_path(value: str) -> bool:
+    if not isinstance(value, str) or not value or "\\" in value or value.startswith("/"):
+        return False
+    try:
+        if len(value.encode("utf-8")) > 240 or any(ord(char) < 32 or ord(char) == 127 for char in value):
+            return False
+    except UnicodeError:
+        return False
+    return all(part not in ("", ".", "..") for part in value.split("/"))
+
+
+def _dev_artifact_manifest(settings, store, target, execution_id, connection):
+    path = f"/v1/local/dev-sessions/{target['session_id']}/executions/{execution_id}/artifacts"
+    status, body = local_request(*connection, "GET", path)
+    if status == 401:
+        connection = _local_grant(settings, store, target, connection[0])
+        status, body = local_request(*connection, "GET", path)
+    if status != 200:
+        error = body.get("error", {}) if isinstance(body, dict) else {}
+        raise ValueError(f"Could not list development artifacts: {error.get('code', f'HTTP {status}')}")
+    if (not isinstance(body, dict) or set(body) != {"execution_id", "artifacts", "artifact_state", "artifact_error"}
+            or body["execution_id"] != execution_id or body["artifact_state"] not in ("ready", "failed")
+            or not isinstance(body["artifacts"], list) or len(body["artifacts"]) > 16
+            or (body["artifact_error"] is not None and (not isinstance(body["artifact_error"], dict)
+                or set(body["artifact_error"]) != {"code", "message"}
+                or not isinstance(body["artifact_error"]["code"], str)
+                or not isinstance(body["artifact_error"]["message"], str)))):
+        raise ValueError("Daemon returned an invalid development artifact list.")
+    for item in body["artifacts"]:
+        if (not isinstance(item, dict) or set(item) != {"path", "size", "sha256"}
+                or not _valid_dev_artifact_path(item["path"])
+                or type(item["size"]) is not int or not 0 <= item["size"] <= 9007199254740991
+                or not isinstance(item["sha256"], str) or len(item["sha256"]) != 64
+                or any(char not in "0123456789abcdef" for char in item["sha256"])):
+            raise ValueError("Daemon returned an invalid development artifact manifest.")
+    return body, connection
+
+
+@dev_artifact_app.command("list")
+def dev_artifact_list(
+    execution_id: str,
+    robot: str | None = typer.Option(None, "--robot"),
+    org: str | None = typer.Option(None, "--org"),
+    session: str | None = typer.Option(None, "--session"),
+    daemon_url: str | None = typer.Option(None, "--daemon-url"),
+) -> None:
+    """List artifacts captured from a terminal development execution."""
+    settings, store = _settings(), auth.TokenStore()
+    target = _dev_target(settings, org, robot, session, _dev_project())
+    connection = _local_grant(settings, store, target, daemon_url)
+    try:
+        body, _ = _dev_artifact_manifest(settings, store, target, execution_id, connection)
+    except (OSError, ValueError, http.client.HTTPException, httpx.HTTPError) as error:
+        typer.echo(f"Cannot list development artifacts: {error}", err=True)
+        raise typer.Exit(1) from error
+    table = Table(title=f"Development artifacts ({body['artifact_state']})")
+    for heading in ("Path", "Size", "SHA-256"):
+        table.add_column(heading)
+    for item in body["artifacts"]:
+        table.add_row(item["path"], str(item["size"]), item["sha256"])
+    console.print(table)
+    if body["artifact_error"]:
+        console.print(f"[yellow]Artifact collection: {body['artifact_error'].get('code', 'failed')}[/yellow]")
+
+
+@dev_artifact_app.command("download")
+def dev_artifact_download(
+    execution_id: str,
+    path: str,
+    output: Path = typer.Option(..., "--output", "-o"),  # noqa: B008
+    robot: str | None = typer.Option(None, "--robot"),
+    org: str | None = typer.Option(None, "--org"),
+    session: str | None = typer.Option(None, "--session"),
+    daemon_url: str | None = typer.Option(None, "--daemon-url"),
+) -> None:
+    """Download and verify a local development artifact without overwriting."""
+    settings, store = _settings(), auth.TokenStore()
+    target = _dev_target(settings, org, robot, session, _dev_project())
+    connection = _local_grant(settings, store, target, daemon_url)
+    temporary = None
+    try:
+        manifest, connection = _dev_artifact_manifest(settings, store, target, execution_id, connection)
+        if manifest["artifact_state"] != "ready":
+            raise ValueError("Runner could not produce a complete artifact snapshot.")
+        item = next((candidate for candidate in manifest["artifacts"] if candidate["path"] == path), None)
+        if item is None:
+            raise ValueError("Development artifact not found.")
+        if output.exists():
+            raise FileExistsError(f"{output} already exists")
+        if shutil.disk_usage(output.parent).free < item["size"] + 268435456:
+            raise OSError("Not enough free space to download the artifact")
+        route = f"/v1/local/dev-sessions/{target['session_id']}/executions/{execution_id}/artifacts/download?{urlencode({'path': path})}"
+        with tempfile.NamedTemporaryFile(mode="w+b", dir=output.parent, prefix=".ringfour-dev-artifact-", delete=False) as target_file:
+            temporary = Path(target_file.name)
+            for attempt in range(2):
+                with local_stream(*connection, "GET", route) as response:
+                    if response.status == 401 and attempt == 0:
+                        connection = _local_grant(settings, store, target, connection[0])
+                        continue
+                    if response.status != 200:
+                        response.read(2048)
+                        raise ValueError(f"Could not download development artifact (HTTP {response.status}).")
+                    content_length = response.getheader("Content-Length")
+                    if content_length is not None and (not content_length.isdecimal() or int(content_length) != item["size"]):
+                        raise ValueError("Daemon returned an inconsistent artifact length.")
+                    checksum = hashlib.sha256()
+                    length = 0
+                    while chunk := response.read(65536):
+                        length += len(chunk)
+                        if length > item["size"]:
+                            raise ValueError("Downloaded artifact exceeds its declared size.")
+                        target_file.write(chunk)
+                        checksum.update(chunk)
+                    if length != item["size"] or checksum.hexdigest() != item["sha256"]:
+                        raise ValueError("Downloaded artifact failed size or SHA-256 verification.")
+                    break
+            else:
+                raise ValueError("Local grant expired during artifact download.")
+            target_file.flush()
+            os.fsync(target_file.fileno())
+        os.link(temporary, output)
+    except (OSError, ValueError, http.client.HTTPException, httpx.HTTPError) as error:
+        console.print(f"[red]Cannot download development artifact: {error}[/red]")
+        raise typer.Exit(1) from error
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    console.print(f"Saved {output}")
 
 
 @dev_app.command("restart")

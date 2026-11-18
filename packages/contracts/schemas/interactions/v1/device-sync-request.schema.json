@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/interactions/v1/device-sync-request.schema.json",
+  "title": "Daemon-authoritative interaction synchronization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "execution_id", "prompt", "choices", "deadline", "timeout_outcome", "state", "outcome", "applied_response_id", "created_at", "updated_at"],
+  "properties": {
+    "request_id": {"$ref": "#/$defs/uuid"},
+    "execution_id": {"$ref": "#/$defs/uuid"},
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "choices": {"type": "array", "minItems": 2, "maxItems": 12, "items": {"$ref": "#/$defs/choice"}},
+    "deadline": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]},
+    "timeout_outcome": {"type": ["string", "null"], "minLength": 1, "maxLength": 64},
+    "state": {"enum": ["pending", "answered", "timed_out", "cancelled"]},
+    "outcome": {"type": ["string", "null"], "minLength": 1, "maxLength": 64},
+    "applied_response_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/uuid"}]},
+    "created_at": {"$ref": "#/$defs/timestamp"},
+    "updated_at": {"$ref": "#/$defs/timestamp"}
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {"properties": {"deadline": {"type": "null"}, "timeout_outcome": {"type": "null"}}},
+        {"properties": {"deadline": {"$ref": "#/$defs/timestamp"}, "timeout_outcome": {"type": "string"}}}
+      ]
+    },
+    {
+      "if": {"properties": {"state": {"const": "timed_out"}}},
+      "then": {"properties": {"deadline": {"$ref": "#/$defs/timestamp"}, "timeout_outcome": {"type": "string"}}}
+    }
+  ],
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "timestamp": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "choice": {"type": "object", "additionalProperties": false, "required": ["value", "label"], "properties": {
+      "value": {"type": "string", "minLength": 1, "maxLength": 64}, "label": {"type": "string", "minLength": 1, "maxLength": 160}
+    }}
+  }
+}

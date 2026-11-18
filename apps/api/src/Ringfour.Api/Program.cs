@@ -1,4 +1,5 @@
 using Ringfour.Api.Logbook;
+using Ringfour.Api.MissionUi;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
 using Ringfour.Api;
@@ -8,6 +9,7 @@ using Ringfour.Api.Errors;
 using Ringfour.Api.DevSessions;
 using Ringfour.Api.Health;
 using Ringfour.Api.Identity;
+using Ringfour.Api.Interactions;
 using Ringfour.Api.Missions;
 using Ringfour.Api.Persistence;
 using Ringfour.Api.Robots;
@@ -26,6 +28,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 builder.Services.AddDbContext<RingfourDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+builder.Services.AddScoped<InvitationEmailSender>();
+builder.Services.AddHttpClient<Auth0UserInfoClient>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -40,10 +44,12 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 builder.Services.AddSingleton<DeviceConnectionManager>();
+builder.Services.AddSingleton<MissionUiDeviceConnectionManager>();
 builder.Services.AddSingleton<ConnectivityMetrics>();
 builder.Services.AddHostedService<OperationSweeper>();
 builder.Services.AddHostedService<DeploymentLifecycleWorker>();
 builder.Services.AddHostedService<DevSessionWorker>();
+builder.Services.AddHostedService<DevGrantRetentionWorker>();
 builder.Services.AddRingfourStorage(builder.Configuration);
 builder.Services.AddHostedService<ScriptStorageSweeper>();
 
@@ -107,6 +113,9 @@ app.MapDevRestartEndpoints();
 app.MapDevRunStatusEndpoints();
 app.MapDevSourceReports();
 app.MapLogbookEndpoints();
+app.MapInteractionEndpoints();
+app.MapMissionUiEndpoints();
+app.MapMissionUiDeviceSocketEndpoint();
 app.MapDeploymentLifecycle();
 app.MapDeviceExecutionEndpoints();
 app.MapDeviceSocketEndpoint();

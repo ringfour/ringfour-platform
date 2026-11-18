@@ -9,6 +9,7 @@ import os
 import ssl
 import tomllib
 import zipfile
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -42,23 +43,11 @@ def daemon_url(value):
 
 def local_request(url, certificate_sha256, token, method, path, *, body=None, key=None):
     """Pin and check certificate validity before transmitting any bearer token."""
-    parsed = urlsplit(daemon_url(url))
-    if not isinstance(certificate_sha256, str) or len(certificate_sha256) != 64 or any(c not in "0123456789abcdef" for c in certificate_sha256):
-        raise LocalConnectionError("Platform returned an invalid daemon fingerprint.")
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE  # Exact pin and validity are checked before sending credentials.
-    connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, context=context, timeout=15)
     try:
-        connection.connect()
-        der = connection.sock.getpeercert(binary_form=True)
-        actual = hashlib.sha256(der).hexdigest()
-        if not hmac.compare_digest(actual, certificate_sha256):
-            raise LocalConnectionError("Daemon certificate fingerprint does not match the Platform.")
-        cert = x509.load_der_x509_certificate(der)
-        now = datetime.now(UTC)
-        if not cert.not_valid_before_utc <= now < cert.not_valid_after_utc:
-            raise LocalConnectionError("Daemon certificate is expired or not yet valid.")
+        connection = _pinned_connection(url, certificate_sha256)
+    except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        raise LocalTransportError("Could not connect to the local daemon over HTTPS.") from exc
+    try:
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
         data = None
         if body is not None:
@@ -78,6 +67,49 @@ def local_request(url, certificate_sha256, token, method, path, *, body=None, ke
         return response.status, value
     except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
         raise LocalTransportError("Could not connect to the local daemon over HTTPS.") from exc
+    finally:
+        connection.close()
+
+
+def _pinned_connection(url, certificate_sha256):
+    parsed = urlsplit(daemon_url(url))
+    if not isinstance(certificate_sha256, str) or len(certificate_sha256) != 64 or any(c not in "0123456789abcdef" for c in certificate_sha256):
+        raise LocalConnectionError("Platform returned an invalid daemon fingerprint.")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE  # Exact pin and validity are checked before sending credentials.
+    connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, context=context, timeout=60)
+    try:
+        connection.connect()
+        der = connection.sock.getpeercert(binary_form=True)
+        actual = hashlib.sha256(der).hexdigest()
+        if not hmac.compare_digest(actual, certificate_sha256):
+            raise LocalConnectionError("Daemon certificate fingerprint does not match the Platform.")
+        cert = x509.load_der_x509_certificate(der)
+        now = datetime.now(UTC)
+        if not cert.not_valid_before_utc <= now < cert.not_valid_after_utc:
+            raise LocalConnectionError("Daemon certificate is expired or not yet valid.")
+        return connection
+    except BaseException:
+        connection.close()
+        raise
+
+
+@contextmanager
+def local_stream(url, certificate_sha256, token, method, path):
+    """Yield a pinned raw HTTP response for large local transfers."""
+    try:
+        connection = _pinned_connection(url, certificate_sha256)
+    except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        raise LocalTransportError("Could not connect to the local daemon over HTTPS.") from exc
+    try:
+        connection.request(method, path, headers={"Authorization": f"Bearer {token}", "Accept-Encoding": "identity"})
+        response = connection.getresponse()
+    except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        connection.close()
+        raise LocalTransportError("Could not connect to the local daemon over HTTPS.") from exc
+    try:
+        yield response
     finally:
         connection.close()
 

@@ -1,0 +1,12 @@
+{
+  "execution_id": "d8cce04e-ff51-4459-82c4-460a8c5a662b",
+  "artifacts": [
+    {
+      "path": "results/report.json",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "artifact_state": "ready",
+  "artifact_error": null
+}

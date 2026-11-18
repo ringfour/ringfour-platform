@@ -71,6 +71,25 @@ test("Runner artifact fixtures enforce bounds", async () => {
   assert.equal(chunk({ ...output, next_offset: 9007199254740992 }), false);
 });
 
+test("Runner active mission UI status list is bounded", async () => {
+  const validate = await validatorFor("schemas/runner/v1/ui-status-list.schema.json");
+  const list = await loadJson("fixtures/runner/v1/ui-status-list.json");
+  assert.ok(validate(list), JSON.stringify(validate.errors));
+  assert.equal(validate({ executions: Array(65).fill(list.executions[0]) }), false);
+});
+
+test("mission UI device tunnel frames validate and enforce envelope bounds", async () => {
+  const validate = await validatorFor("schemas/mission-ui/v1/device-frame.schema.json");
+  const frames = await loadJson("fixtures/mission-ui/v1/device-frames.json");
+  for (const frame of frames) assert.ok(validate(frame), JSON.stringify(validate.errors));
+  assert.equal(validate({ ...frames[4], sequence: 0 }), false, "sequence starts at one");
+  assert.equal(validate({ ...frames[4], payload: { ...frames[4].payload, path: "//example.com/" } }), false, "authority form rejected");
+  assert.equal(validate({ ...frames[4], payload: { ...frames[4].payload, unexpected: true } }), false, "unknown payload field rejected");
+  assert.equal(validate({ ...frames[5], payload: { ...frames[5].payload, data: "***" } }), false, "non-base64 chunk rejected");
+  assert.equal(validate({ ...frames[8], payload: { ...frames[8].payload, status: 101 } }), false, "inner WebSocket upgrade rejected");
+  assert.equal(validate({ ...frames[4], unexpected: true }), false, "unknown envelope field rejected");
+});
+
 test("script revision request enforces upload bounds", async () => {
   const validate = await validatorFor("schemas/scripts/v1/create-revision-request.schema.json");
   const request = await loadJson("fixtures/scripts/v1/create-revision.json");
@@ -498,7 +517,7 @@ test("device pairing fixtures and exclusive claim targets", async () => {
 });
 
 test("development session proposal fixtures and source bounds validate", async () => {
-  for (const name of ["create-request", "session", "source-request", "accepted", "runner-sync", "runner-restart", "lifecycle-command", "sync-result", "grant-request", "grant-accepted", "device-grant", "local-status", "device-endpoint", "device-source-report", "local-source-state", "runner-restart-result", "restart-request", "device-run-status"]) {
+  for (const name of ["create-request", "session", "source-request", "accepted", "runner-sync", "runner-restart", "lifecycle-command", "sync-result", "grant-request", "grant-accepted", "device-grant", "revoke-grants", "local-status", "device-endpoint", "device-source-report", "local-source-state", "runner-restart-result", "restart-request", "device-run-status"]) {
     const validate = await validatorFor(`schemas/dev-sessions/v1/${name}.schema.json`);
     const fixture = await loadJson(`fixtures/dev-sessions/v1/${name}.json`);
     assert.ok(validate(fixture), `${name}: ${JSON.stringify(validate.errors)}`);
@@ -525,9 +544,21 @@ test("development session proposal fixtures and source bounds validate", async (
   const deviceGrant = await validatorFor("schemas/dev-sessions/v1/device-grant.schema.json");
   const deviceFixture = await loadJson("fixtures/dev-sessions/v1/device-grant.json");
   assert.equal(deviceGrant({ ...deviceFixture, scopes: ["source", "source"] }), false);
+  const revoke = await validatorFor("schemas/dev-sessions/v1/revoke-grants.schema.json");
+  const revokeFixture = await loadJson("fixtures/dev-sessions/v1/revoke-grants.json");
+  assert.equal(revoke({ ...revokeFixture, grant_ids: [revokeFixture.grant_ids[0], revokeFixture.grant_ids[0]] }), false);
   const create = await validatorFor("schemas/dev-sessions/v1/create-request.schema.json");
   assert.equal(create({ ttl_seconds: 299 }), false);
   assert.equal(create({ ttl_seconds: 28801 }), false);
+});
+
+test("local development artifact snapshots enforce bounded safe manifests", async () => {
+  const validate = await validatorFor("schemas/dev-sessions/v1/artifact-list.schema.json");
+  const fixture = await loadJson("fixtures/dev-sessions/v1/artifact-list.json");
+  assert.ok(validate(fixture), JSON.stringify(validate.errors));
+  assert.equal(validate({ ...fixture, artifacts: [{ ...fixture.artifacts[0], path: "../secret" }] }), false);
+  assert.equal(validate({ ...fixture, artifacts: [{ ...fixture.artifacts[0], sha256: "bad" }] }), false);
+  assert.equal(validate({ ...fixture, unexpected: true }), false);
 });
 
 test("proposed Logbook event and batch fixtures enforce the allowlisted payload", async () => {
@@ -600,6 +631,8 @@ test("proposed organization Logbook history page includes attribution", async ()
   assert.ok(validate(fixture), JSON.stringify(validate.errors));
   assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], actor_user_id: "invalid" }] }), false);
   assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], secret: "not allowed" }] }), false);
+  assert.ok(validate({ ...fixture, items: [{ ...fixture.items[0], local_sequence: null,
+    type: "human.interaction.answered", actor_user_id: "3fe6c325-e930-4c33-8b26-7b5759826c81" }] }));
 });
 
 test("proposed Agent motion records cannot assert an unverified stop", async () => {
@@ -629,4 +662,19 @@ test("local Agent handoff fixtures are scoped and bounded", async () => {
   assert.equal(request({...read, limit: 101}), false);
   assert.equal(request({...ack, sequence: -1}), false);
   assert.equal(response({ok: false, error: "unexpected"}), false);
+});
+
+test("human interactions wait forever by default and require paired timeout fields", async () => {
+  const create = await validatorFor("schemas/interactions/v1/create-request.schema.json");
+  const interaction = await validatorFor("schemas/interactions/v1/interaction.schema.json");
+  const sync = await validatorFor("schemas/interactions/v1/device-sync-request.schema.json");
+  const request = await loadJson("fixtures/interactions/v1/create-request-no-timeout.json");
+  const pending = await loadJson("fixtures/interactions/v1/pending-no-timeout.json");
+  const syncRequest = await loadJson("fixtures/interactions/v1/device-sync-no-timeout.json");
+  assert.ok(create(request), JSON.stringify(create.errors));
+  assert.ok(interaction(pending), JSON.stringify(interaction.errors));
+  assert.ok(sync(syncRequest), JSON.stringify(sync.errors));
+  assert.equal(create({ ...request, timeout_outcome: "abort" }), false);
+  assert.equal(create({ ...request, deadline: "2026-11-17T15:00:00Z" }), false);
+  assert.ok(create({ ...request, deadline: "2026-11-17T15:00:00Z", timeout_outcome: "abort" }));
 });

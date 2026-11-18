@@ -1,0 +1,17 @@
+{
+  "request_id": "8ad8de90-65d7-43f5-b2be-8d0639b62e32",
+  "robot_id": "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
+  "execution_id": "4b7c6b41-595c-403c-b48c-0788c0894e59",
+  "prompt": "Continue the inspection?",
+  "choices": [
+    {"value": "continue", "label": "Continue"},
+    {"value": "abort", "label": "Abort safely"}
+  ],
+  "deadline": "2026-11-17T14:32:00.000Z",
+  "timeout_outcome": "abort",
+  "state": "pending",
+  "outcome": null,
+  "response": null,
+  "created_at": "2026-11-17T14:30:00.000Z",
+  "updated_at": "2026-11-17T14:30:00.000Z"
+}

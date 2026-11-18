@@ -318,9 +318,28 @@ ringfour-cli artifact download <execution-id> result.txt --output ./result.txt
 The list includes artifact delivery state independently of the process result;
 `ready` means collection and delivery completed. Download streams and verifies
 the size and SHA-256, and will not overwrite an existing local file.
-Development-session artifact access is not implemented yet.
+
+For a development execution, run these commands from the project directory with
+its remembered session context:
+
+```sh
+ringfour-cli dev artifact list <execution-id>
+ringfour-cli dev artifact download <execution-id> result.txt --output ./result.txt
+```
+
+Development artifacts stay on the device and transfer over its pinned local
+HTTPS endpoint. The CLI obtains a short-lived local grant and verifies the
+artifact size and SHA-256 before saving it.
 
 ## Troubleshooting and command reference
+
+Use `ringfour-cli logbook list` to inspect the selected organization's durable
+timeline. Narrow it with `--robot`, `--execution`, `--operation`, `--actor` or
+`--type`; use `--org` when you do not want the selected organization. Results
+are ordered by ingestion time. `--limit` can collect up to 1,000 events by
+fetching API pages of 100; repeat the same filters with the returned `--cursor`
+to continue. Use
+`ringfour-cli logbook show <event-id>` to inspect one event's full payload.
 
 - **No organization selected:** run `org list` and `org select`, or pass `--org`.
 - **Robot unavailable:** check `robot status <robot-id>`, the daemon and its

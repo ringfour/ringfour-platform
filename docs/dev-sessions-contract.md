@@ -1,8 +1,8 @@
 # Development sessions v1 — proposed Ringfour design
 
 Status: **partially implemented; full milestone acceptance pending**. These interfaces
-are new Ringfour design, not SDK or Agent APIs. A physical Balena check for 06
-is deferred and remains an incomplete external gate. Development sessions do
+are new Ringfour design, not SDK or Agent APIs. Physical acceptance was retired
+by the project owner. Development sessions do
 not publish or change production revisions or selected deployments.
 
 ## Session and authorization
@@ -80,14 +80,34 @@ reported over an authenticated device connection; clients re-fetch the pinned
 fingerprint before reconnecting. The precise certificate installation and
 rotation implementation remains to be tested with Balena persistent volumes.
 
+Credential rotation or revocation immediately marks current local grants
+expired in Platform state and queues a durable device operation listing the
+grant IDs to remove. The daemon deletes only those IDs, so a delayed revoke
+cannot remove a newer grant. If the device is offline, its local grant still
+expires no later than five minutes after issuance; the queued revoke is replayed
+on reconnect. A first generation report may arrive for seven days after grant
+expiry. Exact replays of an already recorded generation remain idempotent after
+that window. A hosted cleanup worker removes grant rows after the seven-day
+report grace and after any live grant idempotency record has expired.
+
 The local API exposes `PUT /v1/local/dev-sessions/{id}/source` for source,
 and session-scoped `GET /v1/local/dev-sessions/{id}/executions/{execution_id}`
-and `/output` for status and bounded stdout/stderr. These require the local
-bearer grant. The Platform never receives source or output; the daemon reports
-only execution state, exit code and bounded errors. The CLI supports `dev start`,
-`sync`, `restart`, `logs`, `status` and `stop`; its visible project context
-stores session and robot IDs, never the local grant. Artifact access,
-credential-rotation revocation and bounded grant cleanup are not implemented.
+and `/output` for status and bounded stdout/stderr. Artifact snapshots are listed
+at the same execution's `/artifacts` route and streamed from
+`/artifacts/download?path=...`. These routes require a valid local bearer grant,
+bind the execution to the named session, and expose artifacts only after the
+Runner marks the execution terminal. Downloads verify the manifest size and
+SHA-256 before atomically publishing a local file. The Platform never receives
+development source, output or artifact bytes. The CLI supports `dev start`,
+`sync`, `restart`, `logs`, `artifact list`, `artifact download`, `status` and
+`stop`; its visible project context stores session and robot IDs, never the local
+grant.
+
+The local development OpenAPI document is
+`packages/contracts/openapi/ringfour-local-development.v1.yaml`. The artifact
+list schema is bounded to the Runner's 16-file snapshot limit and returns only
+relative path, byte size and SHA-256. Download uses a separate binary streaming
+route; it does not materialize artifact contents as JSON or base64.
 
 ## Source sync
 

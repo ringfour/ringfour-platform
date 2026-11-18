@@ -95,7 +95,7 @@ test("loads identity and organizations when authenticated", async () => {
   vi.stubGlobal("fetch", fetchSpy);
 
   render(<App />);
-  await userEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  await userEvent.click(screen.getByRole("button", { name: "Organizations" }));
 
   expect(await screen.findByText("user-1")).toBeTruthy();
   expect(await screen.findByText("Acme Robotics")).toBeTruthy();
@@ -161,7 +161,7 @@ test("creates an organization and inspects membership", async () => {
   );
 
   render(<App />);
-  await userEvent.click(screen.getByRole("button", { name: "Workspace" }));
+  await userEvent.click(screen.getByRole("button", { name: "Organizations" }));
   await screen.findByText("Acme Robotics");
 
   await userEvent.type(

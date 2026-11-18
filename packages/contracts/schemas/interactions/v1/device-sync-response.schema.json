@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/interactions/v1/device-sync-response.schema.json",
+  "title": "Interaction sync acknowledgement and provisional response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "response"],
+  "properties": {
+    "request_id": {"$ref": "#/$defs/uuid"},
+    "response": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/response"}]}
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "timestamp": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "response": {"type": "object", "additionalProperties": false,
+      "required": ["response_id", "chosen_value", "actor_user_id", "submitted_at"],
+      "properties": {
+        "response_id": {"$ref": "#/$defs/uuid"}, "chosen_value": {"type": "string", "minLength": 1, "maxLength": 64},
+        "actor_user_id": {"$ref": "#/$defs/uuid"}, "submitted_at": {"$ref": "#/$defs/timestamp"}
+      }
+    }
+  }
+}

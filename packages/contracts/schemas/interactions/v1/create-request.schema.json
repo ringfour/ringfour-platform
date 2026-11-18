@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/interactions/v1/create-request.schema.json",
+  "title": "Create a mission human interaction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "prompt", "choices", "deadline", "timeout_outcome"],
+  "properties": {
+    "request_id": {"$ref": "#/$defs/uuid"},
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "\\S"},
+    "choices": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 12,
+      "items": {"$ref": "#/$defs/choice"}
+    },
+    "deadline": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]},
+    "timeout_outcome": {"anyOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$"}]}
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {"properties": {"deadline": {"type": "null"}, "timeout_outcome": {"type": "null"}}},
+        {"properties": {"deadline": {"$ref": "#/$defs/timestamp"}, "timeout_outcome": {"type": "string"}}}
+      ]
+    }
+  ],
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "timestamp": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"},
+    "choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "label"],
+      "properties": {
+        "value": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$"},
+        "label": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S"}
+      }
+    }
+  }
+}

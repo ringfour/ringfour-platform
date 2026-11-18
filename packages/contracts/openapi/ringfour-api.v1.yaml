@@ -11,7 +11,9 @@ info:
     All /v1 endpoints require an Auth0 RS256 access token for audience
     https://api.ringfour.eu and share the error envelope referenced below,
     except the /v1/device/* endpoints which authenticate by possession of an
-    enrollment token or robot credential instead.
+    enrollment token or robot credential instead. Mission UI bootstrap
+    endpoints are unauthenticated but restricted to one-use tokens and the
+    execution-specific UI host.
   license:
     name: Proprietary
 servers:
@@ -34,18 +36,112 @@ tags:
     description: Proposed milestone 06 mission revisions and robot deployments (new Ringfour design).
   - name: logbook
     description: Milestone 08 event ingestion and organization history (new Ringfour design).
+  - name: interactions
+    description: Milestone 09 durable human interactions; hosted submissions remain provisional until device confirmation.
+  - name: mission-ui
+    description: Execution-scoped mission UI sessions and isolated-origin bootstrap.
 paths:
+  /v1/device/interactions/{request_id}:
+    put:
+      tags: [interactions, device]
+      operationId: synchronizeDeviceInteraction
+      security: []
+      description: Upsert daemon-authoritative state and return the winning provisional operator response, if any.
+      parameters:
+        - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
+        - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/interactions/v1/device-sync-request.schema.json }
+      responses:
+        '200':
+          description: State stored and any provisional response returned
+          content:
+            application/json:
+              schema: { $ref: ../schemas/interactions/v1/device-sync-response.schema.json }
+        '400': { description: Invalid interaction }
+        '401': { description: Invalid machine credential }
+        '409': { description: Conflicting replay, execution binding or terminal state }
+  /v1/organizations/{org_id}/interactions:
+    get:
+      tags: [interactions]
+      operationId: listInteractions
+      description: Organization-scoped interactions, newest first. Operators may respond; viewers may inspect.
+      parameters:
+        - { name: org_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: robot_id, in: query, schema: { type: string, format: uuid } }
+        - { name: execution_id, in: query, schema: { type: string, format: uuid } }
+        - { name: state, in: query, schema: { enum: [pending, answered, timed_out, cancelled] } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Organization-scoped interaction page
+          content:
+            application/json:
+              schema: { $ref: ../schemas/interactions/v1/page.schema.json }
+        '400': { description: Invalid filter or cursor }
+        '401': { description: Authentication required }
+        '404': { description: Organization inaccessible }
+  /v1/interactions/{request_id}:
+    parameters:
+      - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [interactions]
+      operationId: getInteraction
+      responses:
+        '200':
+          description: Organization-scoped interaction detail
+          content:
+            application/json:
+              schema: { $ref: ../schemas/interactions/v1/interaction.schema.json }
+        '401': { description: Authentication required }
+        '404': { description: Interaction inaccessible }
+  /v1/interactions/{request_id}/responses:
+    parameters:
+      - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [interactions]
+      operationId: respondToInteraction
+      description: |
+        Atomically accept the first authorized, valid, unexpired response. The
+        result is submitted for device delivery, not proof the daemon applied it
+        or the mission resumed. Identical Idempotency-Key replay returns the same
+        response; another key after a winner receives 409.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/interactions/v1/response-request.schema.json }
+      responses:
+        '202':
+          description: Response durably submitted; device confirmation is pending
+          content:
+            application/json:
+              schema: { $ref: ../schemas/interactions/v1/response-accepted.schema.json }
+        '400': { description: Invalid choice or idempotency key }
+        '401': { description: Authentication required }
+        '403': { description: Operator role required }
+        '404': { description: Interaction inaccessible }
+        '409': { description: Already answered, timed out, cancelled, or won by another response }
+        '410': { description: Hosted deadline has passed }
   /v1/organizations/{org_id}/events:
     get:
       tags: [logbook]
       operationId: listLogbookEvents
-      description: Organization-scoped history query ordered by receipt time; preserve filters when continuing a cursor.
+      description: Organization-scoped history query ordered by receipt time; includes daemon-replicated records and hosted human interaction requests, responses, timeouts and cancellations. Preserve filters when continuing a cursor.
       parameters:
         - { name: org_id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: robot_id, in: query, schema: { type: string, format: uuid } }
         - { name: execution_id, in: query, schema: { type: string, format: uuid } }
         - { name: operation_id, in: query, schema: { type: string, format: uuid } }
         - { name: actor_user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: event_id, in: query, schema: { type: string, format: uuid } }
         - { name: type, in: query, schema: { type: string } }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
@@ -576,6 +672,56 @@ paths:
         '404': { description: Execution is inaccessible }
         '409': { description: Conflicting idempotency key }
         '503': { description: Robot is offline }
+  /v1/executions/{execution_id}/ui-sessions:
+    parameters:
+      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [mission-ui]
+      operationId: createMissionUiSession
+      summary: Create a short-lived bootstrap for a running execution's UI
+      responses:
+        '201':
+          description: One-use bootstrap token and execution-specific UI origin
+          content:
+            application/json:
+              schema: { $ref: ../schemas/mission-ui/v1/create-session-response.schema.json }
+        '401': { description: Invalid authentication }
+        '403': { description: Operator role is required }
+        '404': { description: Execution is inaccessible }
+        '409': { description: Execution is not running }
+        '503': { description: Mission UI origin is not configured }
+  /ui/bootstrap/{session_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [mission-ui]
+      security: []
+      operationId: getMissionUiBootstrapPage
+      summary: Serve the bootstrap page on the execution-specific UI origin
+      responses:
+        '200':
+          description: Isolated session bootstrap HTML
+          content:
+            text/html:
+              schema: { type: string }
+        '404': { description: Session or execution-specific host is unknown }
+  /v1/ui-sessions/exchange:
+    post:
+      tags: [mission-ui]
+      security: []
+      operationId: exchangeMissionUiBootstrap
+      summary: Exchange a one-use bootstrap for a host-only HttpOnly cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/mission-ui/v1/exchange-session-request.schema.json }
+      responses:
+        '204': { description: Cookie issued on the execution-specific UI origin }
+        '400': { description: Invalid bootstrap request }
+        '403': { description: Session host or origin is incorrect }
+        '404': { description: Bootstrap session is unknown }
+        '409': { description: Bootstrap is expired, used, or execution ended }
   /v1/device/executions/{execution_id}/revision:
     parameters:
       - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -812,6 +958,28 @@ paths:
                   $ref: "../fixtures/identity/v1/me.json"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+    patch:
+      tags: [identity]
+      operationId: updateMyProfile
+      summary: Update the caller's profile
+      description: Updates the caller's display name, HTTPS profile picture URL, and phone number. Email remains managed by the verified identity provider profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/identity/v1/update-user-profile-request.schema.json"
+      responses:
+        "200":
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/user.schema.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
   /v1/organizations:
     post:
       tags: [identity]
@@ -986,6 +1154,171 @@ paths:
               examples:
                 lastOwner:
                   $ref: "../fixtures/errors/v1/last-owner.json"
+  /v1/organizations/{org_id}/invitations:
+    get:
+      tags: [identity]
+      operationId: listOrganizationInvitations
+      summary: List organization invitations
+      description: Owner-only. Returns at most 100 recent invitations, including accepted, revoked and expired records.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Organization invitations.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/invitation-list-response.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [identity]
+      operationId: createOrganizationInvitation
+      summary: Invite an email address to an organization
+      description: |
+        Owner-only. Sends an email containing a single-use invitation link. The
+        recipient may accept with an existing or newly-created Auth0 account
+        whose email address is verified and matches the invitation. Invitations
+        expire after seven days. SMTP delivery must be configured on the Platform.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/identity/v1/create-invitation-request.schema.json"
+      responses:
+        "201":
+          description: Invitation email sent.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/organization-invitation.schema.json"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          description: SMTP is missing or email delivery failed.
+  /v1/organizations/{org_id}/invitations/{invitation_id}/resend:
+    post:
+      tags: [identity]
+      operationId: resendOrganizationInvitation
+      summary: Resend an organization invitation
+      description: Owner-only. Rotates the one-use token and extends its expiry by seven days.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - name: invitation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Invitation email resent.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/organization-invitation.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          description: SMTP is missing or email delivery failed.
+  /v1/organizations/{org_id}/invitations/{invitation_id}:
+    delete:
+      tags: [identity]
+      operationId: revokeOrganizationInvitation
+      summary: Revoke an organization invitation
+      description: Owner-only. A revoked invitation link cannot be accepted.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - name: invitation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Invitation revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/invitations/preview:
+    post:
+      tags: [identity]
+      operationId: getInvitationPreview
+      summary: Read invitation details
+      description: Authenticated invitation link holder may preview the organization, requested role and expiry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/identity/v1/invitation-token-request.schema.json"
+      responses:
+        "200":
+          description: Invitation preview.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/invitation-preview.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/invitations/accept:
+    post:
+      tags: [identity]
+      operationId: acceptOrganizationInvitation
+      summary: Accept an organization invitation
+      description: Requires an Auth0 account with a verified email matching the invitation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/identity/v1/invitation-token-request.schema.json"
+      responses:
+        "200":
+          description: Membership created or the same invitation acceptance replayed.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/identity/v1/membership.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /v1/organizations/{org_id}/robots:
     post:
       tags: [robots]
@@ -1380,6 +1713,37 @@ paths:
           $ref: "#/components/responses/InvalidInput"
         "401":
           $ref: "#/components/responses/InvalidToken"
+  /v1/device/ui-connect:
+    get:
+      tags: [device]
+      operationId: connectMissionUiDeviceTunnel
+      summary: Separate authenticated mission UI WebSocket (RFC 6455)
+      description: |
+        This is an independent daemon-to-Platform WebSocket; it never carries
+        command or operation frames. Authenticate before upgrade with the same
+        enrolled robot credential headers as /v1/device/connect. Frames follow
+        schemas/mission-ui/v1/device-frame.schema.json. The daemon begins with
+        hello (sequence 1); Platform answers welcome. This initial transport
+        slice accepts heartbeat and execution-scoped ui_status frames only.
+        HTTP request/response streaming is not implemented yet.
+      security: []
+      parameters:
+        - name: x-ringfour-credential-id
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        - name: x-ringfour-credential-secret
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "101": { description: WebSocket upgrade accepted. }
+        "400": { $ref: "#/components/responses/InvalidInput" }
+        "401": { $ref: "#/components/responses/InvalidToken" }
   /v1/device/enroll:
     post:
       tags: [device]

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Ringfour.Api.Logbook;
 using Ringfour.Api.Persistence;
 
 namespace Ringfour.Api.Connectivity;
@@ -108,14 +109,16 @@ public sealed class OperationSweeper(
                     execution.State = "failed";
                     execution.UpdatedAt = now;
                     execution.Error = """{"code":"interrupted_unknown_outcome","message":"The device did not confirm the execution start before the deadline."}""";
+                    var lifecycleEventId = Guid.NewGuid();
                     db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
                     {
-                        Id = Guid.NewGuid(),
+                        Id = lifecycleEventId,
                         ExecutionId = execution.Id,
                         ActorUserId = execution.ActorUserId,
                         State = "failed",
                         OccurredAt = now
                     });
+                    MissionLifecycleLogbook.Record(db, execution, lifecycleEventId, "failed", now);
                 }
             }
             else if (operation.Kind == "mission.prepare")

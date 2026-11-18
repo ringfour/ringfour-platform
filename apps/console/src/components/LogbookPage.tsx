@@ -27,7 +27,7 @@ type Run = Execution & {
 type Entry = {
   event_id: string;
   robot_id: string;
-  local_sequence: number;
+  local_sequence: number | null;
   operation_id: string | null;
   execution_id: string | null;
   actor_user_id: string | null;
@@ -61,6 +61,8 @@ const entryTitle = (entry: Entry) =>
     ? entry.payload.message
     : typeof entry.payload.event_type === "string"
       ? entry.payload.event_type
+      : entry.type.startsWith("mission.") && typeof entry.payload.state === "string"
+        ? `Mission ${entry.payload.state.replaceAll("_", " ")}`
       : entry.type;
 const evidenceIds = (entry: Entry) =>
   Array.isArray(entry.payload.evidence)
@@ -68,6 +70,110 @@ const evidenceIds = (entry: Entry) =>
         (value): value is string => typeof value === "string",
       )
     : [];
+const humanizeChoice = (value: string) =>
+  value
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/^./, (letter) => letter.toUpperCase());
+
+type HitlSelection = {
+  key: string;
+  label: string;
+  value: string;
+};
+type HitlDecision = {
+  selections: HitlSelection[];
+  state?: string;
+  source?: string;
+};
+
+function hitlDecision(entry: Entry): HitlDecision | null {
+  if (entry.type === "human.interaction.answered") {
+    if (
+      typeof entry.payload.outcome === "string" &&
+      typeof entry.payload.selected_label === "string"
+    ) {
+      return {
+        selections: [
+          {
+            key: "Operator response",
+            label: entry.payload.selected_label,
+            value: entry.payload.outcome,
+          },
+        ],
+      };
+    }
+    return null;
+  }
+  if (entry.type !== "mission.logbook.entry") return null;
+  const fields = entry.payload.fields;
+  if (!fields || typeof fields !== "object" || Array.isArray(fields))
+    return null;
+  const values = fields as Record<string, unknown>;
+  if (
+    entry.payload.message === "Human interaction resolved" &&
+    typeof values.outcome === "string"
+  ) {
+    return {
+      selections: [
+        {
+          key:
+            typeof values.question === "string"
+              ? humanizeChoice(values.question)
+              : "Decision",
+          label:
+            typeof values.selected_label === "string"
+              ? values.selected_label
+              : humanizeChoice(values.outcome),
+          value: values.outcome,
+        },
+      ],
+      state: typeof values.state === "string" ? values.state : undefined,
+      source: typeof values.source === "string" ? values.source : undefined,
+    };
+  }
+  if (entry.payload.message === "HITL demonstration completed") {
+    const selections = ["target", "detail", "approval"].flatMap((key) =>
+      typeof values[key] === "string"
+        ? [
+            {
+              key: humanizeChoice(key),
+              label: humanizeChoice(values[key]),
+              value: values[key],
+            },
+          ]
+        : [],
+    );
+    return selections.length ? { selections } : null;
+  }
+  return null;
+}
+
+function HitlDecisionPanel({ entry }: { entry: Entry }) {
+  const decision = hitlDecision(entry);
+  if (!decision) return null;
+  return (
+    <section className="logbook2-hitl-decision" aria-label="Selected options">
+      <header>
+        <span>Selected option{decision.selections.length === 1 ? "" : "s"}</span>
+        {(decision.state || decision.source) && (
+          <small>
+            {[decision.state, decision.source].filter(Boolean).join(" · ")}
+          </small>
+        )}
+      </header>
+      <div className="logbook2-hitl-selections">
+        {decision.selections.map((selection) => (
+          <div key={selection.key}>
+            <span>{selection.key}</span>
+            <strong>{selection.label}</strong>
+            <code>{selection.value}</code>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function eventTone(entry: Entry) {
   const outcome =
@@ -75,6 +181,8 @@ function eventTone(entry: Entry) {
       ? entry.payload.event_type
       : entry.type === "device.operation.state_changed"
         ? entry.payload.state
+        : entry.type.startsWith("mission.")
+          ? entry.payload.state
         : null;
   if (
     [
@@ -350,7 +458,7 @@ export function LogbookPage({
             .sort(
               (left, right) =>
                 left.occurred_at.localeCompare(right.occurred_at) ||
-                left.local_sequence - right.local_sequence,
+                (left.local_sequence ?? 0) - (right.local_sequence ?? 0),
             ),
         );
       })
@@ -525,6 +633,8 @@ export function LogbookPage({
                       <strong>{entryTitle(entry)}</strong>
                       <small>
                         {entry.type}
+                        {hitlDecision(entry)?.selections[0] &&
+                          ` · Selected: ${hitlDecision(entry)?.selections[0].label}`}
                         {evidenceIds(entry).length > 0 &&
                           ` · ${evidenceIds(entry).length} evidence file${evidenceIds(entry).length === 1 ? "" : "s"}`}
                       </small>
@@ -539,12 +649,15 @@ export function LogbookPage({
                   <div className="logbook2-event-detail">
                     <dl>
                       <dt>Sequence</dt>
-                      <dd>{entry.local_sequence}</dd>
+                      <dd>{entry.local_sequence ?? "Hosted event"}</dd>
+                      <dt>Actor user</dt>
+                      <dd>{entry.actor_user_id ?? "—"}</dd>
                       <dt>Operation</dt>
                       <dd>{entry.operation_id ?? "—"}</dd>
                       <dt>Received</dt>
                       <dd>{timestamp(entry.received_at)}</dd>
                     </dl>
+                    <HitlDecisionPanel entry={entry} />
                     <pre>{JSON.stringify(entry.payload, null, 2)}</pre>
                     {evidenceIds(entry).length > 0 && (
                       <section

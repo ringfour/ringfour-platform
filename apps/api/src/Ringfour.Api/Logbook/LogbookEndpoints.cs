@@ -77,13 +77,15 @@ public static class LogbookEndpoints
     private static async Task<IResult> History(HttpContext context, RingfourDbContext db, Guid orgId,
         [FromQuery(Name = "robot_id")] Guid? robotId, [FromQuery(Name = "execution_id")] Guid? executionId,
         [FromQuery(Name = "operation_id")] Guid? operationId, [FromQuery(Name = "actor_user_id")] Guid? actorId,
+        [FromQuery(Name = "event_id")] Guid? eventId,
         string? type, [FromQuery(Name = "from")] DateTimeOffset? from, [FromQuery(Name = "to")] DateTimeOffset? to,
         string? cursor, int? limit, CancellationToken ct)
     {
         var user = await IdentityAccess.ResolveOrCreateUser(db, IdentityAccess.RequireSubject(context), ct);
         await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Operator, ct);
         if (limit is < 1 or > 100 || (from is not null && to is not null && from >= to) ||
-            (type is not null && type is not ("mission.logbook.entry" or "device.operation.state_changed" or "agent.motion.event")))
+            (type is not null && type is not ("mission.logbook.entry" or "mission.revision_selected" or "mission.started" or "mission.completed" or "mission.failed" or "mission.stopped" or "device.operation.state_changed" or "agent.motion.event" or
+                "human.interaction.requested" or "human.interaction.answered" or "human.interaction.timed_out" or "human.interaction.cancelled")))
             throw ApiException.InvalidInput("Invalid history filter.");
         from = from?.ToUniversalTime();
         to = to?.ToUniversalTime();
@@ -93,7 +95,10 @@ public static class LogbookEndpoints
         if (robotId is not null) query = query.Where(item => item.RobotId == robotId);
         if (executionId is not null) query = query.Where(item => item.ExecutionId == executionId);
         if (operationId is not null) query = query.Where(item => item.OperationId == operationId);
-        if (actorId is not null) query = query.Where(item => item.Operation != null && item.Operation.RequestedByUserId == actorId);
+        if (actorId is not null) query = query.Where(item => item.ActorUserId == actorId ||
+            (!item.Type.StartsWith("human.interaction.") && item.ActorUserId == null &&
+                item.Operation != null && item.Operation.RequestedByUserId == actorId));
+        if (eventId is not null) query = query.Where(item => item.Id == eventId);
         if (type is not null) query = query.Where(item => item.Type == type);
         if (from is not null) query = query.Where(item => item.OccurredAt >= from);
         if (to is not null) query = query.Where(item => item.OccurredAt < to);
@@ -103,7 +108,8 @@ public static class LogbookEndpoints
         var page = rows.Take(pageSize).ToList();
         return Results.Ok(new { items = page.Select(item => new { event_id = item.Id, robot_id = item.RobotId,
             local_sequence = item.LocalSequence, operation_id = item.OperationId, execution_id = item.ExecutionId,
-            actor_user_id = item.Operation != null ? item.Operation.RequestedByUserId : (Guid?)null, type = item.Type, schema_version = item.SchemaVersion,
+            actor_user_id = item.ActorUserId ?? (!item.Type.StartsWith("human.interaction.") && item.Operation != null
+                ? item.Operation.RequestedByUserId : (Guid?)null), type = item.Type, schema_version = item.SchemaVersion,
             occurred_at = item.OccurredAt, received_at = item.ReceivedAt,
             payload = item.Payload is null ? new JsonObject { ["state"] = item.State } : JsonNode.Parse(item.Payload) }),
             next_cursor = Pagination.NextCursor(rows.Count > pageSize, page, item => item.ReceivedAt, item => item.Id) });

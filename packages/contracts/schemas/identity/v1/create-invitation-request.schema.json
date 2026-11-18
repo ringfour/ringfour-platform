@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/create-invitation-request.schema.json",
+  "title": "CreateInvitationRequest",
+  "description": "Owner-only request to invite an email address to an organization.",
+  "type": "object",
+  "required": [
+    "email",
+    "role"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email",
+      "maxLength": 320
+    },
+    "role": {
+      "enum": [
+        "owner",
+        "developer",
+        "operator"
+      ]
+    }
+  }
+}

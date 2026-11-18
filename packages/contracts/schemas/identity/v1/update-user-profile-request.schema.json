@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/update-user-profile-request.schema.json",
+  "title": "UpdateUserProfileRequest",
+  "type": "object",
+  "required": ["name", "profile_picture_url", "phone_number"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": ["string", "null"], "maxLength": 120 },
+    "profile_picture_url": { "type": ["string", "null"], "format": "uri", "maxLength": 2048 },
+    "phone_number": { "type": ["string", "null"], "maxLength": 32 }
+  }
+}

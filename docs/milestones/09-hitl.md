@@ -8,13 +8,13 @@ Complete prerequisite milestone 08 before beginning. Shared schemas, authorizati
 
 ## Contracts
 
-Define new Ringfour-local mission runtime HTTP contract (not an existing Robocore SDK API): create/get/wait interaction scoped by short-lived execution credential. Request fields: request_id, execution_id, prompt, finite choices, deadline, safe timeout outcome. States pending → answered | timed_out | cancelled. Hosted GET pending/detail and POST /v1/interactions/{id}/responses with chosen value and idempotency key. First authorized valid response wins atomically.
+Define new Ringfour-local mission runtime HTTP contract (not an existing Robocore SDK API): create/get/wait interaction scoped by short-lived execution credential. Request fields: request_id, execution_id, prompt, finite choices, and optional paired deadline plus safe timeout outcome. No deadline means wait indefinitely for a human response or mission stop. States pending → answered | timed_out | cancelled. Hosted GET pending/detail and POST /v1/interactions/{id}/responses with chosen value and idempotency key. First authorized valid response wins atomically.
 
 Freeze request/response/message schemas, state transitions and error examples in packages/contracts before implementation. New interfaces here are proposed Ringfour contracts, not descriptions of existing SDK interfaces.
 
 ## Implementation
 
-Add thin Ringfour runtime client over the specified local protocol; document its new API separately from robot SDK. Daemon persists request before replication; API accepts operator responses, daemon applies once and resumes waiting code. Daemon owns authoritative deadline; API rejects expired submissions using deadline, daemon resolves any delayed response race. CLI `hitl list/show/respond`; Console can inspect/respond. Mission stop cancels pending requests. No automatic unsafe action on timeout.
+Add thin Ringfour runtime client over the specified local protocol; document its new API separately from robot SDK. Daemon persists request before replication; API accepts operator responses, daemon applies once and resumes waiting code. An optional daemon-owned deadline triggers the SDK's `on_timeout` callback once after timeout is recorded. CLI `hitl list/show/respond`; Console can inspect/respond. The Platform Logbook records the request under the execution initiator and a confirmed answer under the responding operator. Mission stop cancels pending requests. No timeout action is configured by default.
 
 ## Independent component tests
 

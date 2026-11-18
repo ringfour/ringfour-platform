@@ -368,17 +368,23 @@ async def run_execution(app, body, files, *, dev_environment=None):
         artifact_dir = path / "artifact-output"
         artifact_dir.mkdir(exist_ok=True)
         environment = {**os.environ, "RINGFOUR_ARTIFACT_DIR": str(artifact_dir)}
+        environment["RINGFOUR_UI_PORT"] = str(settings.ui_port)
         environment.pop("RUNNER_AUTH_TOKEN", None)
         environment.pop("RINGFOUR_LOGBOOK_TOKEN", None)
         environment.pop("RINGFOUR_LOGBOOK_URL", None)
         environment.pop("RINGFOUR_ARTIFACT_TOKEN", None)
         environment.pop("RINGFOUR_ARTIFACT_URL", None)
+        environment.pop("RINGFOUR_INTERACTION_TOKEN", None)
+        environment.pop("RINGFOUR_INTERACTION_URL", None)
         if settings.logbook_url and settings.auth_token:
             mac = hmac.new(settings.auth_token.encode(), ("ringfour-logbook-v1:" + execution_id).encode(), hashlib.sha256).hexdigest()
             environment["RINGFOUR_LOGBOOK_URL"] = settings.logbook_url
             environment["RINGFOUR_LOGBOOK_TOKEN"] = f"{execution_id}:{mac}"
             environment["RINGFOUR_ARTIFACT_URL"] = settings.logbook_url
             environment["RINGFOUR_ARTIFACT_TOKEN"] = f"{execution_id}:{mac}"
+            environment["RINGFOUR_INTERACTION_URL"] = settings.logbook_url
+            environment["RINGFOUR_INTERACTION_TOKEN"] = f"{execution_id}:{mac}"
+        app.state.ui_started_at[execution_id] = asyncio.get_running_loop().time()
         proc = await asyncio.create_subprocess_exec(str(venv / "bin" / "python"), str(code / body["entrypoint"]), cwd=str(code), env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
         app.state.processes[execution_id] = proc
         if get_row(settings, execution_id)["stop_requested"] and proc.returncode is None:
@@ -409,6 +415,7 @@ async def run_execution(app, body, files, *, dev_environment=None):
                 transition(conn, execution_id, "failed", failure={"code": "execution_failed", "message": "Runner could not complete the execution."})
     finally:
         app.state.processes.pop(execution_id, None)
+        app.state.ui_started_at.pop(execution_id, None)
 
 
 async def prepare_execution_environment(app, body, code, venv, execution_id):

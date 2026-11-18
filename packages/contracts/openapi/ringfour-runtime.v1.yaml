@@ -6,6 +6,67 @@ info:
     New Ringfour-local design, separate from the Agent API. The daemon control
     listener accepts execution-scoped credentials, separate from human and LAN grants.
 paths:
+  /v1/runtime/interactions:
+    post:
+      operationId: createMissionInteraction
+      summary: Durably create or replay one execution-scoped human interaction
+      description: |
+        The request_id is the mission's stable replay key. The credential supplies
+        execution_id; a payload cannot select another execution. timeout_outcome
+        must name one of the finite choice values and must be safe without human
+        approval. A successful response means the daemon persisted the request,
+        not that the hosted service received it.
+      security:
+        - ExecutionCredential: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/interactions/v1/create-request.schema.json }
+      responses:
+        '200':
+          description: Interaction durably created or identical replay
+          content:
+            application/json:
+              schema: { $ref: ../schemas/interactions/v1/interaction.schema.json }
+        '400': { description: Invalid prompt, choices, or mismatched optional deadline and timeout outcome }
+        '401': { description: Missing, invalid, expired or wrong-execution credential }
+        '409': { description: request_id conflicts with an earlier request }
+        '503': { description: Local durable interaction storage unavailable }
+  /v1/runtime/interactions/{request_id}:
+    parameters:
+      - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getMissionInteraction
+      summary: Read one interaction owned by this execution
+      security:
+        - ExecutionCredential: []
+      responses:
+        '200':
+          description: Current daemon-authoritative state
+          content:
+            application/json:
+              schema: { $ref: ../schemas/interactions/v1/interaction.schema.json }
+        '401': { description: Missing, invalid, expired or wrong-execution credential }
+        '404': { description: Interaction not found in this execution }
+  /v1/runtime/interactions/{request_id}/wait:
+    parameters:
+      - { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: wait_seconds, in: query, schema: { type: number, minimum: 0, maximum: 30, default: 30 } }
+    get:
+      operationId: waitForMissionInteraction
+      summary: Long-poll until terminal state or the bounded poll expires
+      description: A bounded poll timeout returns state pending. Interactions have no deadline by default; only an explicitly configured interaction deadline produces timed_out.
+      security:
+        - ExecutionCredential: []
+      responses:
+        '200':
+          description: Current state after a transition or bounded poll expiry
+          content:
+            application/json:
+              schema: { $ref: ../schemas/interactions/v1/interaction.schema.json }
+        '401': { description: Missing, invalid, expired or wrong-execution credential }
+        '404': { description: Interaction not found in this execution }
   /v1/runtime/artifacts:
     post:
       operationId: publishMissionArtifact

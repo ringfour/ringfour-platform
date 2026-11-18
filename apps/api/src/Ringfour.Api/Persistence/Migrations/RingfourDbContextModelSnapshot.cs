@@ -476,6 +476,131 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("enrollment_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.HumanInteraction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Choices")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("choices");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("Deadline")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deadline");
+
+                    b.Property<Guid>("ExecutionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("execution_id");
+
+                    b.Property<string>("Outcome")
+                        .HasColumnType("text")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("Prompt")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("prompt");
+
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<string>("TimeoutOutcome")
+                        .HasColumnType("text")
+                        .HasColumnName("timeout_outcome");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExecutionId");
+
+                    b.HasIndex("RobotId", "CreatedAt", "Id");
+
+                    b.ToTable("human_interactions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_human_interaction_outcome", "(state = 'pending' AND outcome IS NULL) OR (state = 'answered' AND outcome IS NOT NULL) OR (state = 'timed_out' AND outcome IS NOT NULL AND deadline IS NOT NULL AND timeout_outcome IS NOT NULL AND outcome = timeout_outcome) OR (state = 'cancelled' AND outcome IS NULL)");
+
+                            t.HasCheckConstraint("ck_human_interaction_state", "state IN ('pending','answered','timed_out','cancelled')");
+
+                            t.HasCheckConstraint("ck_human_interaction_timeout", "(deadline IS NULL AND timeout_outcome IS NULL) OR (deadline IS NOT NULL AND timeout_outcome IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.HumanInteractionResponse", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("ChosenValue")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("chosen_value");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<Guid>("InteractionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("interaction_id");
+
+                    b.Property<string>("RequestFingerprint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("request_fingerprint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submitted_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("InteractionId")
+                        .IsUnique();
+
+                    b.HasIndex("InteractionId", "ActorUserId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("human_interaction_responses", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_human_response_status", "status IN ('submitted','applied','rejected_timed_out','rejected_cancelled')");
+                        });
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.LogbookCheckpoint", b =>
                 {
                     b.Property<Guid>("RobotId")
@@ -501,11 +626,15 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
                     b.Property<Guid?>("ExecutionId")
                         .HasColumnType("uuid")
                         .HasColumnName("execution_id");
 
-                    b.Property<long>("LocalSequence")
+                    b.Property<long?>("LocalSequence")
                         .HasColumnType("bigint")
                         .HasColumnName("local_sequence");
 
@@ -553,11 +682,11 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.ToTable("logbook_events", null, t =>
                         {
-                            t.HasCheckConstraint("ck_logbook_sequence", "local_sequence BETWEEN 1 AND 9007199254740991");
+                            t.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped'))");
 
                             t.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')");
 
-                            t.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)");
+                            t.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)");
                         });
                 });
 
@@ -774,6 +903,72 @@ namespace Ringfour.Api.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.MissionUiSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("BootstrapExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bootstrap_expires_at");
+
+                    b.Property<byte[]>("BootstrapTokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("bootstrap_token_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("ExchangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("exchanged_at");
+
+                    b.Property<Guid>("ExecutionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("execution_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<byte[]>("SessionTokenHash")
+                        .HasColumnType("bytea")
+                        .HasColumnName("session_token_hash");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("SessionTokenHash")
+                        .IsUnique()
+                        .HasFilter("session_token_hash IS NOT NULL");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ExecutionId", "UserId", "ExpiresAt");
+
+                    b.ToTable("mission_ui_sessions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_mission_ui_session_hashes", "octet_length(bootstrap_token_hash) = 32 AND (session_token_hash IS NULL OR octet_length(session_token_hash) = 32) AND ((session_token_hash IS NULL AND exchanged_at IS NULL) OR (session_token_hash IS NOT NULL AND exchanged_at IS NOT NULL))");
+                        });
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.Operation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -912,6 +1107,82 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("organizations", (string)null);
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.OrganizationInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<Guid?>("AcceptedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("accepted_by_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("email");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("InvitedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invited_by_user_id");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("normalized_email");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("role");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcceptedByUserId");
+
+                    b.HasIndex("InvitedByUserId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "NormalizedEmail")
+                        .IsUnique()
+                        .HasFilter("accepted_at IS NULL AND revoked_at IS NULL");
+
+                    b.ToTable("organization_invitations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_organization_invitation_role", "role IN ('Owner', 'Developer', 'Operator')");
+
+                            t.HasCheckConstraint("ck_organization_invitation_state", "(accepted_at IS NULL AND accepted_by_user_id IS NULL) OR (accepted_at IS NOT NULL AND accepted_by_user_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.Robot", b =>
@@ -1338,6 +1609,26 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("phone_number");
+
+                    b.Property<string>("ProfilePictureUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("profile_picture_url");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Auth0Sub")
@@ -1520,6 +1811,36 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Navigation("Robot");
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.HumanInteraction", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.Robot", "Robot")
+                        .WithMany()
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Robot");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.HumanInteractionResponse", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.HumanInteraction", "Interaction")
+                        .WithOne("Response")
+                        .HasForeignKey("Ringfour.Api.Persistence.HumanInteractionResponse", "InteractionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Interaction");
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.LogbookCheckpoint", b =>
                 {
                     b.HasOne("Ringfour.Api.Persistence.Robot", "Robot")
@@ -1639,6 +1960,33 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Navigation("ScriptRevision");
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.MissionUiSession", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.ScriptExecution", "Execution")
+                        .WithMany()
+                        .HasForeignKey("ExecutionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Execution");
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.Operation", b =>
                 {
                     b.HasOne("Ringfour.Api.Persistence.User", "RequestedBy")
@@ -1674,6 +2022,32 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Navigation("Outcome");
 
                     b.Navigation("Principal");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.OrganizationInvitation", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.User", "AcceptedBy")
+                        .WithMany()
+                        .HasForeignKey("AcceptedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Ringfour.Api.Persistence.User", "InvitedBy")
+                        .WithMany()
+                        .HasForeignKey("InvitedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AcceptedBy");
+
+                    b.Navigation("InvitedBy");
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.Robot", b =>
@@ -1823,6 +2197,11 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Navigation("CreatedBy");
 
                     b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.HumanInteraction", b =>
+                {
+                    b.Navigation("Response");
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.Organization", b =>

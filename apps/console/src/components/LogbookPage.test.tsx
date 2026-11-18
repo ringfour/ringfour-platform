@@ -95,6 +95,18 @@ test("shows linked and standalone photo evidence in the timeline even when outpu
             payload: { state: "running" },
           },
           {
+            event_id: "mission-started-1",
+            robot_id: robotId,
+            local_sequence: null,
+            operation_id: executionId,
+            execution_id: executionId,
+            actor_user_id: "mission-actor-id",
+            type: "mission.started",
+            occurred_at: "2026-11-16T10:00:40Z",
+            received_at: "2026-11-16T10:00:40Z",
+            payload: { state: "running", revision_id: "revision-1", mission_revision_id: null },
+          },
+          {
             event_id: "event-1",
             robot_id: robotId,
             local_sequence: 2,
@@ -105,6 +117,25 @@ test("shows linked and standalone photo evidence in the timeline even when outpu
             occurred_at: "2026-11-16T10:01:00Z",
             received_at: "2026-11-16T10:01:01Z",
             payload: { message: "Photo captured", evidence: [linkedId] },
+          },
+          {
+            event_id: "answer-event-1",
+            robot_id: robotId,
+            local_sequence: null,
+            operation_id: executionId,
+            execution_id: executionId,
+            actor_user_id: "operator-user-id",
+            type: "human.interaction.answered",
+            occurred_at: "2026-11-16T10:02:00Z",
+            received_at: "2026-11-16T10:02:01Z",
+            payload: {
+              message: "Human interaction answered",
+              interaction_id: "interaction-1",
+              prompt: "Continue?",
+              selected_label: "Continue inspection",
+              outcome: "continue",
+              response_id: "response-1",
+            },
           },
         ];
       }
@@ -135,12 +166,19 @@ test("shows linked and standalone photo evidence in the timeline even when outpu
   await userEvent.click(
     await screen.findByRole("row", { name: /Open Direct run execution/ }),
   );
+  expect(await screen.findByText("Mission running")).toBeTruthy();
 
   const timeline = screen.getByRole("region", { name: "Logbook timeline" });
   expect(
     await within(timeline).findAllByText("device.operation.state_changed"),
   ).toHaveLength(2);
   expect(await within(timeline).findByText("Photo captured")).toBeTruthy();
+  await userEvent.click(
+    await within(timeline).findByText("Human interaction answered"),
+  );
+  expect(await within(timeline).findByText("Continue inspection")).toBeTruthy();
+  expect(await within(timeline).findByText("operator-user-id")).toBeTruthy();
+  expect(await within(timeline).findAllByText("Hosted event")).toHaveLength(2);
   expect(
     await within(timeline).findByRole("img", {
       name: "Mission artifact photos/linked.jpg",

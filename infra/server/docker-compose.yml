@@ -23,6 +23,15 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD}
       Auth0__Domain: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN}
       Auth0__Audience: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
+      Email__SmtpHost: ${SMTP_HOST:-}
+      Email__SmtpPort: ${SMTP_PORT:-587}
+      Email__SmtpUsername: ${SMTP_USERNAME:-}
+      Email__SmtpPassword: ${SMTP_PASSWORD:-}
+      Email__FromAddress: ${SMTP_FROM_ADDRESS:-}
+      Email__FromName: ${SMTP_FROM_NAME:-Ringfour}
+      Email__ConsoleOrigin: ${CONSOLE_ORIGIN:-http://localhost:5173}
+      MissionUi__BaseOrigin: ${MISSION_UI_BASE_ORIGIN:-http://mission-ui.localhost:8080}
+      MissionUi__ConsoleOrigin: ${CONSOLE_ORIGIN:-http://localhost:5173}
       Storage__Backend: ${STORAGE_BACKEND:-filesystem}
       Storage__FilesystemRoot: /storage
       Storage__S3__Endpoint: ${STORAGE_S3_ENDPOINT:-}

@@ -2,6 +2,15 @@ import { useAuth0 } from "@auth0/auth0-react";
 
 export function LoginPage() {
   const { loginWithRedirect } = useAuth0();
+  const inviteToken = new URLSearchParams(window.location.hash.slice(1)).get("invite");
+  const continueTo = inviteToken
+    ? `${window.location.pathname}#invite=${encodeURIComponent(inviteToken)}`
+    : undefined;
+  const signIn = (options?: Parameters<typeof loginWithRedirect>[0]) =>
+    loginWithRedirect({
+      ...options,
+      ...(continueTo ? { appState: { returnTo: continueTo } } : {}),
+    });
   return (
     <main className="login-screen">
       <div className="login-brand">
@@ -14,7 +23,7 @@ export function LoginPage() {
         <button
           type="button"
           className="button-primary"
-          onClick={() => loginWithRedirect()}
+          onClick={() => void signIn()}
         >
           Sign in
         </button>
@@ -22,7 +31,7 @@ export function LoginPage() {
           type="button"
           className="login-signup"
           onClick={() =>
-            loginWithRedirect({
+            signIn({
               authorizationParams: { screen_hint: "signup" },
             })
           }

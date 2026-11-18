@@ -119,7 +119,7 @@ public sealed class MissionDeploymentTests(PostgresFixture postgres)
             {
                 ["operation_id"] = nextOp.ToString(),
                 ["state"] = "failed",
-                ["result"] = new JsonObject { ["error"] = new JsonObject { ["code"] = "preparation_failed", ["message"] = "private detail" } }
+                ["result"] = new JsonObject { ["error"] = new JsonObject { ["code"] = "insufficient_storage", ["message"] = "private detail" } }
             });
             for (var attempt = 0; attempt < 60; attempt++)
             {
@@ -128,7 +128,8 @@ public sealed class MissionDeploymentTests(PostgresFixture postgres)
                 await Task.Delay(50);
             }
             Assert.Equal(firstRevision, pending.GetProperty("selected_revision_id").GetGuid());
-            Assert.Equal("preparation_failed", pending.GetProperty("last_error").GetProperty("code").GetString());
+            Assert.Equal("insufficient_storage", pending.GetProperty("last_error").GetProperty("code").GetString());
+            Assert.Contains("low on free storage", pending.GetProperty("last_error").GetProperty("message").GetString());
             Assert.DoesNotContain("private detail", pending.GetRawText());
 
             Assert.Equal(HttpStatusCode.NotFound, (await outsider.PostAsync($"/v1/deployments/{deploymentId}/start", null)).StatusCode);

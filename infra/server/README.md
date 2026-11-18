@@ -25,6 +25,16 @@ behind the deployment's HTTPS ingress/reverse proxy. `up.sh` creates and reuses
 a random local PostgreSQL password in the ignored `.env.server` file unless
 `POSTGRES_PASSWORD` is already set.
 
+Organization invitations use SMTP through MailKit. Configure `SMTP_HOST`,
+`SMTP_PORT` (587 for STARTTLS or 465 for implicit TLS), `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM_ADDRESS`, and `SMTP_FROM_NAME`. `CONSOLE_ORIGIN`
+is used to build the invitation link. Keep SMTP credentials in the ignored
+server environment/secret store; do not commit them. The recipient signs in or
+creates an Auth0 account, then accepts only when that account has the same
+verified email address as the invitation.
+See [`docs/organization-management.md`](../../docs/organization-management.md)
+for the full invitation flow and acceptance steps.
+
 `tests/integration/compose/docker-compose.yml` is the separate local integration stack. It
 also includes a local daemon and Runner to test device flows; do not deploy
 that test topology as the server.

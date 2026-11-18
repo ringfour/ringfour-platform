@@ -8,6 +8,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<User> Users => Set<User>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<Membership> Memberships => Set<Membership>();
+    public DbSet<OrganizationInvitation> OrganizationInvitations => Set<OrganizationInvitation>();
     public DbSet<Robot> Robots => Set<Robot>();
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
     public DbSet<RobotCredential> RobotCredentials => Set<RobotCredential>();
@@ -31,9 +32,77 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<DevSessionRun> DevSessionRuns => Set<DevSessionRun>();
     public DbSet<LogbookEvent> LogbookEvents => Set<LogbookEvent>();
     public DbSet<LogbookCheckpoint> LogbookCheckpoints => Set<LogbookCheckpoint>();
+    public DbSet<HumanInteraction> HumanInteractions => Set<HumanInteraction>();
+    public DbSet<HumanInteractionResponse> HumanInteractionResponses => Set<HumanInteractionResponse>();
+    public DbSet<MissionUiSession> MissionUiSessions => Set<MissionUiSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<HumanInteraction>(entity =>
+        {
+            entity.ToTable("human_interactions");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.RobotId).HasColumnName("robot_id");
+            entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
+            entity.Property(item => item.Prompt).HasColumnName("prompt");
+            entity.Property(item => item.Choices).HasColumnName("choices").HasColumnType("jsonb");
+            entity.Property(item => item.Deadline).HasColumnName("deadline");
+            entity.Property(item => item.TimeoutOutcome).HasColumnName("timeout_outcome");
+            entity.Property(item => item.State).HasColumnName("state");
+            entity.Property(item => item.Outcome).HasColumnName("outcome");
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
+            entity.HasIndex(item => new { item.RobotId, item.CreatedAt, item.Id });
+            entity.HasIndex(item => item.ExecutionId);
+            entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_human_interaction_state", "state IN ('pending','answered','timed_out','cancelled')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_human_interaction_outcome", "(state = 'pending' AND outcome IS NULL) OR (state = 'answered' AND outcome IS NOT NULL) OR (state = 'timed_out' AND outcome IS NOT NULL AND deadline IS NOT NULL AND timeout_outcome IS NOT NULL AND outcome = timeout_outcome) OR (state = 'cancelled' AND outcome IS NULL)"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_human_interaction_timeout", "(deadline IS NULL AND timeout_outcome IS NULL) OR (deadline IS NOT NULL AND timeout_outcome IS NOT NULL)"));
+        });
+        modelBuilder.Entity<HumanInteractionResponse>(entity =>
+        {
+            entity.ToTable("human_interaction_responses");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.InteractionId).HasColumnName("interaction_id");
+            entity.Property(item => item.ActorUserId).HasColumnName("actor_user_id");
+            entity.Property(item => item.ChosenValue).HasColumnName("chosen_value");
+            entity.Property(item => item.Status).HasColumnName("status");
+            entity.Property(item => item.IdempotencyKey).HasColumnName("idempotency_key");
+            entity.Property(item => item.RequestFingerprint).HasColumnName("request_fingerprint");
+            entity.Property(item => item.SubmittedAt).HasColumnName("submitted_at");
+            entity.Property(item => item.ConfirmedAt).HasColumnName("confirmed_at");
+            entity.HasIndex(item => item.InteractionId).IsUnique();
+            entity.HasIndex(item => new { item.InteractionId, item.ActorUserId, item.IdempotencyKey }).IsUnique();
+            entity.HasOne(item => item.Interaction).WithOne(item => item.Response).HasForeignKey<HumanInteractionResponse>(item => item.InteractionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_human_response_status", "status IN ('submitted','applied','rejected_timed_out','rejected_cancelled')"));
+        });
+        modelBuilder.Entity<MissionUiSession>(entity =>
+        {
+            entity.ToTable("mission_ui_sessions");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
+            entity.Property(item => item.OrganizationId).HasColumnName("organization_id");
+            entity.Property(item => item.UserId).HasColumnName("user_id");
+            entity.Property(item => item.BootstrapTokenHash).HasColumnName("bootstrap_token_hash");
+            entity.Property(item => item.SessionTokenHash).HasColumnName("session_token_hash");
+            entity.Property(item => item.BootstrapExpiresAt).HasColumnName("bootstrap_expires_at");
+            entity.Property(item => item.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            entity.Property(item => item.ExchangedAt).HasColumnName("exchanged_at");
+            entity.Property(item => item.RevokedAt).HasColumnName("revoked_at");
+            entity.HasIndex(item => new { item.ExecutionId, item.UserId, item.ExpiresAt });
+            entity.HasIndex(item => item.OrganizationId);
+            entity.HasIndex(item => item.SessionTokenHash).IsUnique()
+                .HasFilter("session_token_hash IS NOT NULL");
+            entity.HasOne(item => item.Execution).WithMany().HasForeignKey(item => item.ExecutionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Organization).WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.User).WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_mission_ui_session_hashes", "octet_length(bootstrap_token_hash) = 32 AND (session_token_hash IS NULL OR octet_length(session_token_hash) = 32) AND ((session_token_hash IS NULL AND exchanged_at IS NULL) OR (session_token_hash IS NOT NULL AND exchanged_at IS NOT NULL))"));
+        });
         modelBuilder.Entity<LogbookEvent>(entity =>
         {
             entity.ToTable("logbook_events");
@@ -48,14 +117,15 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.Property(item => item.ReceivedAt).HasColumnName("received_at");
             entity.Property(item => item.State).HasColumnName("state");
             entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
+            entity.Property(item => item.ActorUserId).HasColumnName("actor_user_id");
             entity.Property(item => item.Payload).HasColumnName("payload").HasColumnType("jsonb");
             entity.HasIndex(item => new { item.RobotId, item.LocalSequence }).IsUnique();
             entity.HasIndex(item => new { item.RobotId, item.ReceivedAt, item.Id });
             entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(item => item.Operation).WithMany().HasForeignKey(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "local_sequence BETWEEN 1 AND 9007199254740991"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped'))"));
             entity.ToTable(table => table.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)"));
         });
         modelBuilder.Entity<LogbookCheckpoint>(entity =>
         {
@@ -347,6 +417,10 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasKey(user => user.Id);
             entity.Property(user => user.Id).HasColumnName("id");
             entity.Property(user => user.Auth0Sub).HasColumnName("auth0_sub");
+            entity.Property(user => user.Name).HasColumnName("name").HasMaxLength(120);
+            entity.Property(user => user.Email).HasColumnName("email").HasMaxLength(320);
+            entity.Property(user => user.ProfilePictureUrl).HasColumnName("profile_picture_url").HasMaxLength(2048);
+            entity.Property(user => user.PhoneNumber).HasColumnName("phone_number").HasMaxLength(32);
             entity.Property(user => user.CreatedAt).HasColumnName("created_at");
             entity.HasIndex(user => user.Auth0Sub).IsUnique();
         });
@@ -381,6 +455,33 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
                 .WithMany(user => user.Memberships)
                 .HasForeignKey(membership => membership.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OrganizationInvitation>(entity =>
+        {
+            entity.ToTable("organization_invitations");
+            entity.HasKey(invitation => invitation.Id);
+            entity.Property(invitation => invitation.Id).HasColumnName("id");
+            entity.Property(invitation => invitation.OrganizationId).HasColumnName("organization_id");
+            entity.Property(invitation => invitation.Email).HasColumnName("email");
+            entity.Property(invitation => invitation.NormalizedEmail).HasColumnName("normalized_email");
+            entity.Property(invitation => invitation.Role).HasColumnName("role").HasConversion<string>();
+            entity.Property(invitation => invitation.InvitedByUserId).HasColumnName("invited_by_user_id");
+            entity.Property(invitation => invitation.TokenHash).HasColumnName("token_hash");
+            entity.Property(invitation => invitation.CreatedAt).HasColumnName("created_at");
+            entity.Property(invitation => invitation.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(invitation => invitation.AcceptedAt).HasColumnName("accepted_at");
+            entity.Property(invitation => invitation.AcceptedByUserId).HasColumnName("accepted_by_user_id");
+            entity.Property(invitation => invitation.RevokedAt).HasColumnName("revoked_at");
+            entity.HasIndex(invitation => invitation.TokenHash).IsUnique();
+            entity.HasIndex(invitation => new { invitation.OrganizationId, invitation.NormalizedEmail })
+                .IsUnique()
+                .HasFilter("accepted_at IS NULL AND revoked_at IS NULL");
+            entity.HasOne(invitation => invitation.Organization).WithMany().HasForeignKey(invitation => invitation.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(invitation => invitation.InvitedBy).WithMany().HasForeignKey(invitation => invitation.InvitedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(invitation => invitation.AcceptedBy).WithMany().HasForeignKey(invitation => invitation.AcceptedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable(table => table.HasCheckConstraint("ck_organization_invitation_role", "role IN ('Owner', 'Developer', 'Operator')"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_organization_invitation_state", "(accepted_at IS NULL AND accepted_by_user_id IS NULL) OR (accepted_at IS NOT NULL AND accepted_by_user_id IS NOT NULL)"));
         });
 
         modelBuilder.Entity<Robot>(entity =>

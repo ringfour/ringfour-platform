@@ -5,7 +5,8 @@ import uuid
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 from . import local_execution, local_source
 from .local_grants import authorize, grant_identity
@@ -54,6 +55,77 @@ def create_local_app(settings):
     @app.get("/v1/local/dev-sessions/{session_id}/executions/{execution_id}/output")
     async def execution_output(session_id: str, execution_id: str, request: Request, stream: str = "", offset: int = -1, limit: int = -1):
         return await execution_response(session_id, execution_id, request, output=True, stream=stream, offset=offset, limit=limit)
+
+    async def artifact_response(session_id, execution_id, request, *, path=None):
+        header = request.headers.get("authorization", "")
+        token = header[7:] if header.startswith("Bearer ") else ""
+        if not authorize(settings.db_path, session_id, token):
+            return JSONResponse({"error": {"code": "invalid_grant", "message": "A valid local grant is required.", "request_id": str(uuid.uuid4())}}, status_code=401)
+        if not local_execution.belongs(settings.db_path, session_id, execution_id):
+            return JSONResponse({"error": {"code": "not_found", "message": "Execution not found.", "request_id": str(uuid.uuid4())}}, status_code=404)
+        if not settings.runner_auth_token:
+            return JSONResponse({"error": {"code": "runner_unavailable", "message": "Runner is unavailable.", "request_id": str(uuid.uuid4())}}, status_code=503)
+        client = httpx.AsyncClient(base_url=settings.runner_url,
+            headers={"authorization": f"Bearer {settings.runner_auth_token}", "accept-encoding": "identity"},
+            timeout=httpx.Timeout(None, connect=15, read=60, write=30, pool=10))
+        runner_path = f"/v1/executions/{execution_id}/artifacts"
+        if path is not None:
+            runner_path += "/download"
+        try:
+            upstream = await client.send(client.build_request("GET", runner_path,
+                params={"path": path} if path is not None else None), stream=True)
+        except httpx.HTTPError:
+            await client.aclose()
+            return JSONResponse({"error": {"code": "runner_unavailable", "message": "Runner is unavailable.", "request_id": str(uuid.uuid4())}}, status_code=503)
+        if upstream.status_code != 200:
+            status = upstream.status_code
+            await upstream.aclose()
+            await client.aclose()
+            if status == 404:
+                code, message = "not_found", "Execution or artifact not found."
+            elif status == 400:
+                code, message = "invalid_input", "Invalid artifact path."
+            elif status == 409:
+                code, message = "execution_not_terminal", "Artifacts are available only after execution completes."
+            else:
+                code, message, status = "runner_unavailable", "Runner is unavailable.", 503
+            return JSONResponse({"error": {"code": code, "message": message, "request_id": str(uuid.uuid4())}}, status_code=status)
+        if path is None:
+            try:
+                payload = json.loads(await upstream.aread())
+                if not isinstance(payload, dict) or payload.get("execution_id") != execution_id:
+                    raise ValueError("Invalid Runner artifact response")
+                return payload
+            except (httpx.HTTPError, ValueError, json.JSONDecodeError):
+                return JSONResponse({"error": {"code": "runner_unavailable", "message": "Runner returned an invalid artifact list.", "request_id": str(uuid.uuid4())}}, status_code=503)
+            finally:
+                await upstream.aclose()
+                await client.aclose()
+
+        headers = {}
+        content_length = upstream.headers.get("content-length")
+        if content_length is not None and content_length.isdecimal():
+            headers["content-length"] = content_length
+        async def stream_artifact():
+            try:
+                if upstream.is_stream_consumed:
+                    if upstream.content:
+                        yield upstream.content
+                else:
+                    async for chunk in upstream.aiter_raw():
+                        yield chunk
+            finally:
+                await upstream.aclose()
+        return StreamingResponse(stream_artifact(), media_type="application/octet-stream", headers=headers,
+            background=BackgroundTask(client.aclose))
+
+    @app.get("/v1/local/dev-sessions/{session_id}/executions/{execution_id}/artifacts")
+    async def execution_artifacts(session_id: str, execution_id: str, request: Request):
+        return await artifact_response(session_id, execution_id, request)
+
+    @app.get("/v1/local/dev-sessions/{session_id}/executions/{execution_id}/artifacts/download")
+    async def execution_artifact_download(session_id: str, execution_id: str, request: Request, path: str = ""):
+        return await artifact_response(session_id, execution_id, request, path=path)
 
     @app.get("/v1/local/dev-sessions/{session_id}/source")
     async def source_state(session_id: str, request: Request):

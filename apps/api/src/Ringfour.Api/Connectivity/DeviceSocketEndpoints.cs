@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Errors;
+using Ringfour.Api.Logbook;
 using Ringfour.Api.Persistence;
 using Ringfour.Api.Robots;
 
@@ -498,15 +499,23 @@ public static class DeviceSocketEndpoints
                         error["code"] is JsonValue errorCode && errorCode.TryGetValue<string>(out var candidate) &&
                         candidate is "execution_conflict" or "invalid_input" or "runner_unauthenticated" or "capacity_exceeded" or "insufficient_storage" or "not_found" or "runner_error")
                         code = candidate;
-                    execution.Error = JsonSerializer.Serialize(new { code, message = "The device could not start the execution." }, options);
+                    execution.Error = JsonSerializer.Serialize(new
+                    {
+                        code,
+                        message = code == "insufficient_storage"
+                            ? "The Runner is low on free storage. Free space before starting another mission."
+                            : "The device could not start the execution."
+                    }, options);
+                    var lifecycleEventId = Guid.NewGuid();
                     db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
                     {
-                        Id = Guid.NewGuid(),
+                        Id = lifecycleEventId,
                         ExecutionId = execution.Id,
                         ActorUserId = execution.ActorUserId,
                         State = "failed",
                         OccurredAt = now
                     });
+                    MissionLifecycleLogbook.Record(db, execution, lifecycleEventId, "failed", now);
                 }
             }
         }
@@ -555,15 +564,22 @@ public static class DeviceSocketEndpoints
                     else
                     {
                         deployment.ObservedState = deployment.SelectedRevisionId is null ? "failed" : "ready";
-                        deployment.LastError = """{"code":"preparation_failed","message":"The candidate revision could not be prepared."}""";
+                        var (code, message) = StorageFailure(payload) ?
+                            ("insufficient_storage", "The Runner is low on free storage. Free space before preparing another mission.") :
+                            ("preparation_failed", "The candidate revision could not be prepared.");
+                        deployment.LastError = JsonSerializer.Serialize(new { code, message }, options);
                     }
                     deployment.CandidateRevisionId = null;
                     deployment.CandidateOperationId = null;
                     deployment.UpdatedAt = now;
                 }
             }
-            operation.Result = state == OperationState.Succeeded ? payload["result"]?.ToJsonString(options) ?? "{}" :
-                """{"error":{"code":"preparation_failed","message":"The candidate revision could not be prepared."}}""";
+            if (state == OperationState.Succeeded)
+                operation.Result = payload["result"]?.ToJsonString(options) ?? "{}";
+            else if (StorageFailure(payload))
+                operation.Result = """{"error":{"code":"insufficient_storage","message":"The Runner is low on free storage. Free space before preparing another mission."}}""";
+            else
+                operation.Result = """{"error":{"code":"preparation_failed","message":"The candidate revision could not be prepared."}}""";
         }
         operation.State = state;
         operation.UpdatedAt = now;
@@ -571,6 +587,10 @@ public static class DeviceSocketEndpoints
         await transaction.CommitAsync(ct);
         if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
     }
+
+    private static bool StorageFailure(JsonObject payload) =>
+        payload["result"] is JsonObject result && result["error"] is JsonObject error &&
+        error["code"]?.GetValue<string>() == "insufficient_storage";
 
     private static async Task<Operation?> FindOperationAsync(
         RingfourDbContext db,

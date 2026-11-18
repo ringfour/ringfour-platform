@@ -5,8 +5,10 @@ import { DashboardPage } from "@/components/DashboardPage";
 import { FleetPage } from "@/components/FleetPage";
 import { HealthPage } from "@/components/HealthPage";
 import { IdentityPage } from "@/components/IdentityPage";
+import { InvitationAcceptancePage } from "@/components/InvitationAcceptancePage";
 import { LogbookPage } from "@/components/LogbookPage";
 import { LoginPage } from "@/components/LoginPage";
+import { ProfilePage } from "@/components/ProfilePage";
 import { RecordsPage } from "@/components/RecordsPage";
 
 type View =
@@ -16,6 +18,7 @@ type View =
   | "deployments"
   | "identity"
   | "health"
+  | "profile"
   | "logbook";
 
 const NAV: { id: View; label: string; icon: string }[] = [
@@ -24,7 +27,7 @@ const NAV: { id: View; label: string; icon: string }[] = [
   { id: "missions", label: "Missions", icon: "missions" },
   { id: "deployments", label: "Deployments", icon: "deployments" },
   { id: "logbook", label: "Logbook", icon: "logbook" },
-  { id: "identity", label: "Workspace", icon: "workspace" },
+  { id: "identity", label: "Organizations", icon: "workspace" },
   { id: "health", label: "System health", icon: "health" },
 ];
 
@@ -71,6 +74,12 @@ function Icon({ name }: { name: string }) {
       <>
         <path d="M3 12h4l2.2-6 4 12 2.2-6H21" />
         <rect x="2" y="2" width="20" height="20" rx="3" />
+      </>
+    ),
+    profile: (
+      <>
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 20v-1a7 7 0 0 1 14 0v1" />
       </>
     ),
   };
@@ -148,6 +157,9 @@ function DevConsole() {
     );
   if (!isAuthenticated) return <LoginPage />;
 
+  const invitationToken = new URLSearchParams(window.location.hash.slice(1)).get("invite");
+  if (invitationToken) return <InvitationAcceptancePage token={invitationToken} />;
+
   return (
     <div className="console-shell">
       <aside className="console-sidebar">
@@ -171,6 +183,20 @@ function DevConsole() {
             </button>
           ))}
         </nav>
+        <div className="console-settings">
+          <div className="sidebar-label">Settings</div>
+          <nav className="console-nav" aria-label="Settings">
+            <button
+              type="button"
+              aria-current={view === "profile" ? "page" : undefined}
+              onClick={() => navigate("profile")}
+            >
+              <Icon name="profile" />
+              <span>My profile</span>
+              {view === "profile" && <span className="nav-active-dot" aria-hidden="true" />}
+            </button>
+          </nav>
+        </div>
       </aside>
       <div className="console-body">
         {view === "overview" && (
@@ -195,6 +221,7 @@ function DevConsole() {
           />
         )}
         {view === "identity" && <IdentityPage />}
+        {view === "profile" && <ProfilePage />}
         {view === "robots" && (
           <FleetPage
             robotId={robotId}

@@ -248,7 +248,7 @@ class ConnectionManager:
                 logger.info("operation %s replaying terminal state %s", operation.operation_id, operation.state)
                 await self._report(outbound, state, operation)
                 return
-            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")) and operation.kind != "mission.prepare" and operation.kind not in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.restart"):
+            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")) and operation.kind != "mission.prepare" and operation.kind not in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.grants.revoke", "dev.session.restart"):
                 # The effect may have happened before a crash. Never repeat it.
                 finished = operations.apply_status(
                     self._settings.db_path,
@@ -276,7 +276,7 @@ class ConnectionManager:
                 await self._report(outbound, state, finished)
                 return
 
-        if operations.is_expired(operation.deadline_at, self._now()) and not (not created and operation.state == "running" and (operation.kind == "mission.prepare" or operation.kind in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.restart"))):
+        if operations.is_expired(operation.deadline_at, self._now()) and not (not created and operation.state == "running" and (operation.kind == "mission.prepare" or operation.kind in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.grants.revoke", "dev.session.restart"))):
             if operation.kind == "script.execution.start":
                 scripts.complete_sync(self._settings.db_path, operation.operation_id)
             finished = operations.apply_status(
@@ -308,6 +308,10 @@ class ConnectionManager:
                 if operation.payload.get("operation_id") != operation.operation_id:
                     raise local_grants.GrantRejected("Operation ID mismatch.")
                 result = local_grants.install(self._settings.db_path, operation.payload, now=self._now())
+            elif operation.kind == "dev.session.grants.revoke":
+                if operation.payload.get("operation_id") != operation.operation_id:
+                    raise local_grants.GrantRejected("Operation ID mismatch.")
+                result = local_grants.revoke(self._settings.db_path, operation.payload)
             elif operation.kind in ("dev.session.create", "dev.session.close", "dev.session.expire"):
                 if (operation.payload.get("reason") != operation.kind.removeprefix("dev.session.")
                         or operation.payload.get("operation_id") != operation.operation_id

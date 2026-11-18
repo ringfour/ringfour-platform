@@ -1,0 +1,14 @@
+{
+  "name": "ringfour-architecture-explorer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local, read-only architecture explorer for the Ringfour backend.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

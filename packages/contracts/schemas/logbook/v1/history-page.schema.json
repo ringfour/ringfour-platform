@@ -36,8 +36,10 @@
             "$ref": "#/$defs/uuid"
           },
           "local_sequence": {
-            "type": "integer",
-            "minimum": 1
+            "anyOf": [
+              { "type": "integer", "minimum": 1 },
+              { "type": "null" }
+            ]
           },
           "operation_id": {
             "anyOf": [
@@ -72,8 +74,17 @@
           "type": {
             "enum": [
               "mission.logbook.entry",
+              "mission.revision_selected",
+              "mission.started",
+              "mission.completed",
+              "mission.failed",
+              "mission.stopped",
               "device.operation.state_changed",
-              "agent.motion.event"
+              "agent.motion.event",
+              "human.interaction.requested",
+              "human.interaction.answered",
+              "human.interaction.timed_out",
+              "human.interaction.cancelled"
             ]
           },
           "schema_version": {"enum": [1, 2]},

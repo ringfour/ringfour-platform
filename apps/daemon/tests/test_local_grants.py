@@ -16,6 +16,7 @@ from ringfour_daemon.local_grants import (
     authorize,
     install,
     record_session,
+    revoke,
 )
 
 
@@ -74,3 +75,19 @@ def test_local_listener_denies_missing_and_wrong_grants(tmp_path):
         assert result.status_code == 200 and result.json()["session_id"] == body["session_id"]
         assert client.get("/docs").status_code == 404
         assert token not in json.dumps(result.json())
+
+
+def test_revoke_removes_only_named_grants_and_replays_safely(tmp_path):
+    db, now, _ts, token, body = setup(tmp_path)
+    install(db, body, now=now)
+    replacement = {**body, "operation_id": str(uuid.uuid4()), "grant_id": str(uuid.uuid4()),
+                   "token_sha256": hashlib.sha256(b"y" * 32).hexdigest()}
+    install(db, replacement, now=now)
+    revoke_body = {"operation_id": str(uuid.uuid4()), "grant_ids": [body["grant_id"]]}
+    assert revoke(db, revoke_body) == {"revoked_grant_ids": revoke_body["grant_ids"]}
+    assert revoke(db, revoke_body) == {"revoked_grant_ids": revoke_body["grant_ids"]}
+    assert not authorize(db, body["session_id"], token, now=now)
+    replacement_token = base64.urlsafe_b64encode(b"y" * 32).decode().rstrip("=")
+    assert authorize(db, body["session_id"], replacement_token, now=now)
+    with pytest.raises(GrantRejected):
+        revoke(db, {**revoke_body, "grant_ids": ["bad"]})
