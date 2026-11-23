@@ -59,11 +59,28 @@ inventory and transport/recovery behavior; it does not prove sensor freshness or
 simulator/physical operation. Pre-pull/start refusal with zero engine effects is
 retained for AP-13 after those execution paths exist.
 
+## AP-04 — independent local SDK/runtime wheels (acceptance complete)
+
+- [x] Record the user's `uv`/local-wheel distribution decision in the pivot specification and backlog; public Python publication is deferred.
+- [x] Pin source commits, build backends/constraints, epochs, package and dependency wheel checksums, Python/uv images and per-target manifests.
+- [x] Build both independent packages from clean Git snapshots into a versioned bundle; reject changed hashes and existing output destinations.
+- [x] Replace the optional SDK image's Runner vendor dependency with an offline local-bundle consumer; retain the legacy wheelhouse and Agent dependency pin.
+- [x] Correct SDK/Agent Platform integration paths and document optional runtime clients without claiming AP-10 delivery is implemented.
+- [x] Verify SDK-only, SDK with optional runtime, and runtime without SDK in independent offline containers on linux/amd64; bundle and verify arm64 dependency wheels without claiming arm64 execution.
+- [x] Verify a valid-ZIP tampered wheel is refused by its original hash lock, repeat builds produce identical bundle checksums, and overwriting output is refused.
+- [x] Restore and pin the external conformance repository: 708 passed, 2 explicitly skipped; optional runtime tests: 9 passed.
+
+Evidence: [AP-04](../evidence/AP-04.md). Human checks:
+[AP-04](../human-testing/AP-04.md). Packaging contract:
+[Python distribution](../python-distribution.md). Bundle location:
+`/home/cdr/.local/share/ringfour/python-artifacts/0.1.0.dev0/`.
+No Platform/virtual stack reload is needed for this slice.
+
 ## Subsequent work
 
-AP-01, AP-02 and AP-03 acceptance are complete.
-AP-03 inventory and AP-04 released libraries precede distribution and
-publishing (AP-05/06). Owner-scoped engine management (AP-08) precedes install
+AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local
+wheel distribution; public Python publication is deferred. Store distribution
+and App publishing follow in AP-05/06. Owner-scoped engine management (AP-08) precedes install
 (AP-07) and mutually exclusive runs (AP-09). Runtime evidence (AP-10), Studio
 (AP-11), CLI (AP-12) and virtual topology (AP-08V) converge at AP-13 acceptance.
 Retire managed UI (AP-14) and remaining Runner clients/defaults (AP-15) only
