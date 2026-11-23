@@ -1,18 +1,27 @@
 import { useAuth0 } from "@auth0/auth0-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   type Artifact,
   ArtifactCard,
   ArtifactGallery,
 } from "@/components/ArtifactGallery";
 import { apiFetch, apiFetchAll } from "@/lib/api";
+import { resourcePath, setQuery, useLocation, visit } from "@/lib/location";
+import { RunTimeline } from "./RunTimeline";
+import { StudioTime } from "./StudioTime";
+import { Decisions } from "./Decisions";
 
-type Organization = { id: string; name: string };
+type Organization = { id: string; name: string; role?: string };
 type Mission = { id: string; name: string };
 type Robot = { id: string; name: string };
-type Member = { user_id: string; role: "owner" | "developer" | "operator" };
+type Member = {
+  name?: string;
+  user_id: string;
+  role: "owner" | "developer" | "operator";
+};
 type Revision = { id: string; version: number };
 type Execution = {
+  updated_at?: string;
   id: string;
   mission_revision_id: string | null;
   actor_user_id: string | null;
@@ -43,6 +52,10 @@ type OutputChunk = {
 };
 type Output = { stdout: string; stderr: string; truncated: boolean };
 
+const active = (state: string) =>
+  ["running", "queued", "preparing", "starting", "stopping"].includes(state);
+const finished = (state: string) =>
+  ["succeeded", "failed", "cancelled"].includes(state);
 const DIRECT = "__direct__";
 const UNKNOWN_MISSION = "__unknown_mission__";
 const UNKNOWN_USER = "__unknown_user__";
@@ -54,16 +67,15 @@ const missionKey = (run: Run) =>
 const missionName = (run: Run) =>
   run.mission?.name ??
   (run.mission_revision_id ? "Unknown mission" : "Direct run");
-const humanName = (id: string | null, me: string) =>
-  !id ? "Unknown user" : id === me ? "You" : `User ${id}`;
 const entryTitle = (entry: Entry) =>
   typeof entry.payload.message === "string"
     ? entry.payload.message
     : typeof entry.payload.event_type === "string"
       ? entry.payload.event_type
-      : entry.type.startsWith("mission.") && typeof entry.payload.state === "string"
+      : entry.type.startsWith("mission.") &&
+          typeof entry.payload.state === "string"
         ? `Mission ${entry.payload.state.replaceAll("_", " ")}`
-      : entry.type;
+        : entry.type;
 const evidenceIds = (entry: Entry) =>
   Array.isArray(entry.payload.evidence)
     ? entry.payload.evidence.filter(
@@ -155,7 +167,9 @@ function HitlDecisionPanel({ entry }: { entry: Entry }) {
   return (
     <section className="logbook2-hitl-decision" aria-label="Selected options">
       <header>
-        <span>Selected option{decision.selections.length === 1 ? "" : "s"}</span>
+        <span>
+          Selected option{decision.selections.length === 1 ? "" : "s"}
+        </span>
         {(decision.state || decision.source) && (
           <small>
             {[decision.state, decision.source].filter(Boolean).join(" · ")}
@@ -183,7 +197,7 @@ function eventTone(entry: Entry) {
         ? entry.payload.state
         : entry.type.startsWith("mission.")
           ? entry.payload.state
-        : null;
+          : null;
   if (
     [
       "motion.failed",
@@ -255,12 +269,17 @@ function FilterField({
 
 export function LogbookPage({
   preferredOrganizationId,
-  onOrganizationChange,
   pollIntervalMs = 3000,
+  timelineOnly = false,
+  routeId,
+  selectRecord,
 }: {
   preferredOrganizationId: string;
   onOrganizationChange: (id: string) => void;
   pollIntervalMs?: number;
+  timelineOnly?: boolean;
+  routeId?: string;
+  selectRecord?: (id: string, org: string) => void;
 }) {
   const { getAccessTokenSilently } = useAuth0();
   const getToken = useCallback(async () => {
@@ -276,12 +295,20 @@ export function LogbookPage({
   const [missions, setMissions] = useState<Mission[]>([]);
   const [robots, setRobots] = useState<Robot[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
   const [runs, setRuns] = useState<Run[] | null>(null);
-  const [missionFilter, setMissionFilter] = useState("");
-  const [robotFilter, setRobotFilter] = useState("");
-  const [humanFilter, setHumanFilter] = useState("");
-  const [stateFilter, setStateFilter] = useState("");
-  const [selection, setSelection] = useState("");
+  const url = useLocation();
+  const days = url.searchParams.get("days") ?? "";
+  const group = url.searchParams.get("group") ?? "All";
+  const tab = url.searchParams.get("tab") ?? "Overview";
+  const missionFilter = url.searchParams.get("app") ?? "";
+  const robotFilter = url.searchParams.get("robot") ?? "";
+  const humanFilter = url.searchParams.get("actor") ?? "";
+  const stateFilter = url.searchParams.get("state") ?? "";
+  const [localSelection, setLocalSelection] = useState("");
+  const selection = routeId ?? localSelection;
+  const setSelection = (id: string) =>
+    selectRecord ? selectRecord(id, orgId) : setLocalSelection(id);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [output, setOutput] = useState<Output | null>(null);
   const [artifacts, setArtifacts] = useState<Artifact[] | null>(null);
@@ -290,7 +317,10 @@ export function LogbookPage({
   const [entriesError, setEntriesError] = useState("");
   const [outputError, setOutputError] = useState("");
   const [refresh, setRefresh] = useState(0);
+  const [follow, setFollow] = useState(true);
+  const [copyError, setCopyError] = useState("");
   const [detailRefresh, setDetailRefresh] = useState(0);
+  const [uiPanelRun, setUiPanelRun] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,13 +348,46 @@ export function LogbookPage({
     };
   }, [getToken]);
 
+  useEffect(() => {
+    if (!routeId || preferredOrganizationId) return;
+    let current = true;
+    async function resolveWorkspace() {
+      const run = await (
+        await apiFetch(
+          getToken,
+          "/v1/executions/" + encodeURIComponent(routeId!),
+        )
+      ).json();
+      const robot = await (
+        await apiFetch(
+          getToken,
+          "/v1/robots/" + encodeURIComponent(run.robot_id),
+        )
+      ).json();
+      if (current && robot.organization_id) setOrgId(robot.organization_id);
+    }
+    void resolveWorkspace().catch((cause) => {
+      if (current) setError(message(cause));
+    });
+    return () => {
+      current = false;
+    };
+  }, [routeId, preferredOrganizationId, getToken]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh requests a new snapshot
   useEffect(() => {
     if (!orgId) return;
     let cancelled = false;
     setError("");
-    setRuns(null);
-    setSelection("");
+
+    void apiFetchAll<{ execution_id: string }>(
+      getToken,
+      `/v1/organizations/${orgId}/interactions?state=pending`,
+    )
+      .then((items) => {
+        if (!cancelled) setPendingIds(items.map((item) => item.execution_id));
+      })
+      .catch(() => {});
     Promise.all([
       apiFetchAll<Mission>(getToken, `/v1/organizations/${orgId}/missions`),
       apiFetchAll<Robot>(getToken, `/v1/organizations/${orgId}/robots`),
@@ -399,15 +462,65 @@ export function LogbookPage({
     () =>
       (runs ?? []).filter(
         (run) =>
+          (group === "All" ||
+            (group === "Active" && active(run.state)) ||
+            (group === "Finished" && finished(run.state)) ||
+            (group === "Needs attention" &&
+              (["failed", "unknown"].includes(run.state) ||
+                pendingIds.includes(run.id)))) &&
+          (!days ||
+            Date.parse(run.created_at) >=
+              Date.now() - Number(days) * 86400000) &&
           (!missionFilter || missionKey(run) === missionFilter) &&
           (!robotFilter || run.robot.id === robotFilter) &&
           (!humanFilter ||
             (run.actor_user_id ?? UNKNOWN_USER) === humanFilter) &&
           (!stateFilter || run.state === stateFilter),
       ),
-    [runs, missionFilter, robotFilter, humanFilter, stateFilter],
+    [
+      runs,
+      days,
+      pendingIds,
+      group,
+      missionFilter,
+      robotFilter,
+      humanFilter,
+      stateFilter,
+    ],
   );
   const selectedRun = runs?.find((run) => run.id === selection);
+  useEffect(() => {
+    if (!selectedRun || !active(selectedRun.state)) return;
+    let current = true;
+    const update = async () => {
+      try {
+        const snapshot: Execution = await (
+          await apiFetch(
+            getToken,
+            "/v1/executions/" + encodeURIComponent(selectedRun.id),
+          )
+        ).json();
+        if (current && snapshot.id === selectedRun.id) {
+          setError("");
+          if (snapshot.state !== selectedRun.state)
+            setRuns(
+              (rows) =>
+                rows?.map((row) =>
+                  row.id === snapshot.id ? { ...row, ...snapshot } : row,
+                ) ?? null,
+            );
+        }
+      } catch {
+        if (current)
+          setError("Connection lost. Showing the last known run state.");
+      }
+    };
+    const timer = window.setInterval(() => void update(), 5000);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [getToken, selectedRun]);
   const humans = useMemo(
     () =>
       [
@@ -422,6 +535,7 @@ export function LogbookPage({
     [runs],
   );
   const filtersActive = !!(
+    days ||
     missionFilter ||
     robotFilter ||
     humanFilter ||
@@ -437,17 +551,30 @@ export function LogbookPage({
         artifact.content_type === "image/png"),
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: detailRefresh requests a new snapshot
+  // biome-ignore lint/correctness/useExhaustiveDependencies: changing runs resets the displayed detail snapshot.
   useEffect(() => {
     setEntries(null);
     setOutput(null);
+    setArtifacts(null);
+    setFollow(true);
+    setCopyError("");
+  }, [selection]);
+  useEffect(() => {
+    if (!selectedRun || !active(selectedRun.state)) return;
+    const timer = window.setInterval(() => {
+      if (tab !== "Output" || follow) setDetailRefresh((value) => value + 1);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [selectedRun, tab, follow]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: detailRefresh requests a new snapshot
+  useEffect(() => {
     setEntriesError("");
     setOutputError("");
     if (!orgId || !selectedRun) return;
     let cancelled = false;
     const params = new URLSearchParams({
       robot_id: selectedRun.robot.id,
-      operation_id: selectedRun.id,
+      execution_id: selectedRun.id,
     });
     apiFetchAll<Entry>(getToken, `/v1/organizations/${orgId}/events?${params}`)
       .then((eventList) => {
@@ -510,40 +637,92 @@ export function LogbookPage({
       }
     };
     void load();
-    const timer = window.setInterval(() => void load(), pollIntervalMs);
+    const timer = finished(selectedRun.state)
+      ? undefined
+      : window.setInterval(() => void load(), pollIntervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
   }, [getToken, pollIntervalMs, selectedRun]);
 
+  useEffect(() => {
+    if (!orgId || selection) return;
+    const timer = window.setInterval(
+      () => setRefresh((value) => value + 1),
+      30000,
+    );
+    return () => window.clearInterval(timer);
+  }, [orgId, selection]);
   const clearFilters = () => {
-    setMissionFilter("");
-    setRobotFilter("");
-    setHumanFilter("");
-    setStateFilter("");
+    for (const name of ["app", "robot", "actor", "state", "days"])
+      url.searchParams.delete(name);
+    visit(url.pathname + url.search);
   };
-  const selectOrganization = (id: string) => {
-    setOrgId(id);
-    setSelection("");
-    clearFilters();
-    onOrganizationChange(id);
+  const humanName = (id: string | null, viewer: string) =>
+    id && id === viewer
+      ? "You"
+      : members.find((m) => m.user_id === id)?.name || "Name unavailable";
+  const backToRuns = () => {
+    const from = window.history.state?.fromList;
+    if (
+      typeof from === "string" &&
+      new URL(from, window.location.origin).pathname === "/runs"
+    ) {
+      const top = window.history.state.listScroll;
+      visit(from);
+      window.history.replaceState(
+        { ...window.history.state, runListScroll: top },
+        "",
+      );
+    } else setSelection("");
   };
   const openRun = (id: string) => {
+    window.history.replaceState(
+      { ...window.history.state, runListScroll: window.scrollY },
+      "",
+    );
     setSelection(id);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
+  useEffect(() => {
+    if (
+      selection ||
+      !runs ||
+      typeof window.history.state?.runListScroll !== "number"
+    )
+      return;
+    window.scrollTo({
+      top: window.history.state.runListScroll,
+      behavior: "instant",
+    });
+  }, [selection, runs]);
+
+  if (selection && !selectedRun)
+    return (
+      <main className="workspace-page">
+        <h1>Run</h1>
+        <p>
+          {error ||
+            (runs ? "Run unavailable in this workspace." : "Loading run…")}
+        </p>
+        <button type="button" onClick={backToRuns}>
+          Back to runs
+        </button>
+      </main>
+    );
   if (selectedRun) {
+    const clip = {
+      ...selectedRun,
+      app: missionName(selectedRun),
+      person: humanName(selectedRun.actor_user_id, me),
+    };
     return (
       <main className="logbook2-page logbook2-detail">
         <header className="logbook2-detail-toolbar">
-          <button
-            className="logbook2-back"
-            type="button"
-            onClick={() => setSelection("")}
-          >
-            <span aria-hidden="true">←</span> Back to logbook
+          <button className="logbook2-back" type="button" onClick={backToRuns}>
+            <span aria-hidden="true">←</span> Back to runs
           </button>
           <button
             className="button-secondary"
@@ -553,24 +732,69 @@ export function LogbookPage({
             Refresh
           </button>
         </header>
+        {error && (
+          <p role="alert" className="notice-error">
+            {error}
+          </p>
+        )}
+        {active(selectedRun.state) && !error && (
+          <Decisions
+            key={selectedRun.id}
+            executionId={selectedRun.id}
+            organizationId={orgId}
+            robots={robots}
+            getToken={getToken}
+            refresh={detailRefresh}
+            role={orgs?.find((o) => o.id === orgId)?.role}
+          />
+        )}
         <section className="logbook2-record-header">
           <div className="logbook2-record-heading">
             <div>
               <span className="logbook2-kicker">Execution record</span>
-              <h1>{missionName(selectedRun)}</h1>
+              <h1>
+                {selectedRun.mission ? (
+                  <a href={resourcePath("apps", selectedRun.mission.id, orgId)}>
+                    {missionName(selectedRun)}
+                  </a>
+                ) : (
+                  missionName(selectedRun)
+                )}
+              </h1>
             </div>
             <span className="logbook2-state" data-state={selectedRun.state}>
-              {selectedRun.state}
+              {selectedRun.state === "succeeded"
+                ? "Execution succeeded"
+                : selectedRun.state}
             </span>
           </div>
           <dl className="logbook2-record-meta">
             <div>
               <dt>Started</dt>
-              <dd>{timestamp(selectedRun.created_at)}</dd>
+              <dd>
+                <StudioTime value={selectedRun.created_at} />
+              </dd>
             </div>
+            {selectedRun.updated_at && (
+              <div>
+                <dt>Last reported update</dt>
+                <dd>
+                  <time
+                    dateTime={selectedRun.updated_at}
+                    title={selectedRun.updated_at}
+                  >
+                    {timestamp(selectedRun.updated_at)}
+                  </time>
+                </dd>
+              </div>
+            )}
             <div>
               <dt>Robot</dt>
-              <dd>{selectedRun.robot.name}</dd>
+              <dd>
+                <a href={resourcePath("robots", selectedRun.robot.id, orgId)}>
+                  {selectedRun.robot.name}
+                </a>
+              </dd>
             </div>
             <div>
               <dt>Initiated by</dt>
@@ -592,14 +816,58 @@ export function LogbookPage({
                   : `Version ${selectedRun.version}`}
               </dd>
             </div>
-            <div>
-              <dt>Execution ID</dt>
-              <dd className="logbook2-mono">{selectedRun.id}</dd>
-            </div>
           </dl>
+          <details>
+            <summary>Technical details</summary>Execution ID · {selectedRun.id}
+          </details>
         </section>
 
-        <section className="logbook2-section" aria-label="Logbook timeline">
+        <nav className="route-tabs" aria-label="Run sections">
+          {["Overview", "App UI", "Output"].map((label) => (
+            <button
+              type="button"
+              key={label}
+              aria-current={tab === label ? "page" : undefined}
+              onClick={() => setQuery("tab", label)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        {tab === "App UI" && (
+          <p className="empty-panel">
+            {finished(selectedRun.state)
+              ? "This run has ended."
+              : "No interface address has been reported for this run."}
+          </p>
+        )}
+        {["Overview", "Logbook"].includes(tab) && (
+          <section className="empty-panel">
+            <h2>Current situation</h2>
+            <p>
+              {entries?.length
+                ? entryTitle(entries[entries.length - 1])
+                : selectedRun.state}
+            </p>
+          </section>
+        )}
+        {["Overview", "Logbook"].includes(tab) && (
+          <RunTimeline
+            key={clip.id}
+            preview
+            focusedRun={clip}
+            robots={[clip.robot]}
+            runs={[clip]}
+            workspace={orgId}
+            token={getToken}
+            robotFilter={clip.robot.id}
+          />
+        )}
+        <section
+          hidden={!["Overview", "Logbook"].includes(tab)}
+          className="logbook2-section"
+          aria-label="Logbook timeline"
+        >
           <header className="logbook2-section-heading">
             <div>
               <span className="logbook2-section-index">01</span>
@@ -639,9 +907,7 @@ export function LogbookPage({
                           ` · ${evidenceIds(entry).length} evidence file${evidenceIds(entry).length === 1 ? "" : "s"}`}
                       </small>
                     </span>
-                    <time dateTime={entry.occurred_at}>
-                      {timestamp(entry.occurred_at)}
-                    </time>
+                    <StudioTime value={entry.occurred_at} />
                     <span className="logbook2-event-open" aria-hidden="true">
                       +
                     </span>
@@ -650,15 +916,21 @@ export function LogbookPage({
                     <dl>
                       <dt>Sequence</dt>
                       <dd>{entry.local_sequence ?? "Hosted event"}</dd>
-                      <dt>Actor user</dt>
-                      <dd>{entry.actor_user_id ?? "—"}</dd>
+                      <dt>Actor</dt>
+                      <dd>{humanName(entry.actor_user_id, me)}</dd>
                       <dt>Operation</dt>
                       <dd>{entry.operation_id ?? "—"}</dd>
                       <dt>Received</dt>
-                      <dd>{timestamp(entry.received_at)}</dd>
+                      <dd>
+                        <StudioTime value={entry.received_at} />
+                      </dd>
                     </dl>
                     <HitlDecisionPanel entry={entry} />
-                    <pre>{JSON.stringify(entry.payload, null, 2)}</pre>
+                    <details>
+                      <summary>Technical details</summary>Actor ID ·{" "}
+                      <code>{entry.actor_user_id ?? "Unavailable"}</code>
+                      <pre>{JSON.stringify(entry.payload, null, 2)}</pre>
+                    </details>
                     {evidenceIds(entry).length > 0 && (
                       <section
                         className="logbook2-evidence-links logbook2-event-artifacts"
@@ -735,15 +1007,21 @@ export function LogbookPage({
             </div>
           )}
         </section>
-        <ArtifactGallery
-          artifacts={artifacts}
-          executionId={selectedRun.id}
-          getToken={getToken}
-          error={artifactError}
-          pollIntervalMs={pollIntervalMs}
-          sectionIndex="02"
-        />
-        <section className="logbook2-section" aria-label="Execution output">
+        <div hidden={!["Overview", "Logbook"].includes(tab)}>
+          <ArtifactGallery
+            artifacts={artifacts}
+            executionId={selectedRun.id}
+            getToken={getToken}
+            error={artifactError}
+            pollIntervalMs={finished(selectedRun.state) ? 0 : pollIntervalMs}
+            sectionIndex="02"
+          />
+        </div>
+        <section
+          hidden={tab !== "Output"}
+          className="logbook2-section"
+          aria-label="Execution output"
+        >
           <header className="logbook2-section-heading">
             <div>
               <span className="logbook2-section-index">03</span>
@@ -751,6 +1029,53 @@ export function LogbookPage({
             </div>
             {output?.truncated && <span>Truncated</span>}
           </header>
+          <div className="robot-actions output-actions">
+            {active(selectedRun.state) && (
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={() => setFollow(!follow)}
+              >
+                {follow ? "Pause updates" : "Resume updates"}
+              </button>
+            )}
+            {output &&
+              ["stdout", "stderr"].map((stream) => (
+                <span key={stream}>
+                  <button
+                    className="text-action"
+                    type="button"
+                    onClick={() =>
+                      void navigator.clipboard
+                        .writeText(output[stream as "stdout" | "stderr"])
+                        .catch(() => setCopyError("Clipboard unavailable."))
+                    }
+                  >
+                    Copy {stream}
+                  </button>
+                  {" · "}
+                  <button
+                    className="text-action"
+                    type="button"
+                    onClick={() => {
+                      const href = URL.createObjectURL(
+                        new Blob([output[stream as "stdout" | "stderr"]], {
+                          type: "text/plain",
+                        }),
+                      );
+                      const link = document.createElement("a");
+                      link.href = href;
+                      link.download = selectedRun.id + "-" + stream + ".txt";
+                      link.click();
+                      setTimeout(() => URL.revokeObjectURL(href), 1000);
+                    }}
+                  >
+                    Download
+                  </button>
+                </span>
+              ))}
+          </div>
+          {copyError && <p role="alert">{copyError}</p>}
           {outputError ? (
             <p role="alert" className="notice-error logbook2-detail-error">
               Output unavailable: {outputError}
@@ -778,8 +1103,12 @@ export function LogbookPage({
     <main className="logbook2-page">
       <header className="logbook2-page-header">
         <div>
-          <h1>Logbook</h1>
-          <p>Mission executions and their recorded operational history.</p>
+          <h1>{timelineOnly ? "Timeline" : "Runs"}</h1>
+          <p>
+            {timelineOnly
+              ? "Robot tracks and app runs in one time window."
+              : "Execution history for this workspace."}
+          </p>
         </div>
         <button
           className="button-secondary"
@@ -790,7 +1119,28 @@ export function LogbookPage({
         </button>
       </header>
 
-      <section className="logbook2-filters" aria-label="Logbook filters">
+      {!timelineOnly && runs && (
+        <p className="studio-active-summary">
+          <strong>Active now</strong> ·{" "}
+          {runs.filter((run) => active(run.state)).length} active runs
+        </p>
+      )}
+      {!timelineOnly && (
+        <nav className="route-tabs" aria-label="Run groups">
+          {["Active", "Needs attention", "Finished", "All"].map((label) => (
+            <button
+              type="button"
+              key={label}
+              aria-current={group === label ? "page" : undefined}
+              onClick={() => setQuery("group", label)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
+      <details className="logbook2-filters">
+        <summary>Filter runs{filtersActive ? " · Applied" : ""}</summary>
         <div className="logbook2-filter-heading">
           <span>Filter executions</span>
           <button
@@ -803,22 +1153,21 @@ export function LogbookPage({
         </div>
         <div className="logbook2-filter-grid">
           <FilterField
-            label="Workspace"
-            value={orgId}
-            onChange={selectOrganization}
+            label="Started within"
+            value={days}
+            onChange={(value) => setQuery("days", value)}
           >
-            {orgs?.map((org) => (
-              <option key={org.id} value={org.id}>
-                {org.name}
-              </option>
-            ))}
+            <option value="">Any time</option>
+            <option value="1">Last day</option>
+            <option value="7">Last week</option>
+            <option value="30">Last 30 days</option>
           </FilterField>
           <FilterField
-            label="Mission"
+            label="App"
             value={missionFilter}
-            onChange={setMissionFilter}
+            onChange={(value) => setQuery("app", value)}
           >
-            <option value="">All missions</option>
+            <option value="">All apps</option>
             {missions.map((mission) => (
               <option key={mission.id} value={mission.id}>
                 {mission.name}
@@ -834,7 +1183,7 @@ export function LogbookPage({
           <FilterField
             label="Robot"
             value={robotFilter}
-            onChange={setRobotFilter}
+            onChange={(value) => setQuery("robot", value)}
           >
             <option value="">All robots</option>
             {robots.map((robot) => (
@@ -846,7 +1195,7 @@ export function LogbookPage({
           <FilterField
             label="Initiated by"
             value={humanFilter}
-            onChange={setHumanFilter}
+            onChange={(value) => setQuery("actor", value)}
           >
             <option value="">All humans</option>
             {humans.map((id) => (
@@ -858,7 +1207,7 @@ export function LogbookPage({
           <FilterField
             label="Status"
             value={stateFilter}
-            onChange={setStateFilter}
+            onChange={(value) => setQuery("state", value)}
           >
             <option value="">All statuses</option>
             {states.map((state) => (
@@ -868,84 +1217,153 @@ export function LogbookPage({
             ))}
           </FilterField>
         </div>
-      </section>
+      </details>
 
-      <section className="logbook2-table-panel" aria-label="Executions">
-        <header>
-          <h2>Executions</h2>
-          <span>{runs ? `${visibleRuns.length} records` : "Loading"}</span>
-        </header>
-        {error ? (
-          <p role="alert" className="notice-error logbook2-empty">
-            {error}
-          </p>
-        ) : orgs?.length === 0 ? (
-          <p className="logbook2-empty">No workspace available.</p>
-        ) : runs === null ? (
-          <p className="logbook2-empty">Loading executions…</p>
-        ) : visibleRuns.length === 0 ? (
-          <p className="logbook2-empty">No executions match these filters.</p>
-        ) : (
-          <div className="logbook2-table-scroll">
-            <table className="logbook2-table">
-              <thead>
-                <tr>
-                  <th>Mission</th>
-                  <th>Robot</th>
-                  <th>Started</th>
-                  <th>Initiated by</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th aria-label="Open record" />
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRuns.map((run) => (
-                  <tr
-                    key={run.id}
-                    tabIndex={0}
-                    aria-label={`Open ${missionName(run)} execution from ${timestamp(run.created_at)}`}
-                    onClick={() => openRun(run.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        openRun(run.id);
-                      }
-                    }}
-                  >
-                    <td>
-                      <strong>{missionName(run)}</strong>
-                      <small>
-                        {run.version === undefined
-                          ? "Unversioned"
-                          : `Revision ${run.version}`}
-                      </small>
-                    </td>
-                    <td>{run.robot.name}</td>
-                    <td className="logbook2-nowrap">
-                      {timestamp(run.created_at)}
-                    </td>
-                    <td>{humanName(run.actor_user_id, me)}</td>
-                    <td>
-                      {run.actor_user_id
-                        ? (rolesByUser.get(run.actor_user_id) ?? "unknown")
-                        : "unknown"}
-                    </td>
-                    <td>
-                      <span className="logbook2-state" data-state={run.state}>
-                        {run.state}
-                      </span>
-                    </td>
-                    <td className="logbook2-open" aria-hidden="true">
-                      →
-                    </td>
+      {timelineOnly && runs && !error ? (
+        <RunTimeline
+          robots={robots.filter(
+            (robot) => !robotFilter || robot.id === robotFilter,
+          )}
+          runs={visibleRuns.map((run) => ({
+            ...run,
+            app: missionName(run),
+            person: humanName(run.actor_user_id, me),
+          }))}
+          token={getToken}
+          workspace={orgId}
+        />
+      ) : (
+        <section className="logbook2-table-panel" aria-label="Executions">
+          <header>
+            <h2>Executions</h2>
+            <span>{runs ? `${visibleRuns.length} records` : "Loading"}</span>
+          </header>
+          {error ? (
+            <p role="alert" className="notice-error logbook2-empty">
+              {error}
+            </p>
+          ) : orgs?.length === 0 ? (
+            <p className="logbook2-empty">No workspace available.</p>
+          ) : runs === null ? (
+            <p className="logbook2-empty">Loading executions…</p>
+          ) : visibleRuns.length === 0 ? (
+            <p className="logbook2-empty">No executions match these filters.</p>
+          ) : (
+            <div className="logbook2-table-scroll">
+              <table className="logbook2-table">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Timing and status</th>
+                    <th>Details</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {visibleRuns.map((run) => (
+                    <Fragment key={run.id}>
+                      <tr>
+                        <td>
+                          {run.mission ? (
+                            <a
+                              className="studio-app"
+                              href={resourcePath("apps", run.mission.id, orgId)}
+                            >
+                              {missionName(run)}
+                            </a>
+                          ) : (
+                            <strong>{missionName(run)}</strong>
+                          )}
+                          <small>
+                            {run.version === undefined
+                              ? "Unversioned"
+                              : `Version ${run.version}`}{" "}
+                            ·{" "}
+                            <a
+                              className="studio-robot-link"
+                              href={resourcePath("robots", run.robot.id, orgId)}
+                            >
+                              {run.robot.name}
+                            </a>{" "}
+                            · Started by {humanName(run.actor_user_id, me)}
+                          </small>
+                        </td>
+                        <td>
+                          <StudioTime value={run.created_at} />
+                          <small>
+                            <span
+                              className="logbook2-state"
+                              data-state={run.state}
+                            >
+                              {run.state}
+                            </span>
+                          </small>
+                        </td>
+                        <td className="logbook2-open">
+                          {active(run.state) && (
+                            <button
+                              type="button"
+                              className="text-action"
+                              aria-expanded={uiPanelRun === run.id}
+                              onClick={() =>
+                                setUiPanelRun(
+                                  uiPanelRun === run.id ? null : run.id,
+                                )
+                              }
+                            >
+                              View UI
+                            </button>
+                          )}
+                          <a
+                            href={resourcePath("runs", run.id, orgId)}
+                            aria-label={`Open ${missionName(run)} execution from ${timestamp(run.created_at)}`}
+                            onClick={(e) => {
+                              if (
+                                !e.ctrlKey &&
+                                !e.metaKey &&
+                                !e.shiftKey &&
+                                !e.altKey
+                              ) {
+                                e.preventDefault();
+                                openRun(run.id);
+                              }
+                            }}
+                          >
+                            →
+                          </a>
+                        </td>
+                      </tr>
+                      {uiPanelRun === run.id && (
+                        <tr key={run.id + "-ui"} className="run-ui-panel-row">
+                          <td colSpan={3}>
+                            <section
+                              aria-label={`${missionName(run)} interface on ${run.robot.name}`}
+                            >
+                              <strong>
+                                {missionName(run)} · {run.robot.name}
+                              </strong>
+                              <p>
+                                Interface access is unavailable for this run.
+                              </p>
+                              <a
+                                href={
+                                  resourcePath("runs", run.id, orgId) +
+                                  "&tab=App+UI"
+                                }
+                              >
+                                Interface details →
+                              </a>
+                            </section>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }

@@ -104,7 +104,11 @@ test("shows linked and standalone photo evidence in the timeline even when outpu
             type: "mission.started",
             occurred_at: "2026-11-16T10:00:40Z",
             received_at: "2026-11-16T10:00:40Z",
-            payload: { state: "running", revision_id: "revision-1", mission_revision_id: null },
+            payload: {
+              state: "running",
+              revision_id: "revision-1",
+              mission_revision_id: null,
+            },
           },
           {
             event_id: "event-1",
@@ -163,9 +167,11 @@ test("shows linked and standalone photo evidence in the timeline even when outpu
   render(
     <LogbookPage preferredOrganizationId="" onOrganizationChange={() => {}} />,
   );
+  await userEvent.click(screen.getByRole("button", { name: "Finished" }));
   await userEvent.click(
-    await screen.findByRole("row", { name: /Open Direct run execution/ }),
+    await screen.findByRole("link", { name: /Open Direct run execution/ }),
   );
+
   expect(await screen.findByText("Mission running")).toBeTruthy();
 
   const timeline = screen.getByRole("region", { name: "Logbook timeline" });
@@ -187,11 +193,12 @@ test("shows linked and standalone photo evidence in the timeline even when outpu
   expect(
     await within(timeline).findByText("Photo evidence · extra.jpg"),
   ).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Output" }));
   expect(
     await screen.findByText("Output unavailable: Output not ready"),
   ).toBeTruthy();
   expect(mocks.apiFetchAll).toHaveBeenCalledWith(
     expect.any(Function),
-    `/v1/organizations/${orgId}/events?robot_id=${robotId}&operation_id=${executionId}`,
+    `/v1/organizations/${orgId}/events?robot_id=${robotId}&execution_id=${executionId}`,
   );
 });

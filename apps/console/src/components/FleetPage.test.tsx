@@ -8,8 +8,19 @@ vi.mock("@auth0/auth0-react", () => ({
   useAuth0: () => ({ getAccessTokenSilently: token }),
 }));
 vi.mock("@/components/RobotDetailPage", () => ({
-  RobotDetailPage: ({ robotId }: { robotId: string }) => (
-    <main>Details for {robotId}</main>
+  RobotDetailPage: ({
+    robotId,
+    onBack,
+  }: {
+    robotId: string;
+    onBack: () => void;
+  }) => (
+    <main>
+      Details for {robotId}
+      <button type="button" onClick={onBack}>
+        Back to robots
+      </button>
+    </main>
   ),
 }));
 vi.mock("@/components/RobotsPage", () => ({
@@ -34,7 +45,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-test("keeps the robot list visible while switching the selected detail", async () => {
+test("replaces the list with a robot detail and returns to the register", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(
@@ -55,17 +66,13 @@ test("keeps the robot list visible while switching the selected detail", async (
     ),
   );
   render(<Page />);
-  await userEvent.click(
-    await screen.findByRole("button", { name: /Robot One/ }),
-  );
+  await userEvent.click(await screen.findByRole("button", { name: /View Robot One/ }));
   expect(screen.getByText("Details for one")).toBeTruthy();
-  await userEvent.click(screen.getByRole("button", { name: /Robot Two/ }));
-  expect(screen.getByText("Details for two")).toBeTruthy();
   expect(
-    screen.getByRole("complementary", { name: "Robot list" }),
-  ).toBeTruthy();
-  await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  expect(screen.getByText("Details for two")).toBeTruthy();
+    screen.queryByRole("complementary", { name: "Robot list" }),
+  ).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Back to robots" }));
+  expect(await screen.findByRole("button", { name: "View Robot Two" })).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: "Add robot" }));
   expect(screen.getByText("Manage robots")).toBeTruthy();
 });

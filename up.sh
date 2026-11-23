@@ -25,4 +25,11 @@ if [ -z "${POSTGRES_PASSWORD:-}" ]; then
   set +a
 fi
 
-exec docker compose -f "$root/infra/server/docker-compose.yml" up  --build "$@"
+compose_args=(-f "$root/infra/server/docker-compose.yml")
+if [ -f "$root/.env" ]; then
+  # The Compose file is nested under infra/server, so specify the app-root
+  # environment file explicitly instead of relying on Compose's auto-discovery.
+  compose_args+=(--env-file "$root/.env")
+fi
+
+exec docker compose "${compose_args[@]}" up --build "$@"

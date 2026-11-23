@@ -106,8 +106,10 @@ only validates individual frames.
 
 ## Implementation sequence
 
-1. Runner port assignment, readiness and the authenticated active UI status
-   list are implemented; the internal per-execution HTTP proxy remains open.
+1. Runner port assignment, readiness, the authenticated active UI status list,
+   and the authenticated per-execution HTTP proxy to its fixed loopback UI port
+   are implemented. The proxy streams responses and applies path, header,
+   request-size and concurrency bounds.
 2. The separate authenticated UI WebSocket handshake and daemon status
    reporting/reconnect are implemented. The current socket accepts hello,
    heartbeat and UI status frames; bounded request/response streaming is open.
@@ -129,8 +131,9 @@ frames are in `packages/contracts/fixtures/mission-ui/v1/device-frames.json`.
 This is a new protocol design and is not wired into the existing command
 socket. After reload, the authenticated Platform status-socket handshake and
 Runner's live UI readiness were checked. End-to-end daemon status propagation
-still needs server-side observability. HTTP request/response streaming and
-browser gateway routing remain open. The v1 frame limits are 64 KiB per outer JSON message, 16 KiB decoded
+still needs server-side observability. Runner's new proxy awaits a
+post-reload live check; daemon frame forwarding and the browser gateway remain
+open. The v1 frame limits are 64 KiB per outer JSON message, 16 KiB decoded
 per body chunk, 1 MiB per request body, four concurrent requests per viewer,
 and an eight-frame bounded send queue. Response bodies stream without an
 aggregate cap; idle streams expire after 120 seconds. The receiver must enforce

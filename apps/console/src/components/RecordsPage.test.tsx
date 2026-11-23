@@ -80,8 +80,9 @@ test("opens mission revision and displays the selected source file", async () =>
     />,
   );
   await userEvent.click(
-    await screen.findByRole("button", { name: /hello version 1/i }),
+    await screen.findByRole("button", { name: /Details for hello version 1/i }),
   );
+  await userEvent.click(screen.getByRole("button", { name: "Source" }));
   expect(await screen.findByText("print('hello')")).toBeTruthy();
   await userEvent.selectOptions(
     screen.getByLabelText("File"),

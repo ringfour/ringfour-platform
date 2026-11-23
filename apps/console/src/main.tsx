@@ -36,6 +36,20 @@ createRoot(rootElement).render(
       <Auth0Provider
         domain={domain}
         clientId={clientId}
+        onRedirectCallback={(state) => {
+          const target = new URL(
+            state?.returnTo || "/overview",
+            window.location.origin,
+          );
+          window.history.replaceState(
+            null,
+            "",
+            target.origin === window.location.origin
+              ? target.pathname + target.search + target.hash
+              : "/overview",
+          );
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }}
         cacheLocation="localstorage"
         authorizationParams={{
           redirect_uri: redirectUri,

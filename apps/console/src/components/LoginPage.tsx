@@ -2,10 +2,14 @@ import { useAuth0 } from "@auth0/auth0-react";
 
 export function LoginPage() {
   const { loginWithRedirect } = useAuth0();
-  const inviteToken = new URLSearchParams(window.location.hash.slice(1)).get("invite");
+  const inviteToken = new URLSearchParams(window.location.hash.slice(1)).get(
+    "invite",
+  );
   const continueTo = inviteToken
     ? `${window.location.pathname}#invite=${encodeURIComponent(inviteToken)}`
-    : undefined;
+    : window.location.pathname !== "/"
+      ? window.location.pathname + window.location.search
+      : undefined;
   const signIn = (options?: Parameters<typeof loginWithRedirect>[0]) =>
     loginWithRedirect({
       ...options,

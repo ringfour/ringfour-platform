@@ -84,12 +84,19 @@ test("shows robot status and run output, and submits an explicit restart", async
     <RobotDetailPage robotId="robot" onBack={() => {}} onManage={() => {}} />,
   );
   expect(await screen.findByText("Online")).toBeTruthy();
-  await userEvent.click(await screen.findByRole("button", { name: "run-1" }));
-  expect(await screen.findByText("hello")).toBeTruthy();
+  expect(
+    (
+      await screen.findByRole("link", {
+        name: /Direct run|Unknown app|run-1|Inspect run/i,
+      })
+    ).getAttribute("href"),
+  ).toContain("/runs/run-1");
+  expect(screen.getByRole("heading", { name: "Deployment" })).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Restart app" }));
   await userEvent.click(
-    screen.getByRole("button", { name: "Restart mission" }),
+    screen.getByRole("button", { name: "Confirm restart" }),
   );
-  expect(await screen.findByRole("status")).toHaveProperty(
+  expect(await screen.findByText(/Restart accepted/)).toHaveProperty(
     "textContent",
     expect.stringContaining("new-run"),
   );

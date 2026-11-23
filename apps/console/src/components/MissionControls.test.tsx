@@ -62,15 +62,19 @@ test("prepares the chosen revision and starts only after it is selected", async 
   );
   await userEvent.selectOptions(screen.getByLabelText("Robot"), "robot");
   await userEvent.click(
-    await screen.findByRole("button", { name: "Prepare this revision" }),
+    await screen.findByRole("button", { name: "Prepare app version" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Confirm preparation" }),
   );
   expect(
     calls.find((call) => call.url === "/api/v1/robots/robot/deployments")?.init
       ?.body,
   ).toBe(JSON.stringify({ mission_revision_id: "revision" }));
   await userEvent.click(
-    await screen.findByRole("button", { name: "Start mission" }),
+    await screen.findByRole("button", { name: "Start app" }),
   );
+  await userEvent.click(screen.getByRole("button", { name: "Confirm start" }));
   expect(await screen.findByText(/execution execution/)).toBeTruthy();
   expect(
     calls.find((call) => call.url.endsWith("/start"))?.init?.headers,
@@ -115,8 +119,9 @@ test("shows conflict errors without claiming the mission started", async () => {
   );
   await userEvent.selectOptions(screen.getByLabelText("Robot"), "robot");
   await userEvent.click(
-    await screen.findByRole("button", { name: "Start mission" }),
+    await screen.findByRole("button", { name: "Start app" }),
   );
+  await userEvent.click(screen.getByRole("button", { name: "Confirm start" }));
   expect(await screen.findByRole("alert")).toHaveProperty(
     "textContent",
     "Another execution is active.",

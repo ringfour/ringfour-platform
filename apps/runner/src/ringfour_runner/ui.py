@@ -1,9 +1,9 @@
 """Execution-scoped status for the optional private mission UI."""
 
 import asyncio
-import httpx
 from urllib.parse import unquote
 
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
@@ -19,7 +19,7 @@ UI_PROXY_HEADER_BYTES = 16 * 1024
 UI_PROXY_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 UI_PROXY_HOP_HEADERS = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailer", "transfer-encoding", "upgrade",
+    "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "expect",
 }
 
 
@@ -137,7 +137,7 @@ async def proxy_ui(request: Request, execution_id: str, path: str = ""):
     row = get_row(request.app.state.settings, execution_id)
     if row is None:
         return error(404, "not_found", "Execution not found.")
-    if row["state"] in TERMINAL:
+    if row["state"] != "running":
         return error(409, "execution_not_running", "Execution is not running.")
 
     proxy_path = safe_proxy_path(request.scope.get("raw_path", b""), execution_id)
@@ -160,25 +160,38 @@ async def proxy_ui(request: Request, execution_id: str, path: str = ""):
                 return error(413, "size_limit", "Mission UI request body exceeds 1 MiB.")
         except ValueError:
             return error(400, "invalid_input", "Invalid Content-Length.")
-    body = bytearray()
-    async for chunk in request.stream():
-        if len(body) + len(chunk) > UI_PROXY_BODY_LIMIT:
-            return error(413, "size_limit", "Mission UI request body exceeds 1 MiB.")
-        body.extend(chunk)
-
-    port = request.app.state.settings.ui_port
-    if not await probe(port):
-        return error(503, "ui_unavailable", "Mission UI endpoint is unavailable.")
     semaphore = request.app.state.ui_proxy_semaphore
     try:
         await asyncio.wait_for(semaphore.acquire(), timeout=0.25)
     except TimeoutError:
         return error(503, "ui_busy", "Mission UI request capacity is full.")
 
+    body = bytearray()
+    try:
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > UI_PROXY_BODY_LIMIT:
+                semaphore.release()
+                return error(413, "size_limit", "Mission UI request body exceeds 1 MiB.")
+            body.extend(chunk)
+    except Exception:
+        semaphore.release()
+        raise
+
+    port = request.app.state.settings.ui_port
+    if not await probe(port):
+        semaphore.release()
+        return error(503, "ui_unavailable", "Mission UI endpoint is unavailable.")
+
     upstream_headers = []
+    connection_tokens = {
+        token.strip().lower()
+        for token in request.headers.get("connection", "").split(",")
+        if token.strip()
+    }
     for name, value in request.headers.items():
         key = name.lower()
-        if key in UI_PROXY_HOP_HEADERS or key in {"host", "authorization"}:
+        if (key in UI_PROXY_HOP_HEADERS or key in connection_tokens or
+                key in {"host", "authorization", "forwarded"} or key.startswith("x-forwarded-")):
             continue
         if key == "cookie":
             value = mission_cookie_without_platform_session(value)
@@ -207,10 +220,16 @@ async def proxy_ui(request: Request, execution_id: str, path: str = ""):
         upstream.aiter_raw(), status_code=upstream.status_code,
         background=BackgroundTask(_close_proxy, upstream, client, semaphore),
     )
+    response_connection_tokens = {
+        token.strip().lower().encode("latin-1")
+        for token in upstream.headers.get("connection", "").split(",")
+        if token.strip()
+    }
     response.raw_headers = [
         (name.lower(), value)
         for name, value in upstream.headers.raw
         if name.decode("latin-1").lower() not in UI_PROXY_HOP_HEADERS
+        and name.lower() not in response_connection_tokens
     ]
     response.headers["x-accel-buffering"] = "no"
     return response

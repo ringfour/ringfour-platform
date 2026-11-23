@@ -70,11 +70,23 @@ test("loads authenticated image previews and opens the full-size view", async ()
   await userEvent.click(
     screen.getByRole("button", { name: "Open preview for turn.jpg" }),
   );
-  expect(
-    await screen.findByRole("dialog", { name: "Preview turn.jpg" }),
-  ).toBeTruthy();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Close image preview" }),
+  const dialog = await screen.findByRole("dialog", {
+    name: "Preview turn.jpg",
+  });
+  expect(dialog.parentElement).toBe(document.body);
+  expect(document.body.style.overflow).toBe("hidden");
+  const close = screen.getByRole("button", { name: "Close image preview" });
+  expect(document.activeElement).toBe(close);
+  await userEvent.tab({ shift: true });
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Download image" }),
   );
+  await userEvent.tab();
+  expect(document.activeElement).toBe(close);
+  await userEvent.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.body.style.overflow).toBe("");
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Open preview for turn.jpg" }),
+  );
 });

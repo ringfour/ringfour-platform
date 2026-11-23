@@ -3,8 +3,11 @@ import { unzipSync } from "fflate";
 import { useCallback, useEffect, useState } from "react";
 import { MissionControls } from "@/components/MissionControls";
 import { apiFetch, apiFetchAll } from "@/lib/api";
+import { resourcePath, setQuery, useLocation } from "@/lib/location";
+import { StudioTime } from "./StudioTime";
+import { RunActivity } from "./RunActivity";
 
-type Organization = { id: string; name: string };
+type Organization = { id: string; name: string; role?: string };
 type Robot = { id: string; name: string };
 type Mission = {
   id: string;
@@ -44,13 +47,18 @@ const message = (error: unknown) =>
 
 export function RecordsPage({
   kind,
+  routeId,
+  selectRecord,
   preferredOrganizationId,
-  onOrganizationChange,
 }: {
+  routeId?: string;
+  selectRecord?: (id: string, org: string) => void;
   kind: "missions" | "deployments";
   preferredOrganizationId: string;
   onOrganizationChange: (id: string) => void;
 }) {
+  const tab = useLocation().searchParams.get("tab") ?? "Overview";
+  const search = useLocation().searchParams.get("q") ?? "";
   const { getAccessTokenSilently } = useAuth0();
   const getToken = useCallback(async (): Promise<string> => {
     const token = await getAccessTokenSilently({
@@ -64,7 +72,10 @@ export function RecordsPage({
   const [missions, setMissions] = useState<Mission[] | null>(null);
   const [deployments, setDeployments] = useState<Deployment[] | null>(null);
   const [robots, setRobots] = useState<Robot[]>([]);
-  const [selected, setSelected] = useState("");
+  const [localSelection, setLocalSelection] = useState("");
+  const selected = routeId ?? localSelection;
+  const setSelected = (value: string) =>
+    selectRecord ? selectRecord(value, orgId) : setLocalSelection(value);
   const [revisions, setRevisions] = useState<Revision[] | null>(null);
   const [revisionId, setRevisionId] = useState("");
   const [files, setFiles] = useState<Record<string, Uint8Array> | null>(null);
@@ -92,6 +103,90 @@ export function RecordsPage({
       cancelled = true;
     };
   }, [getToken]);
+  useEffect(() => {
+    if (
+      !routeId ||
+      preferredOrganizationId ||
+      !orgs ||
+      orgs.length < 2 ||
+      kind !== "missions"
+    )
+      return;
+    let current = true;
+    async function resolve() {
+      for (const org of orgs ?? []) {
+        const list = await apiFetchAll<Mission>(
+          getToken,
+          `/v1/organizations/${org.id}/missions`,
+        );
+        if (!current) return;
+        if (list.some((app) => app.id === routeId)) {
+          setOrgId(org.id);
+          return;
+        }
+      }
+    }
+    void resolve().catch((reason) => {
+      if (current) setDetailError(message(reason));
+    });
+    return () => {
+      current = false;
+    };
+  }, [orgs, routeId, preferredOrganizationId, kind, getToken]);
+  const [stats, setStats] = useState<
+    Record<string, { active: number; deployed: number; published?: string }>
+  >({});
+  useEffect(() => {
+    let current = true;
+    setStats({});
+    if (selected || !missions || !orgId || kind !== "missions") return;
+    async function load() {
+      const deployments = await apiFetchAll<Deployment>(
+        getToken,
+        `/v1/organizations/${orgId}/deployments`,
+      );
+      const activeVersions: string[] = [];
+      for (const robot of robots) {
+        if (!current) return;
+        const runs = await apiFetchAll<{
+          state: string;
+          mission_revision_id: string;
+        }>(getToken, `/v1/robots/${robot.id}/executions`);
+        activeVersions.push(
+          ...runs
+            .filter((run) =>
+              ["running", "preparing", "queued"].includes(run.state),
+            )
+            .map((run) => run.mission_revision_id),
+        );
+      }
+      for (const app of missions ?? []) {
+        if (!current) return;
+        const versions = await apiFetchAll<Revision>(
+          getToken,
+          `/v1/missions/${app.id}/revisions`,
+        );
+        const ids = new Set(versions.map((v) => v.id));
+        if (current)
+          setStats((prev) => ({
+            ...prev,
+            [app.id]: {
+              active: activeVersions.filter((id) => ids.has(id)).length,
+              deployed: deployments.filter(
+                (d) =>
+                  d.selected_revision_id && ids.has(d.selected_revision_id),
+              ).length,
+              published: versions.find((v) => v.version === app.latest_version)
+                ?.created_at,
+            },
+          }));
+      }
+    }
+    void load().catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [selected, missions, robots, getToken, orgId, kind]);
   // The counter intentionally re-runs the snapshot request.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh requests a fresh snapshot
   useEffect(() => {
@@ -180,105 +275,139 @@ export function RecordsPage({
   let code = "";
   if (file) {
     try {
-      code = new TextDecoder("utf-8", { fatal: true }).decode(file);
+      code = new TextDecoder("utf-8", { fatal: true }).decode(
+        file.subarray(0, 131072),
+        { stream: file.length > 131072 },
+      );
       if (code.includes("\0")) code = "Binary file";
     } catch {
       code = "Binary file";
     }
   }
   return (
-    <div className="resource-layout">
-      <aside
-        className="resource-sidebar"
-        aria-label={kind === "missions" ? "Mission list" : "Deployment list"}
-      >
-        <div className="resource-sidebar-header">
-          <h1>{kind === "missions" ? "Missions" : "Deployments"}</h1>
-          <label className="resource-workspace">
-            Workspace
-            <select
-              value={orgId}
-              onChange={(event) => {
-                setSelected("");
-                setOrgId(event.target.value);
-                onOrganizationChange(event.target.value);
-              }}
+    <div className="resource-list-page">
+      {!selected && (
+        <aside
+          className="resource-sidebar"
+          aria-label={kind === "missions" ? "Mission list" : "Deployment list"}
+        >
+          <div className="resource-sidebar-header">
+            <h1>{kind === "missions" ? "Apps" : "Deployments"}</h1>
+            {kind === "missions" && (
+              <label className="resource-workspace">
+                Search apps
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setQuery("q", event.target.value)}
+                />
+              </label>
+            )}
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setRefresh((value) => value + 1)}
             >
-              {orgs?.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={() => setRefresh((value) => value + 1)}
-          >
-            Refresh
-          </button>
-        </div>
-        {error && (
-          <p className="notice-error" role="alert">
-            {error}
-          </p>
-        )}
-        {orgs?.length === 0 && <p>No workspace available.</p>}
-        <div className="resource-list">
-          {kind === "missions" ? (
-            missions === null ? (
-              <p>Loading missions…</p>
-            ) : missions.length === 0 ? (
-              <p>No missions published.</p>
+              Refresh
+            </button>
+          </div>
+          {error && (
+            <p className="notice-error" role="alert">
+              {error}
+            </p>
+          )}
+          {orgs?.length === 0 && <p>No workspace available.</p>}
+          <div className="resource-list">
+            {kind === "missions" ? (
+              missions === null ? (
+                <p>Loading apps…</p>
+              ) : missions.length === 0 ? (
+                <p>No apps published.</p>
+              ) : (
+                <div
+                  className="studio-list-table"
+                  role="table"
+                  aria-label="Apps"
+                >
+                  <div className="studio-list-head" role="row">
+                    <span role="columnheader">App</span>
+                    <span role="columnheader">Version</span>
+                    <span role="columnheader" aria-label="Open app" />
+                  </div>
+                  {missions
+                    .filter((item) =>
+                      item.name.toLowerCase().includes(search.toLowerCase()),
+                    )
+                    .map((item) => (
+                      <div className="studio-list-row" role="row" key={item.id}>
+                        <div role="cell" className="studio-list-title">
+                          <strong>{item.name}</strong>
+                          <small>
+                            {stats[item.id]
+                              ? `${stats[item.id].active} active runs · ${stats[item.id].deployed} deployments`
+                              : "Activity unavailable"}
+                            {stats[item.id]?.published &&
+                              ` · Published ${new Date(stats[item.id].published!).toLocaleDateString()}`}
+                          </small>
+                        </div>
+                        <span role="cell">
+                          {item.latest_version
+                            ? `Version ${item.latest_version}`
+                            : "No revisions"}
+                        </span>
+                        <div role="cell">
+                          <button
+                            type="button"
+                            className="text-action"
+                            aria-label={`Details for ${item.name} version ${item.latest_version || "unpublished"}`}
+                            onClick={() => setSelected(item.id)}
+                          >
+                            →
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )
+            ) : deployments === null ? (
+              <p>Loading deployments…</p>
+            ) : deployments.length === 0 ? (
+              <p>No deployments.</p>
             ) : (
-              missions.map((item) => (
+              deployments.map((item) => (
                 <button
                   type="button"
                   className="record-row"
-                  aria-label={`${item.name} ${item.latest_version ? `version ${item.latest_version}` : "no revisions"}`}
+                  aria-label={`${robots.find((robot) => robot.id === item.robot_id)?.name ?? item.robot_id} ${item.observed_state}`}
                   aria-pressed={selected === item.id}
                   onClick={() => setSelected(item.id)}
                   key={item.id}
                 >
-                  <strong>{item.name}</strong>
-                  <span>
-                    {item.latest_version
-                      ? `Version ${item.latest_version}`
-                      : "No revisions"}
-                  </span>
+                  <strong>
+                    {robots.find((robot) => robot.id === item.robot_id)?.name ??
+                      item.robot_id}
+                  </strong>
+                  <span>{item.observed_state}</span>
                 </button>
               ))
-            )
-          ) : deployments === null ? (
-            <p>Loading deployments…</p>
-          ) : deployments.length === 0 ? (
-            <p>No deployments.</p>
-          ) : (
-            deployments.map((item) => (
-              <button
-                type="button"
-                className="record-row"
-                aria-label={`${robots.find((robot) => robot.id === item.robot_id)?.name ?? item.robot_id} ${item.observed_state}`}
-                aria-pressed={selected === item.id}
-                onClick={() => setSelected(item.id)}
-                key={item.id}
-              >
-                <strong>
-                  {robots.find((robot) => robot.id === item.robot_id)?.name ??
-                    item.robot_id}
-                </strong>
-                <span>{item.observed_state}</span>
-              </button>
-            ))
-          )}
-        </div>
-      </aside>
-      <main className="resource-content">
+            )}
+          </div>
+        </aside>
+      )}
+      <main hidden={!selected} className="resource-content">
         <section className="records-detail resource-detail">
+          {selected && (
+            <button
+              type="button"
+              className="text-action"
+              onClick={() => setSelected("")}
+            >
+              ← Back to {kind === "missions" ? "apps" : "deployments"}
+            </button>
+          )}
           {!selected && (
             <p>
-              Select {kind === "missions" ? "a mission" : "a deployment"} to
+              Select {kind === "missions" ? "an app" : "a deployment"} to
               inspect it.
             </p>
           )}
@@ -286,6 +415,9 @@ export function RecordsPage({
             <p role="alert" className="notice-error">
               {detailError}
             </p>
+          )}
+          {selected && kind === "missions" && missions && !mission && (
+            <p role="status">App unavailable in this workspace.</p>
           )}
           {mission && (
             <div className="mission-detail">
@@ -325,12 +457,30 @@ export function RecordsPage({
                   )}
                 </div>
               </header>
+              <nav className="route-tabs" aria-label="App sections">
+                {["Overview", "Versions", "Source"].map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-current={tab === name ? "page" : undefined}
+                    onClick={() => setQuery("tab", name)}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </nav>
               {revision && (
                 <div className="mission-primary-grid">
-                  <section className="mission-panel mission-source">
+                  <section
+                    hidden={tab !== "Source"}
+                    className="mission-panel mission-source"
+                  >
                     <div className="mission-panel-header">
                       <div>
                         <h2>Source files</h2>
+                        {file && file.length > 131072 && (
+                          <p>Showing the first 128 KiB.</p>
+                        )}
                         <p>Revision {revision.version}</p>
                       </div>
                       {files && (
@@ -360,12 +510,42 @@ export function RecordsPage({
                       </p>
                     ) : (
                       <pre className="source-code">
-                        <code>{code}</code>
+                        <code>
+                          {fileName.endsWith(".py")
+                            ? code
+                                .split(
+                                  /(#[^\n]*|\b(?:def|class|return|from|import|for|while|if|else|elif|try|except|with|as|async|await|in|None|True|False)\b)/g,
+                                )
+                                .map((part, i) =>
+                                  i % 2 ? (
+                                    <span
+                                      className={
+                                        part.startsWith("#")
+                                          ? "source-comment"
+                                          : "source-keyword"
+                                      }
+                                      // biome-ignore lint/suspicious/noArrayIndexKey: tokens are positional in an immutable versioned source file.
+                                      key={i}
+                                    >
+                                      {part}
+                                    </span>
+                                  ) : (
+                                    part
+                                  ),
+                                )
+                            : code}
+                        </code>
                       </pre>
                     )}
                   </section>
-                  <section className="mission-panel mission-run-panel">
+                  <section
+                    hidden={tab !== "Overview"}
+                    className="mission-panel mission-run-panel"
+                  >
                     <MissionControls
+                      key={revision.id}
+                      appLabel={mission.name + " v" + revision.version}
+                      role={orgs?.find((o) => o.id === orgId)?.role}
                       organizationId={orgId}
                       revisionId={revision.id}
                       robots={robots}
@@ -374,44 +554,90 @@ export function RecordsPage({
                   </section>
                 </div>
               )}
-              <div className="mission-metadata-grid">
-                <section className="mission-panel mission-metadata">
-                  <h2>Mission details</h2>
-                  <dl className="record-fields">
-                    <dt>Mission ID</dt>
-                    <dd>{mission.id}</dd>
-                    <dt>Created</dt>
-                    <dd>{mission.created_at}</dd>
-                    <dt>Created by</dt>
-                    <dd>{mission.created_by_user_id}</dd>
-                  </dl>
+              {tab === "Overview" && missions && (
+                <RunActivity
+                  workspace={orgId}
+                  apps={missions}
+                  robots={robots}
+                  getToken={getToken}
+                  appId={mission.id}
+                  refresh={refresh}
+                />
+              )}
+              {tab === "Overview" && (
+                <a
+                  className="text-action"
+                  href={
+                    resourcePath("runs", "", orgId) +
+                    "&group=All&app=" +
+                    encodeURIComponent(mission.id)
+                  }
+                >
+                  View runs for {mission.name} →
+                </a>
+              )}
+              {tab === "Versions" && (
+                <section>
+                  <h2>Published versions</h2>
+                  {revisions?.map((item) => (
+                    <div className="studio-version" key={item.id}>
+                      <strong>Version {item.version}</strong>
+                      <StudioTime value={item.created_at} />
+                      <button
+                        type="button"
+                        className="text-action"
+                        onClick={() => {
+                          setRevisionId(item.id);
+                          setQuery("tab", "Source");
+                        }}
+                      >
+                        Inspect source →
+                      </button>
+                    </div>
+                  ))}
                 </section>
-                {revision && (
+              )}
+              <details hidden={tab === "Source"}>
+                <summary>Technical details</summary>
+                <div className="mission-metadata-grid">
                   <section className="mission-panel mission-metadata">
-                    <h2>Revision details</h2>
+                    <h2>App details</h2>
                     <dl className="record-fields">
-                      <dt>Revision ID</dt>
-                      <dd>{revision.id}</dd>
-                      <dt>Published</dt>
-                      <dd>{revision.created_at}</dd>
-                      <dt>Entrypoint</dt>
-                      <dd>{revision.manifest.entrypoint}</dd>
-                      <dt>Python</dt>
-                      <dd>{revision.manifest.python_requirement}</dd>
-                      <dt>Lock file</dt>
-                      <dd>{revision.manifest.lock_file}</dd>
-                      <dt>Source digest</dt>
-                      <dd>{revision.manifest.source_digest}</dd>
-                      {revision.manifest.robot_profile_ref && (
-                        <>
-                          <dt>Robot profile</dt>
-                          <dd>{revision.manifest.robot_profile_ref}</dd>
-                        </>
-                      )}
+                      <dt>App ID</dt>
+                      <dd>{mission.id}</dd>
+                      <dt>Created</dt>
+                      <dd>{mission.created_at}</dd>
+                      <dt>Created by</dt>
+                      <dd>{mission.created_by_user_id}</dd>
                     </dl>
                   </section>
-                )}
-              </div>
+                  {revision && (
+                    <section className="mission-panel mission-metadata">
+                      <h2>Version details</h2>
+                      <dl className="record-fields">
+                        <dt>Revision ID</dt>
+                        <dd>{revision.id}</dd>
+                        <dt>Published</dt>
+                        <dd>{revision.created_at}</dd>
+                        <dt>Entrypoint</dt>
+                        <dd>{revision.manifest.entrypoint}</dd>
+                        <dt>Python</dt>
+                        <dd>{revision.manifest.python_requirement}</dd>
+                        <dt>Lock file</dt>
+                        <dd>{revision.manifest.lock_file}</dd>
+                        <dt>Source digest</dt>
+                        <dd>{revision.manifest.source_digest}</dd>
+                        {revision.manifest.robot_profile_ref && (
+                          <>
+                            <dt>Robot profile</dt>
+                            <dd>{revision.manifest.robot_profile_ref}</dd>
+                          </>
+                        )}
+                      </dl>
+                    </section>
+                  )}
+                </div>
+              </details>
             </div>
           )}
           {deployment && (

@@ -1,6 +1,8 @@
+import { StudioTime } from "./StudioTime";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, apiFetchAll } from "@/lib/api";
+import { resourcePath, setQuery, useLocation } from "@/lib/location";
 
 type Robot = {
   id: string;
@@ -24,6 +26,7 @@ type Deployment = {
   observed_state: string;
   desired_state: string;
   last_error: { code: string; message: string } | null;
+  last_operation_id?: string | null;
   last_execution_id: string | null;
   updated_at: string;
 };
@@ -39,7 +42,6 @@ type Execution = {
 };
 type Mission = { id: string; name: string };
 type Revision = { id: string; version: number };
-type Output = { data_base64: string; next_offset: number; truncated: boolean };
 const describe = (error: unknown) =>
   error instanceof Error ? error.message : "Request failed";
 
@@ -47,11 +49,14 @@ export function RobotDetailPage({
   robotId,
   onBack,
   onManage,
+  role,
 }: {
   robotId: string;
   onBack: () => void;
+  role?: string;
   onManage: () => void;
 }) {
+  const tab = useLocation().searchParams.get("tab") ?? "Activity";
   const { getAccessTokenSilently } = useAuth0();
   const getToken = useCallback(async () => {
     const token = await getAccessTokenSilently({
@@ -67,14 +72,9 @@ export function RobotDetailPage({
     {},
   );
   const [runs, setRuns] = useState<Execution[] | null>(null);
-  const [run, setRun] = useState<Execution | null>(null);
-  const [output, setOutput] = useState<{
-    stdout: string;
-    stderr: string;
-    truncated: boolean;
-  } | null>(null);
   const [error, setError] = useState("");
-  const [outputError, setOutputError] = useState("");
+
+  const [review, setReview] = useState<"stop" | "restart" | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -136,49 +136,12 @@ export function RobotDetailPage({
       cancelled = true;
     };
   }, [robotId, getToken, refresh]);
-  useEffect(() => {
-    let cancelled = false;
-    setOutput(null);
-    setOutputError("");
-    if (!run) return;
-    async function read(stream: string) {
-      let offset = 0;
-      let truncated = false;
-      const decoder = new TextDecoder();
-      let text = "";
-      do {
-        const chunk = (await apiFetch(
-          getToken,
-          `/v1/executions/${run?.id}/output?stream=${stream}&offset=${offset}&limit=16384`,
-        ).then((r) => r.json())) as Output;
-        const binary = atob(chunk.data_base64);
-        const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-        text += decoder.decode(bytes, { stream: true });
-        truncated ||= chunk.truncated;
-        if (chunk.next_offset <= offset || chunk.next_offset - offset < 16384)
-          break;
-        offset = chunk.next_offset;
-      } while (offset < 65536);
-      return { text: text + decoder.decode(), truncated };
-    }
-    Promise.all([read("stdout"), read("stderr")])
-      .then(([out, err]) => {
-        if (!cancelled)
-          setOutput({
-            stdout: out.text,
-            stderr: err.text,
-            truncated: out.truncated || err.truncated,
-          });
-      })
-      .catch((e) => {
-        if (!cancelled) setOutputError(describe(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [run, getToken]);
+  const currentRuns = runs?.filter((item) =>
+    ["queued", "preparing", "running"].includes(item.state),
+  );
   async function action(kind: "restart" | "stop") {
     if (!deployment || busy) return;
+    setReview(null);
     setBusy(true);
     setError("");
     setNotice("");
@@ -204,15 +167,27 @@ export function RobotDetailPage({
   return (
     <main className="dashboard-page robot-detail-page">
       <button type="button" className="text-action" onClick={onBack}>
-        Back to fleet
+        ← Back to robots
       </button>
       <div className="dashboard-heading">
         <div>
           <h1>{robot?.name ?? "Robot"}</h1>
-          <p>Robot details, deployments and runs.</p>
+          {status && (
+            <p className="robot-header-status">
+              <span className="robot-presence" data-online={status.online}>
+                {status.online ? "Online" : "Offline"}
+              </span>
+              {status.last_seen_at && (
+                <>
+                  {" "}
+                  · Last seen <StudioTime value={status.last_seen_at} />
+                </>
+              )}
+            </p>
+          )}
         </div>
         <div className="robot-actions">
-          <button className="button-secondary" type="button" onClick={onManage}>
+          <button className="button-primary" type="button" onClick={onManage}>
             Manage robot
           </button>
           <button
@@ -232,8 +207,198 @@ export function RobotDetailPage({
       {notice && <p role="status">{notice}</p>}
       {robot && (
         <>
-          <div className="robot-detail-grid">
+          <div className="robot-operational-grid">
+            <section className="dashboard-panel">
+              <h2>
+                {status?.online === false ? "Last known work" : "Current work"}
+              </h2>
+              {currentRuns?.length ? (
+                currentRuns.map((run) => (
+                  <p key={run.id}>
+                    <a
+                      className="text-action"
+                      href={resourcePath("runs", run.id, robot.organization_id)}
+                    >
+                      {revisionNames[run.mission_revision_id ?? ""] ??
+                        (run.mission_revision_id
+                          ? "Unknown app"
+                          : "Direct run")}{" "}
+                      · {run.state} →
+                    </a>
+                  </p>
+                ))
+              ) : (
+                <p>
+                  {runs
+                    ? "No active run reported."
+                    : "Run information unavailable."}
+                </p>
+              )}
+            </section>
             <section className="dashboard-panel records-detail">
+              <h2>Deployment</h2>
+              {deployment ? (
+                <>
+                  <dl className="record-fields">
+                    <dt>Observed</dt>
+                    <dd>{deployment.observed_state}</dd>
+                    <dt>Desired</dt>
+                    <dd>{deployment.desired_state}</dd>
+                    <dt>App</dt>
+                    <dd>
+                      {deployment.selected_revision_id
+                        ? (revisionNames[deployment.selected_revision_id] ??
+                          "Unknown")
+                        : "None"}
+                    </dd>
+                  </dl>
+                  <details className="robot-technical">
+                    <summary>Technical deployment details</summary>
+                    <dl className="record-fields">
+                      <dt>ID</dt>
+                      <dd>{deployment.id}</dd> <dt>Selected revision</dt>
+                      <dd>{deployment.selected_revision_id ?? "None"}</dd>
+                      <dt>Candidate revision</dt>
+                      <dd>{deployment.candidate_revision_id ?? "None"}</dd>
+                      <dt>Last execution</dt>
+                      <dd>
+                        {deployment.last_execution_id ? (
+                          <a
+                            className="text-action"
+                            href={resourcePath(
+                              "runs",
+                              deployment.last_execution_id,
+                              robot.organization_id,
+                            )}
+                          >
+                            Inspect last run
+                          </a>
+                        ) : (
+                          "None"
+                        )}
+                      </dd>
+                      <dt>Last operation</dt>
+                      <dd>{deployment.last_operation_id ?? "Unavailable"}</dd>
+                      <dt>Record updated</dt>
+                      <dd>
+                        {deployment.updated_at
+                          ? new Date(deployment.updated_at).toLocaleString()
+                          : "Unavailable"}
+                      </dd>
+                      <dt>Last error</dt>
+                      <dd>
+                        {deployment.last_error
+                          ? `${deployment.last_error.code}: ${deployment.last_error.message}`
+                          : "None"}
+                      </dd>
+                    </dl>
+                  </details>
+                  <div className="robot-actions">
+                    <button
+                      className="button-primary"
+                      type="button"
+                      disabled={
+                        busy ||
+                        role === "operator" ||
+                        !deployment.selected_revision_id ||
+                        !!deployment.candidate_revision_id
+                      }
+                      onClick={() => setReview("restart")}
+                    >
+                      Restart app
+                    </button>
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      disabled={busy || !deployment.selected_revision_id}
+                      onClick={() => setReview("stop")}
+                    >
+                      Stop mission
+                    </button>
+                  </div>
+                  {review && (
+                    <div className="empty-panel">
+                      <p>
+                        {review === "restart"
+                          ? "Stop the current execution and request a new run"
+                          : "Request the current execution to stop"}{" "}
+                        on {robot.name}?
+                      </p>
+                      <button
+                        type="button"
+                        className="button-primary"
+                        onClick={() => void action(review)}
+                      >
+                        Confirm {review}
+                      </button>{" "}
+                      <button type="button" onClick={() => setReview(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  <p>
+                    Restart stops the current execution before starting a new
+                    run.
+                  </p>
+                </>
+              ) : (
+                <p>No app deployed.</p>
+              )}
+            </section>
+            <section className="dashboard-panel robot-resource-card">
+              <h2>Resources</h2>
+              <div className="robot-resource-item">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  aria-hidden="true"
+                >
+                  <rect x="2" y="6" width="18" height="12" rx="2" />
+                  <path d="M22 10v4" />
+                </svg>
+                <div>
+                  <strong>Battery</strong>
+                  <span>Unknown</span>
+                </div>
+              </div>
+              <div className="robot-resource-item">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <path d="M3 12h18" />
+                </svg>
+                <div>
+                  <strong>Storage</strong>
+                  <span>Unknown</span>
+                </div>
+              </div>
+              <small>Readings have not been reported</small>
+            </section>
+          </div>
+          <nav className="route-tabs" aria-label="Robot sections">
+            {["Activity", "Configuration"].map((name) => (
+              <button
+                key={name}
+                type="button"
+                aria-current={tab === name ? "page" : undefined}
+                onClick={() => setQuery("tab", name)}
+              >
+                {name}
+              </button>
+            ))}
+          </nav>
+          <div className="robot-detail-grid" hidden={tab !== "Configuration"}>
+            <section
+              hidden={tab !== "Configuration"}
+              className="dashboard-panel records-detail"
+            >
               <h2>Robot</h2>
               <dl className="record-fields">
                 <dt>ID</dt>
@@ -252,10 +417,6 @@ export function RobotDetailPage({
               <h2>Daemon</h2>
               {status ? (
                 <dl className="record-fields">
-                  <dt>Connection</dt>
-                  <dd>{status.online ? "Online" : "Offline"}</dd>
-                  <dt>Last seen</dt>
-                  <dd>{status.last_seen_at ?? "Never"}</dd>
                   <dt>Version</dt>
                   <dd>{status.daemon_version ?? "Unknown"}</dd>
                   <dt>Protocol</dt>
@@ -264,71 +425,24 @@ export function RobotDetailPage({
               ) : (
                 <p>Loading status…</p>
               )}
-              <p>Reported through the Platform connection.</p>
             </section>
           </div>
-          <section className="dashboard-panel records-detail">
-            <h2>Deployment</h2>
-            {deployment ? (
-              <>
-                <dl className="record-fields">
-                  <dt>ID</dt>
-                  <dd>{deployment.id}</dd>
-                  <dt>Observed</dt>
-                  <dd>{deployment.observed_state}</dd>
-                  <dt>Desired</dt>
-                  <dd>{deployment.desired_state}</dd>
-                  <dt>Mission</dt>
-                  <dd>
-                    {deployment.selected_revision_id
-                      ? (revisionNames[deployment.selected_revision_id] ??
-                        "Unknown")
-                      : "None"}
-                  </dd>
-                  <dt>Selected revision</dt>
-                  <dd>{deployment.selected_revision_id ?? "None"}</dd>
-                  <dt>Candidate revision</dt>
-                  <dd>{deployment.candidate_revision_id ?? "None"}</dd>
-                  <dt>Last execution</dt>
-                  <dd>{deployment.last_execution_id ?? "None"}</dd>
-                  <dt>Last error</dt>
-                  <dd>
-                    {deployment.last_error
-                      ? `${deployment.last_error.code}: ${deployment.last_error.message}`
-                      : "None"}
-                  </dd>
-                </dl>
-                <div className="robot-actions">
-                  <button
-                    className="button-primary"
-                    type="button"
-                    disabled={
-                      busy ||
-                      !deployment.selected_revision_id ||
-                      !!deployment.candidate_revision_id
-                    }
-                    onClick={() => void action("restart")}
-                  >
-                    Restart mission
-                  </button>
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    disabled={busy || !deployment.selected_revision_id}
-                    onClick={() => void action("stop")}
-                  >
-                    Stop mission
-                  </button>
-                </div>
-                <p>
-                  Restart stops the current execution before starting a new run.
-                </p>
-              </>
-            ) : (
-              <p>No mission deployed.</p>
-            )}
-          </section>
-          <section className="dashboard-panel records-detail">
+          {tab !== "Configuration" && (
+            <a
+              className="text-action robot-timeline-link"
+              href={
+                resourcePath("timeline", "", robot.organization_id) +
+                "&robot=" +
+                encodeURIComponent(robot.id)
+              }
+            >
+              View robot timeline →
+            </a>
+          )}
+          <section
+            hidden={tab === "Configuration"}
+            className="dashboard-panel records-detail"
+          >
             <h2>Runs</h2>
             {runs === null ? (
               <p>Loading runs…</p>
@@ -349,61 +463,36 @@ export function RobotDetailPage({
                     {runs.map((item) => (
                       <tr key={item.id}>
                         <td>
-                          <button
-                            type="button"
+                          <a
                             className="text-action"
-                            onClick={() => setRun(item)}
+                            href={resourcePath(
+                              "runs",
+                              item.id,
+                              robot.organization_id,
+                            )}
                           >
-                            {item.id}
-                          </button>
+                            {revisionNames[item.mission_revision_id ?? ""] ??
+                              (item.mission_revision_id
+                                ? "Unknown app"
+                                : "Direct run")}
+                          </a>
                         </td>
-                        <td>{item.state}</td>
-                        <td>{item.created_at}</td>
+                        <td>
+                          <span
+                            className="logbook2-state"
+                            data-state={item.state}
+                          >
+                            {item.state}
+                          </span>
+                        </td>
+                        <td>
+                          <StudioTime value={item.created_at} />
+                        </td>
                         <td>{item.exit_code ?? "Unavailable"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-            {run && (
-              <div>
-                <h3>Execution {run.id}</h3>
-                <dl className="record-fields">
-                  <dt>Deployment</dt>
-                  <dd>{run.deployment_id ?? "Script run"}</dd>
-                  <dt>Mission revision</dt>
-                  <dd>
-                    {run.mission_revision_id
-                      ? `${revisionNames[run.mission_revision_id] ?? "Unknown"} (${run.mission_revision_id})`
-                      : "None"}
-                  </dd>
-                  <dt>Updated</dt>
-                  <dd>{run.updated_at}</dd>
-                  <dt>Error</dt>
-                  <dd>
-                    {run.error
-                      ? `${run.error.code}: ${run.error.message}`
-                      : "None"}
-                  </dd>
-                </dl>
-                {outputError ? (
-                  <p role="alert">{outputError}</p>
-                ) : output === null ? (
-                  <p>Loading output…</p>
-                ) : (
-                  <>
-                    {output.truncated && <p>Stored output was truncated.</p>}
-                    <h3>Standard output</h3>
-                    <pre className="source-code">
-                      {output.stdout || "No output"}
-                    </pre>
-                    <h3>Standard error</h3>
-                    <pre className="source-code">
-                      {output.stderr || "No output"}
-                    </pre>
-                  </>
-                )}
               </div>
             )}
           </section>

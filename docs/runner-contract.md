@@ -17,7 +17,13 @@ status snapshots for daemon discovery, matching
 `packages/contracts/schemas/runner/v1/ui-status-list.schema.json`. The daemon
 reports these over its separate `/v1/device/ui-connect` socket. That socket
 currently carries status and heartbeat frames only; request proxying and the
-browser gateway remain future work. In `ringfour-virtual`, that container port
+browser gateway remain future work. The authenticated
+`/v1/executions/{execution_id}/ui-proxy/{path}` route targets only the fixed
+loopback UI port for that running execution. It validates paths, strips Runner
+credentials and hop-by-hop/forwarding headers, removes the Platform session
+cookie while preserving mission cookies, caps request bodies at 1 MiB, streams
+responses, and permits at most 16 concurrent proxy responses. In
+`ringfour-virtual`, that container port
 is published only on host loopback (`RINGFOUR_UI_HOST_PORT`, default `7860`).
 
 These interfaces are **new Ringfour design**, not existing SDK or Agent APIs.

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch } from "@/lib/api";
 
 export type Artifact = {
@@ -24,15 +25,32 @@ export function ArtifactCard({
   executionId,
   getToken,
   compact = false,
+  gallery,
 }: {
   artifact: Artifact;
   executionId: string;
   getToken: () => Promise<string>;
   compact?: boolean;
+  gallery?: {
+    open: boolean;
+    select: (id: string) => void;
+    previous?: string;
+    next?: string;
+  };
 }) {
   const [preview, setPreview] = useState("");
   const [error, setError] = useState("");
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const lightboxOpen = gallery?.open ?? localOpen;
+  const selectImage = gallery?.select;
+  const setLightboxOpen = useCallback(
+    (open: boolean) => {
+      if (selectImage) selectImage(open ? artifact.artifact_id : "");
+      else setLocalOpen(open);
+    },
+    [selectImage, artifact.artifact_id],
+  );
+  const closeButton = useRef<HTMLButtonElement>(null);
   const isImage =
     artifact.content_type === "image/jpeg" ||
     artifact.content_type === "image/png";
@@ -66,12 +84,36 @@ export function ArtifactCard({
 
   useEffect(() => {
     if (!lightboxOpen) return;
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButton.current?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setLightboxOpen(false);
+      if (event.key === "Tab") {
+        const controls = closeButton.current
+          ?.closest('[role="dialog"]')
+          ?.querySelectorAll<HTMLButtonElement>("button");
+        const first = controls?.[0];
+        const last = controls?.[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [lightboxOpen]);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus();
+      }
+    };
+  }, [lightboxOpen, setLightboxOpen]);
 
   const download = async () => {
     try {
@@ -154,46 +196,66 @@ export function ArtifactCard({
           Preview unavailable: {error}
         </p>
       )}
-      {lightboxOpen && preview && (
-        <div
-          className="logbook-artifact-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Preview ${fileName(artifact.path)}`}
-        >
-          <div className="logbook-artifact-lightbox-panel">
-            <header>
-              <div>
-                <span>Execution image</span>
-                <strong>{fileName(artifact.path)}</strong>
-              </div>
-              <button
-                type="button"
-                onClick={() => setLightboxOpen(false)}
-                aria-label="Close image preview"
-              >
-                ×
-              </button>
-            </header>
-            <img
-              src={preview}
-              alt={`Full-size mission artifact ${artifact.path}`}
-            />
-            <footer>
-              <span>
-                {artifact.path} · {formatSize(artifact.size)}
-              </span>
-              <button
-                type="button"
-                className="logbook-artifact-download"
-                onClick={() => void download()}
-              >
-                Download image
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
+      {lightboxOpen &&
+        preview &&
+        createPortal(
+          <div
+            className="logbook-artifact-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Preview ${fileName(artifact.path)}`}
+          >
+            <div className="logbook-artifact-lightbox-panel">
+              <header>
+                <div>
+                  <span>Execution image</span>
+                  <strong>{fileName(artifact.path)}</strong>
+                </div>
+                <button
+                  ref={closeButton}
+                  type="button"
+                  onClick={() => setLightboxOpen(false)}
+                  aria-label="Close image preview"
+                >
+                  ×
+                </button>
+              </header>
+              <img
+                src={preview}
+                alt={`Full-size mission artifact ${artifact.path}`}
+              />
+              <footer>
+                {gallery?.previous && (
+                  <button
+                    type="button"
+                    onClick={() => gallery.select(gallery.previous!)}
+                  >
+                    Previous image
+                  </button>
+                )}
+                {gallery?.next && (
+                  <button
+                    type="button"
+                    onClick={() => gallery.select(gallery.next!)}
+                  >
+                    Next image
+                  </button>
+                )}
+                <span>
+                  {artifact.path} · {formatSize(artifact.size)}
+                </span>
+                <button
+                  type="button"
+                  className="logbook-artifact-download"
+                  onClick={() => void download()}
+                >
+                  Download image
+                </button>
+              </footer>
+            </div>
+          </div>,
+          document.body,
+        )}
     </article>
   );
 }
@@ -215,11 +277,14 @@ export function ArtifactGallery({
   pollIntervalMs?: number;
   sectionIndex?: string;
 }) {
+  const [openId, setOpenId] = useState("");
   const images = (artifacts ?? []).filter(
     (artifact) =>
       artifact.content_type === "image/jpeg" ||
       artifact.content_type === "image/png",
   );
+  const available = images.filter((image) => image.state === "available");
+  const index = available.findIndex((item) => item.artifact_id === openId);
   return (
     <section
       className={`logbook-artifacts${sectionIndex ? " logbook2-section" : ""}`}
@@ -242,8 +307,12 @@ export function ArtifactGallery({
               {images.length} image{images.length === 1 ? "" : "s"}
             </span>
           )}
-          <span className="logbook-artifacts-live">
-            Live · {Math.round(pollIntervalMs / 1000)}s
+          <span
+            className={pollIntervalMs ? "logbook-artifacts-live" : undefined}
+          >
+            {pollIntervalMs
+              ? `Refreshing every ${Math.round(pollIntervalMs / 1000)}s`
+              : "Recorded evidence"}
           </span>
         </div>
       </header>
@@ -263,6 +332,12 @@ export function ArtifactGallery({
           {artifacts.map((artifact) => (
             <ArtifactCard
               key={artifact.artifact_id}
+              gallery={{
+                open: openId === artifact.artifact_id,
+                select: setOpenId,
+                previous: available[index - 1]?.artifact_id,
+                next: available[index + 1]?.artifact_id,
+              }}
               artifact={artifact}
               executionId={executionId}
               getToken={getToken}

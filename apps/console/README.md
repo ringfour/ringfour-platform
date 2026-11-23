@@ -42,3 +42,25 @@ npm run build
 See the [mission testing guide](../../docs/human-testing/06.md) for the current
 Console workflow. The production build intentionally displays the
 restricted-development message rather than an operational Console.
+
+## Sample screenshots
+
+Run the development Console, then generate screenshots with a browser-only
+sample workspace:
+
+```sh
+cd apps/console
+LD_LIBRARY_PATH=/tmp/rf-sdk-review/libs/usr/lib/x86_64-linux-gnu npm run screenshot:demo
+```
+
+The script writes Overview, Runs, Robots, Apps, Timeline, a short-run tooltip,
+an opened Timeline event card, and People images to
+`screenshots/demo/` at the repository root. Set `CONSOLE_URL` to use another
+local development origin, `SCREENSHOT_DIR` to change the output directory, or
+`SCREENSHOT_WIDTH` to capture another viewport width.
+The sample workspace, people, robots, apps, and runs exist only inside this
+browser session. The script intercepts sample API reads and makes no changes
+to PostgreSQL or the live workspace. The library path above supplies missing
+Chromium libraries on this development host; omit it on hosts that have those
+libraries installed. The script uses Playwright Chromium; install the browser
+with `npx playwright install chromium` where the host supports it.

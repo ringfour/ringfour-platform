@@ -1,718 +1,424 @@
 import { useAuth0 } from "@auth0/auth0-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { apiFetchAll } from "@/lib/api";
+import { resourcePath } from "@/lib/location";
+import { useDecisions } from "./Decisions";
+import { loadOverview, type OverviewData } from "./overview-data";
+import { RunTimeline } from "./RunTimeline";
+import { RobotWorkRow } from "./RobotWorkRow";
+import { StudioTime } from "./StudioTime";
+import "./overview.css";
 
-import { StatusBadge } from "@/components/ui/status-badge";
-import { apiFetch, apiFetchAll } from "@/lib/api";
-
-type Organization = { id: string; name: string; role: string };
-type Robot = {
-  id: string;
-  name: string;
-  enrolled_at: string | null;
-  created_at: string;
-};
-type RobotStatus = {
-  online: boolean;
-  last_seen_at: string | null;
-  daemon_version: string | null;
-};
-type Mission = {
-  id: string;
-  name: string;
-  latest_version: number;
-  created_at: string;
-};
-type InteractionChoice = { value: string; label: string };
-type InteractionResponse = {
-  response_id: string;
-  chosen_value: string;
-  status:
-    | "submitted"
-    | "applied"
-    | "rejected_timed_out"
-    | "rejected_cancelled";
-};
-type Interaction = {
-  request_id: string;
-  robot_id: string;
-  execution_id: string;
-  prompt: string;
-  choices: InteractionChoice[];
-  deadline: string | null;
-  state: "pending" | "answered" | "timed_out" | "cancelled";
-  response: InteractionResponse | null;
-};
-type View = "overview" | "robots" | "identity" | "health";
-
-function shortId(id: string) {
-  return id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id;
-}
-function timeLabel(value: string | null) {
-  if (!value) return "Never";
-  const time = new Date(value);
-  if (Number.isNaN(time.getTime())) return value;
-  const seconds = Math.max(0, Math.floor((Date.now() - time.getTime()) / 1000));
-  if (seconds < 60) return "Just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
-  return time.toLocaleDateString(undefined, {
+const when = (value: string) =>
+  new Date(value).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
-    year: "numeric",
-  });
-}
-function deadlineLabel(value: string | null) {
-  if (value === null) return "No timeout";
-  const milliseconds = new Date(value).getTime() - Date.now();
-  if (!Number.isFinite(milliseconds)) return value;
-  if (milliseconds <= 0) return "expired";
-  const minutes = Math.ceil(milliseconds / 60_000);
-  if (minutes < 60) return `in ${minutes} min`;
-  return `at ${new Date(value).toLocaleTimeString(undefined, {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
-  })}`;
+  });
+function waiting(value: string) {
+  const minutes = Math.floor((Date.now() - Date.parse(value)) / 60000);
+  if (!Number.isFinite(minutes) || minutes < 0) return "";
+  if (minutes < 1) return "Just requested";
+  return minutes < 60
+    ? `Waiting ${minutes} min`
+    : `Waiting ${Math.floor(minutes / 60)} hr`;
 }
-
 export function DashboardPage({
   onNavigate,
   preferredOrganizationId = "",
-  onOrganizationChange,
 }: {
-  onNavigate: (view: View, robotId?: string) => void;
+  onNavigate: (view: "identity") => void;
   preferredOrganizationId?: string;
   onOrganizationChange?: (id: string) => void;
 }) {
   const { getAccessTokenSilently } = useAuth0();
-  const getToken = useCallback(async () => {
-    const token = await getAccessTokenSilently({
+  const token = useCallback(async () => {
+    const value = await getAccessTokenSilently({
       authorizationParams: { audience: import.meta.env.VITE_AUTH0_AUDIENCE },
     });
-    if (!token) throw new Error("No access token available");
-    return token;
+    if (!value) throw Error("Sign in required");
+    return value;
   }, [getAccessTokenSilently]);
-  const [organizations, setOrganizations] = useState<Organization[] | null>(
-    null,
-  );
-  const [organizationId, setOrganizationId] = useState(preferredOrganizationId);
-  const [robots, setRobots] = useState<Robot[] | null>(null);
-  const [missions, setMissions] = useState<Mission[] | null>(null);
-  const [statuses, setStatuses] = useState<Record<string, RobotStatus | null>>(
-    {},
-  );
-  const [orgError, setOrgError] = useState<string | null>(null);
-  const [orgAttempt, setOrgAttempt] = useState(0);
-  const [fleetError, setFleetError] = useState<string | null>(null);
-  const [missionError, setMissionError] = useState<string | null>(null);
-  const [interactions, setInteractions] = useState<Interaction[] | null>(null);
-  const [interactionError, setInteractionError] = useState<string | null>(null);
-  const [submittingInteraction, setSubmittingInteraction] = useState("");
-  const responseKeys = useRef<Record<string, string>>({});
-  const [search, setSearch] = useState("");
+  const [org, setOrg] = useState(preferredOrganizationId);
+  const [noWorkspace, setNoWorkspace] = useState(false);
+  const [review, setReview] = useState("");
   const [refresh, setRefresh] = useState(0);
-  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: retry requests a new workspace list.
+  const [data, setData] = useState<OverviewData>();
+  const [error, setError] = useState("");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Refresh retries the workspace lookup.
   useEffect(() => {
-    let cancelled = false;
-    apiFetchAll<Organization>(getToken, "/v1/organizations")
+    if (preferredOrganizationId) return;
+    let current = true;
+    void apiFetchAll<{ id: string }>(token, "/v1/organizations")
       .then((items) => {
-        if (!cancelled) {
-          setOrganizations(items);
-          setOrganizationId((current) =>
-            items.some((item) => item.id === current)
-              ? current
-              : items[0]?.id || "",
-          );
-          setOrgError(null);
+        if (current) {
+          setOrg(items[0]?.id ?? "");
+          setNoWorkspace(!items.length);
         }
       })
-      .catch((error: unknown) => {
-        if (!cancelled)
-          setOrgError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load workspaces.",
-          );
+      .catch(() => {
+        if (current) setError("Workspace information is unavailable.");
       });
     return () => {
-      cancelled = true;
+      current = false;
     };
-  }, [getToken, orgAttempt]);
-
-  // The refresh counter deliberately triggers a fresh snapshot on demand.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh requests another snapshot.
+  }, [preferredOrganizationId, token, refresh]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Refresh requests a fresh operational snapshot.
   useEffect(() => {
-    if (!organizationId) return;
-    let cancelled = false;
-    setRobots(null);
-    setMissions(null);
-    setStatuses({});
-    setFleetError(null);
-    setMissionError(null);
-    setCheckedAt(null);
-    const load = async () => {
-      const [fleet, catalog] = await Promise.allSettled([
-        apiFetchAll<Robot>(
-          getToken,
-          `/v1/organizations/${organizationId}/robots`,
-        ),
-        apiFetchAll<Mission>(
-          getToken,
-          `/v1/organizations/${organizationId}/missions`,
-        ),
-      ]);
-      if (cancelled) return;
-      if (catalog.status === "fulfilled") setMissions(catalog.value);
-      else setMissionError("Mission catalog is unavailable.");
-      if (fleet.status === "rejected") {
-        setFleetError("Fleet data is unavailable.");
-        return;
-      }
-      setRobots(fleet.value);
-      const results: Record<string, RobotStatus | null> = {};
-      // Bound concurrent requests so a large fleet does not overwhelm the API.
-      for (let index = 0; index < fleet.value.length; index += 10) {
-        const group = fleet.value.slice(index, index + 10);
-        await Promise.all(
-          group.map(async (robot) => {
-            try {
-              results[robot.id] = (await apiFetch(
-                getToken,
-                `/v1/robots/${robot.id}/status`,
-              ).then((response) => response.json())) as RobotStatus;
-            } catch {
-              results[robot.id] = null;
-            }
-          }),
-        );
-        if (cancelled) return;
-        setStatuses({ ...results });
-      }
-      if (!cancelled) setCheckedAt(new Date());
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [organizationId, getToken, refresh]);
-
-  // Pending requests are an attention queue, so keep them fresher than the rest
-  // of the dashboard snapshot. A submitted response remains visible until the
-  // daemon confirms a terminal state.
-  useEffect(() => {
-    if (!organizationId) return;
-    let cancelled = false;
+    if (!org) return;
+    let current = true;
     let timer: number | undefined;
-    const load = async () => {
-      try {
-        const items = await apiFetchAll<Interaction>(
-          getToken,
-          `/v1/organizations/${organizationId}/interactions?state=pending`,
-        );
-        if (!cancelled) {
-          setInteractions(items);
-          setInteractionError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setInteractionError(
-            error instanceof Error
-              ? error.message
-              : "Human interaction queue is unavailable.",
-          );
-        }
-      } finally {
-        if (!cancelled) timer = window.setTimeout(load, 3000);
-      }
-    };
-    setInteractions(null);
+    const load = () =>
+      loadOverview(org, token)
+        .then((snapshot) => {
+          if (current) {
+            setData(snapshot);
+            setError("");
+          }
+        })
+        .catch(() => {
+          if (current) setError("Could not update workspace activity.");
+        })
+        .finally(() => {
+          if (current) timer = window.setTimeout(load, 30000);
+        });
     void load();
     return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
+      current = false;
+      window.clearTimeout(timer);
     };
-  }, [organizationId, getToken, refresh]);
-
-  const respond = async (interaction: Interaction, choice: string) => {
-    const key =
-      responseKeys.current[interaction.request_id] ?? crypto.randomUUID();
-    responseKeys.current[interaction.request_id] = key;
-    setSubmittingInteraction(interaction.request_id);
-    setInteractionError(null);
-    try {
-      const accepted = (await apiFetch(
-        getToken,
-        `/v1/interactions/${interaction.request_id}/responses`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": key,
-          },
-          body: JSON.stringify({ chosen_value: choice }),
-        },
-      ).then((response) => response.json())) as {
-        response_id: string;
-        status: "submitted";
-      };
-      setInteractions((current) =>
-        current?.map((item) =>
-          item.request_id === interaction.request_id
-            ? {
-                ...item,
-                response: {
-                  response_id: accepted.response_id,
-                  chosen_value: choice,
-                  status: "submitted",
-                },
-              }
-            : item,
-        ) ?? null,
-      );
-    } catch (error) {
-      setInteractionError(
-        error instanceof Error ? error.message : "Unable to submit response.",
-      );
-    } finally {
-      setSubmittingInteraction("");
-    }
-  };
-
-  const organization = organizations?.find(
-    (item) => item.id === organizationId,
+  }, [org, token, refresh]);
+  const queue = useDecisions(org, token, refresh);
+  const decisions = [...(queue.interactions ?? [])].sort(
+    (a, b) =>
+      (a.deadline ?? "~").localeCompare(b.deadline ?? "~") ||
+      a.created_at.localeCompare(b.created_at),
   );
-  const online =
-    robots?.filter((robot) => statuses[robot.id]?.online).length ?? 0;
-  const known =
-    robots?.filter((robot) => Object.hasOwn(statuses, robot.id)).length ?? 0;
-  const unknown =
-    robots?.filter(
-      (robot) =>
-        Object.hasOwn(statuses, robot.id) && statuses[robot.id] === null,
-    ).length ?? 0;
-  const filtered = useMemo(
-    () =>
-      (robots ?? []).filter((robot) =>
-        `${robot.name} ${robot.id}`
-          .toLowerCase()
-          .includes(search.toLowerCase().trim()),
-      ),
-    [robots, search],
-  );
-  const latestMissions = useMemo(
-    () =>
-      [...(missions ?? [])]
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-        .slice(0, 5),
-    [missions],
-  );
-
+  const linked = new Set(decisions.map((d) => d.execution_id));
+  const issues =
+    data?.issues?.filter(
+      (issue) =>
+        !issue.last_execution_id || !linked.has(issue.last_execution_id),
+    ) ?? [];
+  const count = decisions.length + issues.length;
+  const complete =
+    !!data?.issues &&
+    queue.interactions !== null &&
+    !queue.interactionError &&
+    !error;
+  const active = data?.active ?? [];
+  const runPath = (id: string) => resourcePath("runs", id, org);
+  const runsPath = runPath("");
   return (
-    <main className="dashboard-page">
-      <div className="dashboard-heading">
+    <main className="ops-overview">
+      <header className="ops-header">
         <div>
           <h1>Overview</h1>
-          <p>Your robots and missions.</p>
+          <p className="ops-summary">
+            {complete && (
+              <>
+                <a
+                  href="#overview-attention"
+                  className={count > 0 ? "ops-summary-alert" : undefined}
+                >
+                  {count === 0
+                    ? "Nothing needs attention"
+                    : count === 1
+                      ? "1 operation needs attention"
+                      : count + " operations need attention"}
+                </a>
+                .{" "}
+              </>
+            )}
+            {data && (
+              <>
+                <a href="#overview-machines">
+                  {data.machines.filter((m) => m.status?.online).length}{" "}
+                  confirmed online
+                  {data.machines.some(
+                    (m) => typeof m.status?.online !== "boolean",
+                  ) && " · connectivity incomplete"}
+                </a>{" "}
+                ·
+                <a href={runsPath + "&group=Active"}>
+                  {active.length === 0
+                    ? data.machines.some((m) => !m.runs)
+                      ? "Run activity incomplete"
+                      : "No apps running"
+                    : active.length === 1
+                      ? "1 active run"
+                      : active.length + " active runs"}
+                </a>
+                .
+              </>
+            )}
+          </p>
         </div>
-        <button
-          type="button"
-          className="button-secondary refresh-button"
-          onClick={() => setRefresh((value) => value + 1)}
-          disabled={!organizationId}
-        >
-          <span aria-hidden="true">↻</span> Refresh
-        </button>
-      </div>
-      <div className="workspace-bar">
-        <div className="workspace-bar__label">
-          <span className="workspace-symbol" aria-hidden="true">
-            ◇
-          </span>
-          <span>WORKSPACE</span>
+        <div className="ops-refresh">
+          {data && (
+            <span>
+              Updated <StudioTime value={data.updated.toISOString()} />
+            </span>
+          )}
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => setRefresh((v) => v + 1)}
+          >
+            Refresh
+          </button>
         </div>
-        {organizations === null ? (
-          <span className="subtle">Loading workspaces…</span>
-        ) : organizations.length === 0 ? (
-          <span className="subtle">No workspace yet</span>
-        ) : (
-          <label className="workspace-select">
-            <span className="sr-only">Organization</span>
-            <select
-              value={organizationId}
-              onChange={(event) => {
-                setOrganizationId(event.target.value);
-                onOrganizationChange?.(event.target.value);
-              }}
-            >
-              {organizations.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <span aria-hidden="true">⌄</span>
-          </label>
-        )}
-        <span className="workspace-role">{organization?.role ?? ""}</span>
-        <span className="workspace-updated">
-          {checkedAt
-            ? `Updated ${checkedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
-            : "Status snapshot"}
-        </span>
-      </div>
-      {orgError && (
-        <div role="alert" className="notice-error">
-          {orgError}{" "}
+      </header>
+      {error && (
+        <p role="alert">
+          {error}
+          {data && " Showing the last known snapshot."}
+        </p>
+      )}
+      {noWorkspace ? (
+        <p>
+          Create a workspace to get started.{" "}
           <button
             type="button"
             className="text-action"
-            onClick={() => setOrgAttempt((value) => value + 1)}
-          >
-            Try again
-          </button>
-        </div>
-      )}
-      {organizations?.length === 0 && (
-        <div className="empty-panel">
-          <strong>Start with a workspace</strong>
-          <p>Create an organization to connect your first robot.</p>
-          <button
-            className="button-primary"
-            type="button"
             onClick={() => onNavigate("identity")}
           >
-            Go to workspace →
+            Workspace settings →
           </button>
-        </div>
-      )}
-      {organizationId && (
-        <>
-          <section
-            className={`hitl-overview ${interactions?.length ? "hitl-overview--attention" : ""}`}
-            aria-labelledby="hitl-heading"
-          >
-            <div className="hitl-overview__header">
-              <div>
-                <span className="panel-kicker">HUMAN IN THE LOOP</span>
-                <h2 id="hitl-heading">
-                  Operator requests
-                  {interactions && (
-                    <span className="heading-count">
-                      {interactions.length.toString().padStart(2, "0")}
-                    </span>
-                  )}
-                </h2>
-              </div>
-              <span className="hitl-overview__state">
-                {interactions === null
-                  ? "Checking…"
-                  : interactions.length
-                    ? "Action requested"
-                    : "No pending requests"}
-              </span>
-            </div>
-            {interactionError && (
-              <p className="hitl-overview__error" role="alert">
-                {interactionError}
-              </p>
-            )}
-            {interactions === null ? (
-              <p className="hitl-overview__empty">Loading operator requests…</p>
-            ) : interactions.length === 0 ? (
-              <p className="hitl-overview__empty">
-                Missions that need a decision will appear here.
-              </p>
-            ) : (
-              <div className="hitl-request-list">
-                {interactions.map((interaction) => {
-                  const robot = robots?.find(
-                    (item) => item.id === interaction.robot_id,
-                  );
-                  const submitted =
-                    interaction.response?.status === "submitted";
-                  return (
-                    <article
-                      className="hitl-request"
-                      key={interaction.request_id}
-                    >
-                      <div className="hitl-request__copy">
-                        <div className="hitl-request__meta">
-                          <span>
-                            {robot?.name ?? shortId(interaction.robot_id)}
-                          </span>
-                          <span>
-                            {interaction.deadline
-                              ? `Deadline ${deadlineLabel(interaction.deadline)}`
-                              : "No timeout"}
-                          </span>
-                        </div>
-                        <h3>{interaction.prompt}</h3>
-                        {submitted && (
-                          <p className="hitl-request__submitted">
-                            Response submitted. Waiting for device confirmation.
-                          </p>
-                        )}
-                      </div>
-                      <div className="hitl-request__actions">
-                        {interaction.choices.map((choice) => (
+        </p>
+      ) : (
+        <div className="ops-layout">
+          <aside className="ops-side">
+            <section
+              id="overview-attention"
+              className="ops-attention"
+              data-has-attention={count > 0}
+            >
+              <h2>Needs attention</h2>
+              {queue.interactionError && (
+                <p role="alert">{queue.interactionError}</p>
+              )}
+              {data && !data.issues && (
+                <p>Deployment information unavailable.</p>
+              )}
+              {decisions.map((d) => {
+                const run = data?.runs.find((r) => r.id === d.execution_id);
+                const issue = data?.issues?.find(
+                  (i) => i.last_execution_id === d.execution_id,
+                );
+                return (
+                  <article className="ops-situation" key={d.request_id}>
+                    <div>
+                      <span className="ops-type">Decision required</span>
+                      <h3>{d.prompt}</h3>
+                      <p>
+                        {run?.app ?? "App unavailable"}
+                        {run?.version !== undefined &&
+                          " · Version " + run.version}{" "}
+                        ·{" "}
+                        {data?.robots.find((r) => r.id === d.robot_id)?.name ??
+                          "Robot unavailable"}
+                      </p>
+                      <small>
+                        {[
+                          run?.person && "Started by " + run.person,
+                          waiting(d.created_at),
+                          d.deadline && "Due " + when(d.deadline),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </small>
+                      {issue && (
+                        <p>
+                          Requested: {issue.desired_state} · Observed:{" "}
+                          {issue.observed_state}
+                        </p>
+                      )}
+                    </div>
+                    {d.response?.status === "submitted" ? (
+                      <a className="ops-primary" href={runPath(d.execution_id)}>
+                        View submitted response →
+                      </a>
+                    ) : (
+                      <button
+                        className="ops-primary"
+                        type="button"
+                        aria-expanded={review === d.request_id}
+                        onClick={() =>
+                          setReview(review === d.request_id ? "" : d.request_id)
+                        }
+                      >
+                        {review === d.request_id
+                          ? "Close review"
+                          : "Review decision →"}
+                      </button>
+                    )}
+                    {review === d.request_id && !d.response && (
+                      <div className="ops-choices">
+                        <a href={runPath(d.execution_id)}>Inspect run →</a>
+                        {d.choices.map((choice) => (
                           <button
                             type="button"
                             key={choice.value}
-                            className="button-secondary"
                             disabled={
-                              submitted ||
-                              submittingInteraction === interaction.request_id
+                              !!queue.interactionError ||
+                              !!queue.submittingInteraction
                             }
-                            onClick={() =>
-                              void respond(interaction, choice.value)
-                            }
+                            onClick={() => void queue.respond(d, choice.value)}
                           >
                             {choice.label}
                           </button>
                         ))}
                       </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-          <section className="metrics-grid" aria-label="Workspace snapshot">
-            <div className="metric-card metric-card--ready">
-              <div className="metric-top">
-                <span>ROBOTS ONLINE</span>
-                <span className="metric-icon ready-icon">↗</span>
-              </div>
-              <div className="metric-value">
-                {robots === null ? "…" : online.toString().padStart(2, "0")}
-                <span className="metric-denominator">
-                  {" "}
-                  /{" "}
-                  {robots === null
-                    ? "…"
-                    : robots.length.toString().padStart(2, "0")}
-                </span>
-              </div>
-              <p>
-                {robots === null
-                  ? (fleetError ?? "Loading fleet")
-                  : known < robots.length
-                    ? "Checking device presence"
-                    : unknown
-                      ? `${unknown} status unavailable`
-                      : "Currently connected"}
-              </p>
-            </div>
-            <div className="metric-card">
-              <div className="metric-top">
-                <span>REGISTERED ROBOTS</span>
-                <span className="metric-icon">⌗</span>
-              </div>
-              <div className="metric-value">
-                {robots === null
-                  ? "…"
-                  : robots.length.toString().padStart(2, "0")}
-              </div>
-              <p>
-                {robots === null
-                  ? (fleetError ?? "Loading fleet")
-                  : `${robots.filter((robot) => robot.enrolled_at).length} enrolled devices`}
-              </p>
-            </div>
-            <div className="metric-card">
-              <div className="metric-top">
-                <span>MISSIONS</span>
-                <span className="metric-icon orange-icon">↗</span>
-              </div>
-              <div className="metric-value">
-                {missions === null
-                  ? "…"
-                  : missions.length.toString().padStart(2, "0")}
-              </div>
-              <p>
-                {missionError ??
-                  (missions === null ? "Loading catalog" : "In this workspace")}
-              </p>
-            </div>
-          </section>
-          <div className="dashboard-columns">
-            <section className="dashboard-panel fleet-panel">
-              <div className="panel-header">
-                <div>
-                  <h2>
-                    Machine register{" "}
-                    <span className="heading-count">
-                      {robots === null
-                        ? "…"
-                        : robots.length.toString().padStart(2, "0")}
+                    )}
+                  </article>
+                );
+              })}
+              {issues.map((d) => (
+                <article className="ops-situation" key={d.id}>
+                  <div>
+                    <span className="ops-type">
+                      {d.run?.state === "failed" &&
+                      d.observed_state === "failed" &&
+                      d.desired_state !== "running"
+                        ? "Run failed"
+                        : "Deployment mismatch"}
                     </span>
-                  </h2>
-                  <p>Your robots and their latest connection status.</p>
-                </div>
-                <button
-                  className="text-action"
-                  type="button"
-                  onClick={() => onNavigate("robots")}
-                >
-                  Manage fleet <span>↗</span>
-                </button>
-              </div>
-              <div className="fleet-toolbar">
-                <label className="search-field">
-                  <span aria-hidden="true">⌕</span>
-                  <span className="sr-only">Search robots</span>
-                  <input
-                    type="search"
-                    placeholder="Search robots…"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </label>
-                <span className="table-note">
-                  {checkedAt ? "PRESENCE CHECKED" : "CHECKING PRESENCE"}
-                </span>
-              </div>
-              {fleetError ? (
-                <p className="table-empty" role="alert">
-                  {fleetError}
-                </p>
-              ) : robots === null ? (
-                <p className="table-empty">Loading robots…</p>
-              ) : robots.length === 0 ? (
-                <div className="table-empty">
-                  <strong>No robots connected yet</strong>
-                  <p>Pair a robot to see it in your fleet.</p>
-                  <button
-                    type="button"
-                    className="text-action"
-                    onClick={() => onNavigate("robots")}
+                    <h3>
+                      {d.robot}
+                      {d.observed_state === "failed"
+                        ? " reported a failure"
+                        : d.last_error
+                          ? " needs deployment review"
+                          : d.desired_state === "running"
+                            ? " is waiting to run"
+                            : " is still running"}
+                    </h3>
+                    <p>
+                      Requested: {d.desired_state} · Observed:{" "}
+                      {d.observed_state}
+                    </p>
+                    <small>
+                      {d.app ?? "App unavailable"}
+                      {d.version !== undefined && " · Version " + d.version}
+                      {d.run?.person && " · Started by " + d.run.person}
+                      {d.updated_at && " · Updated " + when(d.updated_at)}
+                    </small>
+                  </div>
+                  <a
+                    className="ops-primary"
+                    href={
+                      resourcePath("robots", d.robot_id, org) +
+                      "&tab=Deployment"
+                    }
                   >
-                    Add a robot →
-                  </button>
-                </div>
-              ) : filtered.length === 0 ? (
-                <p className="table-empty">No robots match your search.</p>
-              ) : (
-                <div className="table-scroll">
-                  <table className="dashboard-table">
-                    <thead>
-                      <tr>
-                        <th>ROBOT</th>
-                        <th>STATUS</th>
-                        <th>DAEMON</th>
-                        <th>LAST SEEN</th>
-                        <th>
-                          <span className="sr-only">Action</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((robot) => {
-                        const status = statuses[robot.id];
-                        return (
-                          <tr key={robot.id}>
-                            <td>
-                              <div className="robot-cell">
-                                <span
-                                  className="robot-avatar"
-                                  aria-hidden="true"
-                                >
-                                  ⌁
-                                </span>
-                                <span>
-                                  <strong>{robot.name}</strong>
-                                  <small>{shortId(robot.id)}</small>
-                                </span>
-                              </div>
-                            </td>
-                            <td>
-                              {status ? (
-                                <StatusBadge
-                                  variant={
-                                    status.online ? "success" : "neutral"
-                                  }
-                                  label={status.online ? "online" : "offline"}
-                                />
-                              ) : (
-                                <StatusBadge
-                                  variant="neutral"
-                                  label={
-                                    Object.hasOwn(statuses, robot.id)
-                                      ? "unknown"
-                                      : "checking"
-                                  }
-                                />
-                              )}
-                            </td>
-                            <td className="table-mono">
-                              {status?.daemon_version ?? "Unknown"}
-                            </td>
-                            <td className="table-muted">
-                              {status
-                                ? timeLabel(status.last_seen_at)
-                                : "Unknown"}
-                            </td>
-                            <td>
-                              <button
-                                type="button"
-                                className="table-link"
-                                onClick={() => onNavigate("robots", robot.id)}
-                                aria-label={`Open fleet for ${robot.name}`}
-                              >
-                                ↗
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                    Inspect deployment →
+                  </a>
+                </article>
+              ))}
+              {!count && (
+                <p>
+                  {complete
+                    ? "Nothing needs your attention."
+                    : error || queue.interactionError || (data && !data.issues)
+                      ? "Attention status unavailable."
+                      : "Checking current conditions…"}
+                </p>
               )}
             </section>
-            <section className="dashboard-panel missions-panel">
-              <div className="panel-header">
-                <div>
-                  <h2>Recent missions</h2>
-                  <p>Published in this workspace.</p>
-                </div>
-              </div>
-              {missionError ? (
-                <p className="table-empty">{missionError}</p>
-              ) : missions === null ? (
-                <p className="table-empty">Loading missions…</p>
-              ) : latestMissions.length === 0 ? (
-                <div className="mission-empty">
-                  <span className="mission-empty-icon" aria-hidden="true">
-                    ◇
-                  </span>
-                  <strong>No missions published</strong>
-                  <p>Published missions will appear here.</p>
-                </div>
-              ) : (
-                <ul className="mission-list">
-                  {latestMissions.map((mission) => (
-                    <li key={mission.id}>
-                      <span className="mission-icon" aria-hidden="true">
-                        ↗
+            <section className="ops-outcomes">
+              <header>
+                <h2>Recent outcomes</h2>
+                <a href={`${runsPath}&group=All`}>All runs →</a>
+              </header>
+              {data?.recent.length ? (
+                <ul>
+                  {data.recent.map((run) => (
+                    <li key={run.id}>
+                      <div>
+                        <h3>{run.app}</h3>
+                        <small>
+                          {run.robot.name}
+                          {run.person && ` · Started by ${run.person}`}
+                        </small>
+                        {(run.error?.message ||
+                          run.activity ||
+                          !!run.evidence) && (
+                          <p>
+                            {[
+                              run.error?.message ?? run.activity,
+                              run.evidence
+                                ? `${run.evidence} evidence ${run.evidence === 1 ? "file" : "files"}`
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                      <span className="ops-outcome" data-state={run.state}>
+                        {run.state === "succeeded"
+                          ? "Execution succeeded"
+                          : run.state === "failed"
+                            ? "Failed"
+                            : "Cancelled"}
                       </span>
-                      <span className="mission-info">
-                        <strong>{mission.name}</strong>
-                        <small>{shortId(mission.id)}</small>
-                      </span>
-                      <span className="mission-version">
-                        {mission.latest_version
-                          ? `v${mission.latest_version}`
-                          : "No revisions"}
-                      </span>
+                      <StudioTime value={run.updated_at} />
+                      <a
+                        href={runPath(run.id)}
+                        aria-label={`View ${run.app} run details`}
+                      >
+                        →
+                      </a>
                     </li>
                   ))}
                 </ul>
+              ) : (
+                <p>
+                  {data
+                    ? "No finished runs yet."
+                    : error
+                      ? "Recent outcomes unavailable."
+                      : "Loading outcomes…"}
+                </p>
               )}
             </section>
+          </aside>
+          <div className="ops-main">
+            <section id="overview-machines">
+              <header className="ops-machines-heading">
+                <h2>Robots and current work</h2>
+              </header>
+              {data ? (
+                data.machines.length ? (
+                  data.machines.map((machine) => (
+                    <RobotWorkRow
+                      key={machine.id}
+                      machine={machine}
+                      workspace={org}
+                    />
+                  ))
+                ) : (
+                  <p>No robots in this workspace.</p>
+                )
+              ) : (
+                <p>
+                  {error ? "Robot information unavailable." : "Loading robots…"}
+                </p>
+              )}
+            </section>
+            {data && (
+              <RunTimeline
+                preview
+                robots={data.robots}
+                runs={data.runs}
+                workspace={org}
+                token={token}
+              />
+            )}
           </div>
-        </>
+        </div>
       )}
     </main>
   );

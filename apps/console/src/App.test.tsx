@@ -26,6 +26,7 @@ import App from "./App";
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState(null, "", "/");
   vi.unstubAllGlobals();
   authState = { isAuthenticated: false, isLoading: false };
   loginWithRedirect.mockClear();
@@ -51,7 +52,7 @@ test("denies unauthenticated access and offers sign-in", async () => {
   expect(fetchSpy).not.toHaveBeenCalled();
 
   await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
-  expect(loginWithRedirect).toHaveBeenCalledWith();
+  expect(loginWithRedirect).toHaveBeenCalledWith({});
 });
 
 test("sign-up opens the Auth0 signup screen", async () => {
@@ -98,7 +99,9 @@ test("loads identity and organizations when authenticated", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Organizations" }));
 
   expect(await screen.findByText("user-1")).toBeTruthy();
-  expect(await screen.findByText("Acme Robotics")).toBeTruthy();
+  expect(
+    await screen.findByText("Acme Robotics", { selector: "button span" }),
+  ).toBeTruthy();
   expect(getAccessTokenSilently).toHaveBeenCalled();
   const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
   expect((init.headers as Record<string, string>).Authorization).toBe(
@@ -162,7 +165,7 @@ test("creates an organization and inspects membership", async () => {
 
   render(<App />);
   await userEvent.click(screen.getByRole("button", { name: "Organizations" }));
-  await screen.findByText("Acme Robotics");
+  await screen.findByText("Acme Robotics", { selector: "button span" });
 
   await userEvent.type(
     screen.getByPlaceholderText(/new organization name/i),
@@ -172,7 +175,61 @@ test("creates an organization and inspects membership", async () => {
   expect(posts).toContain(JSON.stringify({ name: "Acme Robotics" }));
 
   await userEvent.click(
-    await screen.findByRole("button", { name: "Acme Robotics" }),
+    await screen.findByRole("button", { name: /^Acme Robotics/ }),
   );
-  expect(await screen.findByText("user-1", { selector: "td" })).toBeTruthy();
+  expect(
+    await screen.findByText("user-1", { selector: "td span" }),
+  ).toBeTruthy();
+});
+
+test("opens a historical run from a deep link and follows its robot link", async () => {
+  window.history.replaceState(null, "", "/runs/run-1?workspace=org&tab=Output");
+  authState = { isAuthenticated: true, isLoading: false };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      const items: Record<string, unknown[]> = {
+        "/api/v1/organizations": [
+          { id: "org", name: "Workshop", role: "owner" },
+        ],
+        "/api/v1/organizations/org/robots": [
+          { id: "robot", name: "Inspection arm" },
+        ],
+        "/api/v1/robots/robot/executions": [
+          {
+            id: "run-1",
+            created_at: "2026-11-20T08:00:00Z",
+            state: "cancelled",
+            actor_user_id: null,
+            mission_revision_id: null,
+          },
+        ],
+      };
+      if (url.pathname.endsWith("/me"))
+        return jsonResponse({ user: { id: "operator" } });
+      if (url.pathname.endsWith("/artifacts"))
+        return jsonResponse({ artifacts: [] });
+      if (url.pathname.endsWith("/output"))
+        return jsonResponse({
+          data_base64: "",
+          next_offset: 0,
+          truncated: false,
+        });
+      return jsonResponse({
+        items: items[url.pathname] ?? [],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "Execution output" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: "Inspection arm" }).getAttribute("href"),
+  ).toBe("/robots/robot?workspace=org");
+  await userEvent.click(screen.getByRole("button", { name: "App UI" }));
+  expect(window.location.search).toContain("tab=App+UI");
+  expect(screen.getByText("This run has ended.")).toBeTruthy();
 });

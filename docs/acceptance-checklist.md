@@ -198,6 +198,11 @@ motion testing needs separately agreed safety arrangements.
   `ready` status were checked after reload, but daemon-to-Platform status
   propagation still needs observable evidence. This is status-only; it does
   not proxy Gradio HTTP/SSE yet.
+- [x] Add Runner's authenticated per-execution loopback UI proxy with bounded
+  request bodies/concurrency, path validation, credential filtering and
+  streamed responses. Component tests cover SSE bytes, session-cookie removal,
+  authentication and traversal attempts. Live verification awaits the next
+  owner-run `ringfour-virtual` reload.
 - [ ] Add a Console entry point for the selected execution with connecting,
   offline, unavailable and ended states; retain independent Platform
   status/stop controls.

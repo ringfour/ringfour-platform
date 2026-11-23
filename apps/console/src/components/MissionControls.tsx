@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, apiFetchAll } from "@/lib/api";
+import { resourcePath } from "@/lib/location";
 
 type Robot = { id: string; name: string };
 type Deployment = {
@@ -15,13 +16,19 @@ export function MissionControls({
   organizationId,
   revisionId,
   robots,
+  appLabel,
+  role,
   getToken,
 }: {
+  appLabel?: string;
+  role?: string;
   organizationId: string;
   revisionId: string;
   robots: Robot[];
   getToken: () => Promise<string>;
 }) {
+  const [review, setReview] = useState<"prepare" | "start" | null>(null);
+  const [acceptedRun, setAcceptedRun] = useState("");
   const [robotId, setRobotId] = useState("");
   const [deployments, setDeployments] = useState<Deployment[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,7 +68,14 @@ export function MissionControls({
     deployment?.observed_state === "stopping";
   const active = deployment?.observed_state === "running";
   async function submit(action: "prepare" | "start") {
-    if (!robotId || busy) return;
+    if (
+      !robotId ||
+      busy ||
+      role === "viewer" ||
+      (action === "prepare" && role === "operator")
+    )
+      return;
+    setReview(null);
     setBusy(true);
     setError("");
     setNotice("");
@@ -86,6 +100,7 @@ export function MissionControls({
         operation_id: string;
         execution_id?: string | null;
       };
+      setAcceptedRun(result.execution_id ?? "");
       setNotice(
         `${action === "prepare" ? "Preparation" : "Start"} accepted. Operation ${result.operation_id}${result.execution_id ? `; execution ${result.execution_id}` : ""}.`,
       );
@@ -104,6 +119,8 @@ export function MissionControls({
         <select
           value={robotId}
           onChange={(event) => {
+            setReview(null);
+            setAcceptedRun("");
             setRobotId(event.target.value);
             setError("");
             setNotice("");
@@ -134,20 +151,26 @@ export function MissionControls({
             <button
               className="button-secondary"
               type="button"
-              disabled={busy || pending || active}
-              onClick={() => void submit("prepare")}
+              disabled={
+                busy ||
+                pending ||
+                active ||
+                role === "viewer" ||
+                role === "operator"
+              }
+              onClick={() => setReview("prepare")}
             >
-              Prepare this revision
+              Prepare app version
             </button>
           )}
           {ready && (
             <button
               className="button-primary"
               type="button"
-              disabled={busy || pending || active}
-              onClick={() => void submit("start")}
+              disabled={busy || pending || active || role === "viewer"}
+              onClick={() => setReview("start")}
             >
-              Start mission
+              Start app
             </button>
           )}
           {active && (
@@ -157,6 +180,40 @@ export function MissionControls({
             </p>
           )}
         </>
+      )}
+      {review && (
+        <section className="empty-panel">
+          <h4>Review request</h4>
+          <p>
+            {review === "prepare" ? "Prepare" : "Start"}{" "}
+            {appLabel ?? revisionId} on{" "}
+            {robots.find((item) => item.id === robotId)?.name ?? robotId}. The
+            last observed deployment state is{" "}
+            {deployment?.observed_state ?? "unavailable"}.
+          </p>
+          <button
+            type="button"
+            className="button-primary"
+            disabled={
+              busy || pending || active || (review === "start" && !ready)
+            }
+            onClick={() => void submit(review)}
+          >
+            Confirm {review === "prepare" ? "preparation" : "start"}
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => setReview(null)}
+          >
+            Cancel
+          </button>
+        </section>
+      )}
+      {acceptedRun && (
+        <a href={resourcePath("runs", acceptedRun, organizationId)}>
+          Open requested run →
+        </a>
       )}
       {notice && <p role="status">{notice}</p>}
       {error && (
