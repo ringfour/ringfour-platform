@@ -1,6 +1,6 @@
 # Server stack
 
-This basic stack runs PostgreSQL, the Platform API, and the internal Console.
+This basic stack runs PostgreSQL, Adminer, the Platform API, and the internal Console.
 It intentionally contains no daemon or Runner; those run on the robot. The
 Console service uses the app's Vite development server and is for internal
 development/basic self-hosting only, not production publishing.
@@ -24,6 +24,36 @@ object-store credentials through the AWS SDK provider chain and put the API
 behind the deployment's HTTPS ingress/reverse proxy. `up.sh` creates and reuses
 a random local PostgreSQL password in the ignored `.env.server` file unless
 `POSTGRES_PASSWORD` is already set.
+
+## Browse PostgreSQL tables
+
+[Adminer](https://www.adminer.org/) is included as a standalone database browser
+using the [official Docker image](https://hub.docker.com/_/adminer), pinned to
+`6.3.0`. It connects directly to PostgreSQL on the Compose network. It provides
+table/schema inspection, row filtering/sorting and SQL queries, using PostgreSQL
+credentials and their database permissions.
+
+The operator starts it with the usual `./up.sh -d`. To add only Adminer when
+PostgreSQL is already running, run from the repository root:
+
+```sh
+./up.sh -d --no-deps adminer
+```
+
+Open **http://localhost:8083** and sign in with:
+
+| Field | Value |
+|---|---|
+| System | PostgreSQL |
+| Server | `postgres` (prefilled) |
+| Username | `ringfour` |
+| Password | The existing `POSTGRES_PASSWORD`, normally stored in `.env.server` |
+| Database | `ringfour` |
+
+The PostgreSQL `ringfour` account can also edit data and schemas; Adminer follows
+that account's permissions. Select a table, then **Select data** to browse rows.
+Adminer binds only to the host loopback interface. Set `ADMINER_PORT` in `.env`
+to change the default port `8083`.
 
 Organization invitations use SMTP through MailKit. Configure `SMTP_HOST`,
 `SMTP_PORT` (587 for STARTTLS or 465 for implicit TLS), `SMTP_USERNAME`,

@@ -17,6 +17,16 @@ services:
       timeout: 3s
       retries: 30
 
+  adminer:
+    image: adminer:6.3.0
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8083}:8080"
+
   api:
     build: ../../apps/api
     environment:
