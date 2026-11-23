@@ -76,11 +76,28 @@ Evidence: [AP-04](../evidence/AP-04.md). Human checks:
 `/home/cdr/.local/share/ringfour/python-artifacts/0.1.0.dev0/`.
 No Platform/virtual stack reload is needed for this slice.
 
+## AP-05 — verified catalog, shares/imports and pull grants (implementation and isolated acceptance complete)
+
+- [x] Implement authenticated publication, Store/App/revision reads and scoped pagination using AP-01 contracts and AP-02 tables.
+- [x] Validate manifest semantics/canonical digests and actual registry manifest/config bytes before publication; fail closed for unconfigured hosts/prefixes, indexes, mismatches, redirects and dependency failure.
+- [x] Serialize natural publication/import uniqueness and permanent idempotency outcomes; recheck mutation roles after locking and retain original replay/provenance.
+- [x] Grant/revoke destination-bound shares and preserve committed imports after expiry/revoke without exposing consumer resources to the publisher.
+- [x] Define and implement machine registry grants bound to negotiated session, current operation/candidate/import, exact image and deadline; request short-lived pull-only scope, recheck credential revocation after exchange, and keep credentials out of durable records and bind private repository policy to the original publisher.
+- [x] Pass full API regressions, contract/security fixtures and isolated Kestrel/PostgreSQL/real Distribution acceptance with private token refresh and API restart replay during registry outage.
+- [x] Add fail-closed server registry configuration and a human guide; retain installation/run dispatch for AP-07+.
+- [ ] Operator configures a hosted registry and reloads Platform API; verify publication/import with separate real Auth0 principals/workspaces and the selected provider's private pull policy.
+
+Evidence: [AP-05](../evidence/AP-05.md). Human checks:
+[AP-05](../human-testing/AP-05.md). No new EF migration and no virtual reload.
+The process harness uses an isolated restricted Bearer gateway with real
+Distribution, not a hosted provider or real Auth0 credentials. AP-06 has not started.
+
 ## Subsequent work
 
 AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local
-wheel distribution; public Python publication is deferred. Store distribution
-and App publishing follow in AP-05/06. Owner-scoped engine management (AP-08) precedes install
+wheel distribution; public Python publication is deferred. AP-05 Store/share/import and registry grants pass isolated acceptance; operator
+deployment and hosted registry/Auth0 checks remain pending. AP-06 supplies authoring
+and publishing CLI workflows. Owner-scoped engine management (AP-08) precedes install
 (AP-07) and mutually exclusive runs (AP-09). Runtime evidence (AP-10), Studio
 (AP-11), CLI (AP-12) and virtual topology (AP-08V) converge at AP-13 acceptance.
 Retire managed UI (AP-14) and remaining Runner clients/defaults (AP-15) only
@@ -88,6 +105,7 @@ through their explicit drain and recovery gates. AP-16 is a separate follow-up.
 
 AP-01 defines the contracts and supplies independently tested readers; its acceptance does not claim live App execution. AP-02 persistence/reset is accepted. AP-03 negotiation and inventory routes are accepted, including deployed `virt2` verification; App installation/run dispatch remains disabled.
 
-No App publication/install/run endpoints or dispatch are enabled by these slices. Do not
+AP-05 publication/read/import routes are implemented but await operator deployment.
+App installation/run dispatch is not enabled by these slices. Do not
 mark an external registry, Auth0, simulator or physical gate as passing from
 schema fixtures. The operator performs every Platform/virtual stack operation.

@@ -31,6 +31,8 @@ builder.Services.AddDbContext<RingfourDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 builder.Services.AddScoped<InvitationEmailSender>();
 builder.Services.AddHttpClient<Auth0UserInfoClient>();
+builder.Services.AddHttpClient<AppRegistry>(client => client.Timeout = TimeSpan.FromSeconds(10))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false });
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -103,6 +105,8 @@ app.MapHealthEndpoints();
 app.MapIdentityEndpoints();
 app.MapRobotEndpoints();
 app.MapAppInventoryEndpoints();
+app.MapAppCatalogEndpoints();
+app.MapAppRegistryEndpoints();
 app.MapPairingEndpoints();
 app.MapOperationEndpoints();
 app.MapScriptRevisionEndpoints();

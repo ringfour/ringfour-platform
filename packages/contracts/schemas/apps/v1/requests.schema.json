@@ -209,6 +209,28 @@
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
         }
       }
+    },
+    "registry_grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "revision_id",
+        "image"
+      ],
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "image": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/imageReference"
+        }
+      }
     }
   }
 }

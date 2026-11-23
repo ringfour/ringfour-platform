@@ -8,6 +8,7 @@ public sealed class ApiException(int statusCode, string code, string message)
 {
     public int StatusCode { get; } = statusCode;
     public string Code { get; } = code;
+    public bool Retryable { get; init; }
 
     public static ApiException InvalidInput(string message) =>
         new(StatusCodes.Status400BadRequest, "invalid_input", message);
@@ -47,7 +48,7 @@ public sealed class ErrorEnvelopeMiddleware(RequestDelegate next)
         }
         catch (ApiException exception)
         {
-            await WriteAsync(context, exception.StatusCode, exception.Code, exception.Message);
+            await WriteAsync(context, exception.StatusCode, exception.Code, exception.Message, exception.Retryable);
             return;
         }
         catch (BadHttpRequestException exception)
@@ -84,7 +85,7 @@ public sealed class ErrorEnvelopeMiddleware(RequestDelegate next)
         }
     }
 
-    private static async Task WriteAsync(HttpContext context, int statusCode, string code, string message)
+    private static async Task WriteAsync(HttpContext context, int statusCode, string code, string message, bool retryable = false)
     {
         if (context.Response.HasStarted)
         {
@@ -99,7 +100,7 @@ public sealed class ErrorEnvelopeMiddleware(RequestDelegate next)
             await context.Response.WriteAsJsonAsync(new { error = new {
                 code = code == "invalid_token" ? "unauthenticated" : code,
                 message = message.Length > 1000 ? message[..1000] : message,
-                details = new { retryable = false }, request_id = context.TraceIdentifier,
+                details = new { retryable }, request_id = context.TraceIdentifier,
             } }, RingfourJson.Options);
             return;
         }

@@ -1,7 +1,8 @@
 # App manifest v1 — new Ringfour design
 
-Status: AP-01 contract acceptance complete; App endpoints remain unimplemented. No publishing, installation or
-execution endpoint ships here. The normative input is
+Status: AP-01 contract acceptance complete. AP-05 implements manifest semantic
+validation and registry-verified publication; installation/execution remain later
+slices. See the active plan for deployed acceptance. The normative input is
 [app-pivot.md](../../app-pivot.md), sections 1–9. The standalone Robot Check JSON
 fixture is illustrative release metadata, not a published image or another
 example repository.
@@ -13,7 +14,7 @@ An App is stable within its authenticated publisher workspace, keyed by
 membership; a manifest never asserts a publisher. `release` identifies an
 immutable release under that App (three decimal version components). Publishing
 the same key/release with different canonical content must conflict. API IDs,
-imports and sharing rights are outside the manifest and still pending AP-01.
+imports and sharing rights are outside the manifest and defined by the API contract.
 
 Infrastructure manages Daemon and Agent. Only the authorized Daemon controls its
 robot's workloads through an operator-provided engine socket. Engine authority
@@ -42,7 +43,7 @@ Consumers must also enforce these rules, in this order:
    tag, credentials, scheme or query. Registry resolution must verify that the
    persisted digest is a concrete matching image, not a multi-platform index.
    Tooling may resolve an authoring index before publishing this manifest;
-   inspection/resolution is a later implementation gate.
+   AP-05 verifies the concrete manifest and configuration; authoring index resolution belongs to AP-06.
 4. Reject the same capability predicate in required and optional lists.
 5. Validate configuration schema semantics, then validate defaults as a complete
    configuration. Every required key must be declared. Bounds must be ordered;

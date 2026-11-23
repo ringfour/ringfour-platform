@@ -20,14 +20,14 @@ public static class AppInventoryEndpoints
         routes.MapGet("/v1/robots/{robotId:guid}/app-compatibility", Compatibility).RequireAuthorization().WithMetadata(new AppErrorResponse());
     }
 
-    private static async Task<Robot> Authenticate(HttpContext context, RingfourDbContext db, CancellationToken ct)
+    internal static async Task<Robot> Authenticate(HttpContext context, RingfourDbContext db, CancellationToken ct)
     {
         if (!Guid.TryParse(context.Request.Headers["x-ringfour-credential-id"], out var id))
             throw ApiException.InvalidToken("A robot credential is required.");
         return (await DeviceAuth.VerifyCredential(db, id, context.Request.Headers["x-ringfour-credential-secret"], ct)).Robot;
     }
 
-    private static DeviceConnection Current(DeviceConnectionManager manager, Robot robot, Guid sessionId)
+    internal static DeviceConnection Current(DeviceConnectionManager manager, Robot robot, Guid sessionId)
     {
         var current = manager.Get(robot.Id);
         if (current is null || current.SessionId != sessionId || current.Socket.State != WebSocketState.Open)

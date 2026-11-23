@@ -49,6 +49,14 @@ services:
       Storage__S3__Endpoint: ${STORAGE_S3_ENDPOINT:-}
       Storage__S3__Region: ${STORAGE_S3_REGION:-}
       Storage__S3__Bucket: ${STORAGE_S3_BUCKET:-}
+      Apps__Registries__0__Host: ${APPS_REGISTRY_HOST:-}
+      Apps__Registries__0__RepositoryPrefix: ${APPS_REGISTRY_REPOSITORY_PREFIX:-}
+      Apps__Registries__0__PublisherOrganizationId: ${APPS_REGISTRY_PUBLISHER_ORGANIZATION_ID:-}
+      Apps__Registries__0__AnonymousPull: ${APPS_REGISTRY_ANONYMOUS_PULL:-false}
+      Apps__Registries__0__TokenEndpoint: ${APPS_REGISTRY_TOKEN_ENDPOINT:-}
+      Apps__Registries__0__Service: ${APPS_REGISTRY_SERVICE:-}
+      Apps__Registries__0__Username: ${APPS_REGISTRY_USERNAME:-}
+      Apps__Registries__0__Password: ${APPS_REGISTRY_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy

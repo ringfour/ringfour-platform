@@ -2024,6 +2024,87 @@
           }
         }
       }
+    },
+    "registry_grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "robot_id",
+        "operation_id",
+        "revision_id",
+        "image",
+        "registry",
+        "repository",
+        "expires_at",
+        "authorization"
+      ],
+      "properties": {
+        "robot_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "image": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/imageReference"
+        },
+        "registry": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+        },
+        "authorization": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "anonymous"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "token"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "bearer"
+                },
+                "token": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8192,
+                  "pattern": "^[A-Za-z0-9._~+/-]+=*$"
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   }
 }

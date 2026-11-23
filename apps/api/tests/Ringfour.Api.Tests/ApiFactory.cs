@@ -10,7 +10,8 @@ public sealed class ApiFactory(
     bool migrateOnStartup = true,
     bool productionEnvironment = false,
     bool includeTestAuth = true,
-    string? storageRoot = null)
+    string? storageRoot = null,
+    IReadOnlyDictionary<string, string?>? extraConfiguration = null)
     : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -37,6 +38,8 @@ public sealed class ApiFactory(
             }
             values["Storage:Backend"] = "filesystem";
             values["Storage:FilesystemRoot"] = storageRoot ?? Path.GetTempPath();
+            if (extraConfiguration is not null)
+                foreach (var pair in extraConfiguration) values[pair.Key] = pair.Value;
             config.AddInMemoryCollection(values);
         });
     }

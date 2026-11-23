@@ -337,7 +337,7 @@ paths:
       tags:
       - apps
       operationId: publishAppRevision
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Owner/developer publishes verified immutable release metadata. Derive publisher from org membership,
         never the manifest. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -397,12 +397,64 @@ paths:
           application/json:
             schema:
               $ref: ../schemas/apps/v1/requests.schema.json#/$defs/publish
+  /v1/device/app-registry-grants:
+    post:
+      tags: [device, apps]
+      operationId: getDeviceAppRegistryGrant
+      x-implementation-status: implemented
+      description: Refresh a pull-only, at most five-minute registry credential for the authenticated robot's active preparation operation and exact candidate image. No credentials are persisted in operations.
+      security: [{deviceCredentialId: [], deviceCredentialSecret: []}]
+      parameters:
+        - {name: x-ringfour-credential-id, in: header, required: true, schema: {type: string, format: uuid}}
+        - {name: x-ringfour-credential-secret, in: header, required: true, schema: {type: string}}
+        - {name: x-ringfour-device-session, in: header, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '../schemas/apps/v1/requests.schema.json#/$defs/registry_grant'}
+      responses:
+        '200':
+          description: Ephemeral pull authority; repository-scoped bearer grants still require exact digest enforcement on the device
+          content:
+            application/json:
+              schema: {$ref: '../schemas/apps/v1/api.schema.json#/$defs/registry_grant'}
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema: {$ref: '../schemas/errors/v2/app-error.schema.json'}
+        '401':
+          description: Machine authentication required
+          content:
+            application/json:
+              schema: {$ref: '../schemas/errors/v2/app-error.schema.json'}
+        '404':
+          description: No authorized operation or candidate
+          content:
+            application/json:
+              schema: {$ref: '../schemas/errors/v2/app-error.schema.json'}
+        '409':
+          description: Session, support or deadline conflict
+          content:
+            application/json:
+              schema: {$ref: '../schemas/errors/v2/app-error.schema.json'}
+        '413':
+          description: Body limit exceeded
+          content:
+            application/json:
+              schema: {$ref: '../schemas/errors/v2/app-error.schema.json'}
+        '503':
+          description: Registry unavailable
+          content:
+            application/json:
+              schema: {$ref: '../schemas/errors/v2/app-error.schema.json'}
   /v1/store/apps:
     get:
       tags:
       - apps
       operationId: searchStoreApps
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Authenticated workspace members discover listed Apps. Listings reveal no consumer robots or history.
         New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -453,8 +505,8 @@ paths:
       tags:
       - apps
       operationId: getApp
-      x-implementation-status: contract-only
-      description: Resolve a listed, published-by-member, or imported App within current actor authority. New Ringfour
+      x-implementation-status: implemented
+      description: Resolve a listed, published-by-member, directly shared or imported App within current actor authority. New Ringfour
         design; see docs/apps-api-contract.md.
       parameters:
       - name: app_id
@@ -482,7 +534,7 @@ paths:
       tags:
       - apps
       operationId: listAppRevisions
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Return revisions independently authorized by listed status, publisher membership, valid share or
         existing import. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -513,7 +565,7 @@ paths:
       tags:
       - apps
       operationId: getAppRevision
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Return one authorized immutable release. A known ID alone grants no access. New Ringfour design;
         see docs/apps-api-contract.md.
       parameters:
@@ -548,7 +600,7 @@ paths:
       tags:
       - apps
       operationId: grantAppRevisionShare
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Publisher owner/developer grants a specific revision to a specific destination workspace until
         expiry. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -584,7 +636,7 @@ paths:
       tags:
       - apps
       operationId: revokeAppRevisionShare
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Publisher owner/developer revokes future use of the grant. Existing imports retain their historical
         authorization. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -614,7 +666,7 @@ paths:
       tags:
       - apps
       operationId: importAppRevision
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Destination owner/developer imports a listed revision or presents a valid destination-bound share.
         Server derives all provenance. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -649,7 +701,7 @@ paths:
       tags:
       - apps
       operationId: listAppImports
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: List workspace revision-scoped imports without changing their publisher. New Ringfour design; see
         docs/apps-api-contract.md.
       parameters:

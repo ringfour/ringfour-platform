@@ -1,15 +1,17 @@
 # Apps API and runtime v1 — new Ringfour design
 
 Status: AP-01 contracts and AP-02 persistence/reset are complete. AP-03 implements
-device negotiation/inventory and scoped status/compatibility previews. App
-publication, installation, execution and runtime routes remain contract-only.
+device negotiation/inventory and scoped status/compatibility previews. AP-05 implements publication, discovery, direct sharing, workspace imports
+and operation-bound registry grants. Installation, execution and runtime routes
+remain contract-only; deployed AP-05 acceptance is pending operator reload and
+hosted registry/Auth0 checks.
 [Manifest v1](apps-contract.md) defines release validation; the
 [active plan](milestones/apps-pivot.md) tracks implementation.
 [Device protocol v1](apps-device-contract.md) defines the separate exchange.
 
 OpenAPI: [hosted API](../packages/contracts/openapi/ringfour-api.v1.yaml) and
-[local runtime](../packages/contracts/openapi/ringfour-runtime.v1.yaml). New
-operations carry `x-implementation-status: contract-only`.
+[local runtime](../packages/contracts/openapi/ringfour-runtime.v1.yaml). Operations carry `x-implementation-status: implemented` or `contract-only`
+according to the active milestone.
 [Resource definitions](../packages/contracts/schemas/apps/v1/api.schema.json),
 [mutation inputs](../packages/contracts/schemas/apps/v1/requests.schema.json),
 and [App errors](../packages/contracts/schemas/errors/v2/app-error.schema.json)
@@ -40,7 +42,9 @@ configuration, output, artifacts, interactions or history.
 
 For direct imports, resolve the grant server-side, require the exact revision,
 publisher, destination workspace and unexpired/unrevoked grant at import time,
-and persist the source/actor atomically with the import. Store installs can
+and persist the source/actor atomically with the import. Missing-grant advice
+(`share_required`) is returned only when the revision is already readable; a
+guessed inaccessible private revision remains scoped 404. Store installs can
 create this authorized import in the same transaction as the installation and
 operation. An existing authorized import is reused. A later grant revocation
 prevents new imports through that grant; it does not revoke already imported
@@ -217,10 +221,56 @@ application rows, outputs, artifact bytes, HITL timestamps and pending work are
 discarded under the explicit user-authorized reset; only identity JSON is
 retained. Full application backup gates were waived for this reset. AP-02
 preserves device SQLite enrollment/outbox data; AP-03 adds inventory reporting.
-App writers/dispatch remain gated by their installation/execution milestones.
+Installation/run writers and dispatch remain gated by their corresponding milestones.
 
 Socket-test migration remains narrow: `tests/e2e/04-runner.sh` continues rejecting
 Runner sockets. `tests/e2e/06-missions.sh` keeps its no-socket assertion for the
 legacy fixture. AP-08/08V adds an explicit positive socket/ownership assertion
 for only the authorized App Daemon and negative assertions for server, Runner
 and App containers. Do not weaken the blanket legacy check ahead of that slice.
+
+
+## AP-05 registry and catalog contract
+
+New design: `POST /v1/device/app-registry-grants` refreshes ephemeral pull
+credentials, bound to a current negotiated machine session, nonterminal and
+unexpired install/update/rollback operation, installation candidate operation,
+revision and exact image target. The candidate and its workspace import are
+server-owned authority. Recheck them after the registry exchange before returning
+credentials. This endpoint creates no operation or installation; AP-07 supplies
+those writers. Machine requests do not use human mutation idempotency headers.
+
+Only operator-allowlisted registry hosts and repository prefixes are contacted.
+Private policies additionally require an explicit publisher workspace binding;
+a consumer cannot bypass a private release grant by republishing its known digest
+under another publisher. The grant endpoint derives that publisher from the
+stored revision, independently of the consumer robot workspace.
+HTTPS is mandatory outside Development. Development-only explicit HTTP permits
+isolated registry acceptance. Redirects and implicit proxy discovery are disabled.
+Registry manifest/config responses are bounded; verify SHA-256 over actual bytes,
+matching response media type and concrete manifest/config OS/architecture.
+Reject indexes and failed or redirected fetches before inserting catalog metadata.
+
+Private registries must implement the Distribution Bearer token exchange with an
+operator-configured exact token endpoint and service. The API asks only for
+`repository:<repository>:pull`, never relays an arbitrary challenge URL and never
+returns long-lived Basic credentials. Reject token lifetimes beyond five minutes.
+Anonymous pulls require explicit operator policy. Repository-scoped tokens can
+permit other digests in that repository; device execution must still enforce the
+authorized image digest. Tokens exist only in memory/response and responses use
+`Cache-Control: no-store`. Errors and logs exclude credentials.
+
+Publisher role is checked before registry access. Identical publication and
+idempotency replays do not need the registry to remain online. Different manifest
+content or visibility under an existing release conflicts. App display metadata is initialized on first publication and updated only by
+a listed publication. Unlisted revisions keep their display changes within the
+authorized revision manifest. Immutable revisions keep original manifest content. Import/revocation serialize on the share row: existing imports
+retain their original source/actor after expiry or revocation; new imports require
+a valid grant. Reads of a valid directly shared revision also permit its App
+metadata. Pagination uses creation/publication time and UUID, defaults to 50,
+limits to 100 and rechecks authority on every page. Search is literal,
+case-insensitive App name/key/description matching, bounded to 200 characters.
+
+Hosted App JSON bodies are bounded to 65,536 bytes, including publication wrappers.
+No AP-05 database migration is required; AP-02 supplied the catalog, import/share
+and permanent App idempotency tables. Secrets and ephemeral grants are not stored.

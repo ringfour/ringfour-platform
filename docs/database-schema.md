@@ -215,3 +215,18 @@ robot-local sequence and organization isolation remain unchanged. The daemon's
 inbox event to the outbox and deleting it are one SQLite transaction. The
 downgrade cannot succeed while motion rows have null operation IDs; it must
 not discard those history records.
+
+
+### AP-05 catalog writers
+
+AP-05 uses the existing `apps`, `app_revisions`, `app_shares`, `app_imports` and
+`app_idempotency_records` tables; there is no new migration. Publication verifies
+all remote targets before inserting metadata, then commits the revision and
+idempotency outcome atomically. Workspace row locks serialize natural keys and
+fresh mutation authority; share row locks serialize import against revoke.
+Existing imports retain immutable publisher/source/actor after share expiry or
+revocation. Permanent idempotency outcomes retain `{status, body}` and a canonical
+request fingerprint scoped to principal/route/target/key. No TTL is added.
+Registry credentials and grant responses are ephemeral and are never persisted.
+Machine grants read existing operation/candidate/import authority; AP-07 owns
+creating the installation operations used by those checks.

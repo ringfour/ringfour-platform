@@ -68,3 +68,25 @@ for the full invitation flow and acceptance steps.
 `tests/integration/compose/docker-compose.yml` is the separate local integration stack. It
 also includes a local daemon and Runner to test device flows; do not deploy
 that test topology as the server.
+
+
+## App image registry (AP-05)
+
+Catalog publication and machine pulls require an explicit registry policy.
+Set `APPS_REGISTRY_HOST` and `APPS_REGISTRY_REPOSITORY_PREFIX`; blank values fail
+closed. HTTPS is required in the deployed API. Set
+`APPS_REGISTRY_ANONYMOUS_PULL=true` only for public pulls. Private registries need
+`APPS_REGISTRY_TOKEN_ENDPOINT`, `APPS_REGISTRY_SERVICE`,
+`APPS_REGISTRY_USERNAME` and `APPS_REGISTRY_PASSWORD`, supplied through the normal
+secret environment. Private policies also require
+`APPS_REGISTRY_PUBLISHER_ORGANIZATION_ID` to bind the repository to its publishing
+workspace; consumer robots obtain pull authority through imports of that
+publisher’s revisions. The configured Distribution Bearer service must issue
+pull-only tokens lasting at most five minutes; Basic-only private pulls are not
+supported. Additional policies can be supplied through the API configuration's
+`Apps:Registries` array in other deployment recipes.
+
+Follow [AP-05 human testing](../../docs/human-testing/AP-05.md) to reload the API
+and verify two-workspace publication/sharing/imports. The operator performs that
+stack operation. No virtual reload or database migration is required. This
+configuration does not enable App installation or start/stop dispatch.
