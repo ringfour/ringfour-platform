@@ -1,5 +1,7 @@
 # Script execution v1 — proposed Ringfour design
 
+Migration status: this is the **legacy** contract, retained for existing clients and history. New Apps use [App manifest v1](apps-contract.md) and the image entrypoint, without a mission or fixed Runner. Retire these writers only after the [Apps plan](milestones/apps-pivot.md) AP-13–15 gates; preserve IDs, artifacts, Logbook and HITL acknowledgements.
+
 These are new Ringfour interfaces, not claims about an existing SDK or Agent.
 Implemented behavior and acceptance results are recorded in `docs/evidence/05.md`.
 

@@ -1,5 +1,7 @@
 # Milestone acceptance checklist
 
+Active Apps work is tracked separately in [Apps pivot](milestones/apps-pivot.md). AP-01 contract acceptance is complete; existing milestone results below do not establish App-container acceptance.
+
 Status reviewed 2026-11-18. This checklist tracks implementation, automated
 verification, and live acceptance separately. Check an item only when its
 evidence is recorded in the linked milestone evidence. Use the existing live

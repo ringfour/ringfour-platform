@@ -8,6 +8,7 @@ info:
     (milestone 02) and device connectivity with durable operations
     (milestone 03), private Runner diagnostics (milestone 04) and script
     revisions and executions (milestone 05).
+    App endpoints added by AP-01 are contract-only until their implementation milestones.
     All /v1 endpoints require an Auth0 RS256 access token for audience
     https://api.ringfour.eu and share the error envelope referenced below,
     except the /v1/device/* endpoints which authenticate by possession of an
@@ -20,6 +21,8 @@ servers:
   - url: http://localhost:8080
     description: Local Compose stack
 tags:
+  - name: apps
+    description: Proposed Apps pivot contracts; no App endpoints implemented yet.
   - name: health
     description: Infrastructure health; no authentication, no product data.
   - name: identity
@@ -41,6 +44,1264 @@ tags:
   - name: mission-ui
     description: Execution-scoped mission UI sessions and isolated-origin bootstrap.
 paths:
+  /v1/device/app-protocol/negotiate:
+    post:
+      tags:
+      - device
+      - apps
+      operationId: negotiateDeviceAppProtocol
+      x-implementation-status: contract-only
+      description: After unchanged v1 welcome, negotiate App payload support for this exact active session and stable
+        deployment namespace. No common version returns daemon_upgrade_required. Never dispatch App commands before
+        success.
+      parameters:
+      - &device_id002
+        name: x-ringfour-credential-id
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - &device_id003
+        name: x-ringfour-credential-secret
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '200':
+          description: Authorized result; no App execution is started
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/negotiation_response
+        '400': &device_id004
+          description: Invalid App protocol input
+          content:
+            application/json:
+              schema: &device_id001
+                $ref: ../schemas/errors/v2/app-error.schema.json
+        '401': &device_id005
+          description: Invalid machine credential or human authentication
+          content:
+            application/json:
+              schema: *device_id001
+        '404': &device_id006
+          description: Missing, inaccessible or unsupported endpoint
+          content:
+            application/json:
+              schema: *device_id001
+        '409': &device_id007
+          description: Stale session, unsupported App protocol, sequence gap or conflicting replay
+          content:
+            application/json:
+              schema: *device_id001
+        '413': &device_id008
+          description: Report exceeds 65536 UTF-8 bytes
+          content:
+            application/json:
+              schema: *device_id001
+        '503': &device_id009
+          description: State store unavailable
+          content:
+            application/json:
+              schema: *device_id001
+      security:
+      - deviceCredentialId: []
+        deviceCredentialSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/negotiation_request
+  /v1/device/app-inventory:
+    put:
+      tags:
+      - device
+      - apps
+      operationId: reportDeviceAppInventory
+      x-implementation-status: contract-only
+      description: Current negotiated session reports observed Agent inventory and engine target. Retain cached observation
+        as explanatory only. Durable report ID/sequence replay is independent of reconnect session headers.
+      parameters:
+      - *device_id002
+      - *device_id003
+      - name: x-ringfour-device-session
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized result; no App execution is started
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/report_accepted
+        '400': *device_id004
+        '401': *device_id005
+        '404': *device_id006
+        '409': *device_id007
+        '413': *device_id008
+        '503': *device_id009
+      security:
+      - deviceCredentialId: []
+        deviceCredentialSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/inventory_report
+  /v1/device/app-observations:
+    put:
+      tags:
+      - device
+      - apps
+      operationId: reportDeviceAppObservations
+      x-implementation-status: contract-only
+      description: Atomically record bounded App operation, installation and run observations. Derive robot, organization
+        and actors from durable authority. Do not promote installed/running from an acknowledgement.
+      parameters:
+      - *device_id002
+      - *device_id003
+      - name: x-ringfour-device-session
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized result; no App execution is started
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/report_accepted
+        '400': *device_id004
+        '401': *device_id005
+        '404': *device_id006
+        '409': *device_id007
+        '413': *device_id008
+        '503': *device_id009
+      security:
+      - deviceCredentialId: []
+        deviceCredentialSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/observations
+  /v1/device/app-revisions/{revision_id}:
+    get:
+      tags:
+      - device
+      - apps
+      operationId: getDeviceAppRevision
+      x-implementation-status: contract-only
+      description: Resolve a manifest only for an authorized nonterminal operation on the authenticated robot. A known
+        revision UUID does not authorize retrieval. App commands contain no expiring URLs or registry tokens.
+      parameters:
+      - *device_id002
+      - *device_id003
+      - name: x-ringfour-device-session
+        in: header
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: revision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: operation_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized result; no App execution is started
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/revision
+        '400': *device_id004
+        '401': *device_id005
+        '404': *device_id006
+        '409': *device_id007
+        '413': *device_id008
+        '503': *device_id009
+      security:
+      - deviceCredentialId: []
+        deviceCredentialSecret: []
+  /v1/robots/{robot_id}/app-status:
+    get:
+      tags:
+      - robots
+      - apps
+      operationId: getRobotAppStatus
+      x-implementation-status: contract-only
+      description: Workspace member reads current session support and last-received target/inventory. Offline status
+        retains timestamps and never authorizes a current capability check.
+      parameters:
+      - name: robot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized result; no App execution is started
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/robot_app_status
+        '400': *device_id004
+        '401': *device_id005
+        '404': *device_id006
+        '409': *device_id007
+        '413': *device_id008
+        '503': *device_id009
+  /v1/robots/{robot_id}/app-compatibility:
+    get:
+      tags:
+      - robots
+      - apps
+      operationId: previewAppCompatibility
+      x-implementation-status: contract-only
+      description: Workspace member previews an accessible revision against last-known inventory. This preview does
+        not pull, install or authorize dispatch; the Daemon must recheck current inventory before pull and start.
+      parameters:
+      - name: robot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: revision_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: share_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized result; no App execution is started
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/device/apps/v1/protocol.schema.json#/$defs/compatibility
+        '400': *device_id004
+        '401': *device_id005
+        '404': *device_id006
+        '409': *device_id007
+        '413': *device_id008
+        '503': *device_id009
+  /v1/app-installations/{installation_id}/configuration-revisions/{configuration_revision_id}:
+    get:
+      tags: [apps]
+      operationId: getAppConfigurationRevision
+      x-implementation-status: contract-only
+      description: Read an immutable configuration revision only within this installation and its workspace. New Ringfour design.
+      parameters:
+        - { name: installation_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: configuration_revision_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Immutable validated values
+          content:
+            application/json:
+              schema: { $ref: '../schemas/apps/v1/api.schema.json#/$defs/configuration_revision' }
+        '400': { description: Invalid input, content: { application/json: { schema: { $ref: '../schemas/errors/v2/app-error.schema.json' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../schemas/errors/v2/app-error.schema.json' } } } }
+        '404': { description: Missing or inaccessible configuration, content: { application/json: { schema: { $ref: '../schemas/errors/v2/app-error.schema.json' } } } }
+        '409': { description: State conflict, content: { application/json: { schema: { $ref: '../schemas/errors/v2/app-error.schema.json' } } } }
+        '503': { description: Storage unavailable, content: { application/json: { schema: { $ref: '../schemas/errors/v2/app-error.schema.json' } } } }
+  /v1/organizations/{org_id}/app-revisions:
+    post:
+      tags:
+      - apps
+      operationId: publishAppRevision
+      x-implementation-status: contract-only
+      description: Owner/developer publishes verified immutable release metadata. Derive publisher from org membership,
+        never the manifest. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '201':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/revision
+        '400': &id002
+          description: Invalid App input or configuration
+          content:
+            application/json:
+              schema: &id001
+                $ref: ../schemas/errors/v2/app-error.schema.json
+        '401': &id003
+          description: Authentication required
+          content:
+            application/json:
+              schema: *id001
+        '403': &id004
+          description: Insufficient role
+          content:
+            application/json:
+              schema: *id001
+        '404': &id005
+          description: Missing or inaccessible scoped resource
+          content:
+            application/json:
+              schema: *id001
+        '409': &id006
+          description: Revision, execution, precondition or idempotency conflict
+          content:
+            application/json:
+              schema: *id001
+        '413': &id007
+          description: Request exceeds documented byte limit
+          content:
+            application/json:
+              schema: *id001
+        '503': &id008
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/publish
+  /v1/store/apps:
+    get:
+      tags:
+      - apps
+      operationId: searchStoreApps
+      x-implementation-status: contract-only
+      description: Authenticated workspace members discover listed Apps. Listings reveal no consumer robots or history.
+        New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - &id009
+        name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 1024
+      - &id010
+        name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 200
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/app_page
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/apps/{app_id}:
+    get:
+      tags:
+      - apps
+      operationId: getApp
+      x-implementation-status: contract-only
+      description: Resolve a listed, published-by-member, or imported App within current actor authority. New Ringfour
+        design; see docs/apps-api-contract.md.
+      parameters:
+      - name: app_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/app
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/apps/{app_id}/revisions:
+    get:
+      tags:
+      - apps
+      operationId: listAppRevisions
+      x-implementation-status: contract-only
+      description: Return revisions independently authorized by listed status, publisher membership, valid share or
+        existing import. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: app_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - *id009
+      - *id010
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/revision_page
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-revisions/{revision_id}:
+    get:
+      tags:
+      - apps
+      operationId: getAppRevision
+      x-implementation-status: contract-only
+      description: Return one authorized immutable release. A known ID alone grants no access. New Ringfour design;
+        see docs/apps-api-contract.md.
+      parameters:
+      - name: revision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: share_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/revision
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-revisions/{revision_id}/shares:
+    post:
+      tags:
+      - apps
+      operationId: grantAppRevisionShare
+      x-implementation-status: contract-only
+      description: Publisher owner/developer grants a specific revision to a specific destination workspace until
+        expiry. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: revision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '201':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/share
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/share
+  /v1/app-shares/{share_id}/revoke:
+    post:
+      tags:
+      - apps
+      operationId: revokeAppRevisionShare
+      x-implementation-status: contract-only
+      description: Publisher owner/developer revokes future use of the grant. Existing imports retain their historical
+        authorization. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/share
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/organizations/{org_id}/app-imports:
+    post:
+      tags:
+      - apps
+      operationId: importAppRevision
+      x-implementation-status: contract-only
+      description: Destination owner/developer imports a listed revision or presents a valid destination-bound share.
+        Server derives all provenance. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '201':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/import
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/import
+    get:
+      tags:
+      - apps
+      operationId: listAppImports
+      x-implementation-status: contract-only
+      description: List workspace revision-scoped imports without changing their publisher. New Ringfour design; see
+        docs/apps-api-contract.md.
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - *id009
+      - *id010
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/import_page
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/robots/{robot_id}/app-installations:
+    post:
+      tags:
+      - apps
+      operationId: installApp
+      x-implementation-status: contract-only
+      description: Robot workspace owner/developer installs a revision. If absent, create authorized workspace import
+        atomically. No run is created. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: robot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '202':
+          description: Durably accepted; inspect operation and observed resource state
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/installation_accepted
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/install
+    get:
+      tags:
+      - apps
+      operationId: listRobotAppInstallations
+      x-implementation-status: contract-only
+      description: Workspace member reads available, candidate and independently observed installed values. New Ringfour
+        design; see docs/apps-api-contract.md.
+      parameters:
+      - name: robot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - *id009
+      - *id010
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/installation_page
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-installations/{installation_id}:
+    get:
+      tags:
+      - apps
+      operationId: getAppInstallation
+      x-implementation-status: contract-only
+      description: Read one organization-scoped installation. Last observation is not current liveness. New Ringfour
+        design; see docs/apps-api-contract.md.
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/installation
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-installations/{installation_id}/configure:
+    post:
+      tags:
+      - apps
+      operationId: configureAppInstallation
+      x-implementation-status: contract-only
+      description: Owner/developer validates a complete replacement config and applies only when idle; preserve prior
+        binding on failure. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '202':
+          description: Durably accepted; inspect operation and observed resource state
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/installation_accepted
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/configure
+  /v1/app-installations/{installation_id}/update:
+    post:
+      tags:
+      - apps
+      operationId: updateAppInstallation
+      x-implementation-status: contract-only
+      description: Owner/developer stages a candidate while retaining the installed binding; apply when idle. No run
+        is created. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '202':
+          description: Durably accepted; inspect operation and observed resource state
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/installation_accepted
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/update
+  /v1/app-installations/{installation_id}/rollback:
+    post:
+      tags:
+      - apps
+      operationId: rollbackAppInstallation
+      x-implementation-status: contract-only
+      description: Owner/developer selects a previously installed binding and config for this installation; apply
+        when idle without replaying a run. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '202':
+          description: Durably accepted; inspect operation and observed resource state
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/installation_accepted
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/rollback
+  /v1/app-installations/{installation_id}/start:
+    post:
+      tags:
+      - apps
+      operationId: startAppInstallation
+      x-implementation-status: contract-only
+      description: Operator/developer/owner starts the exact installed revision and configuration. Allocate one shared
+        execution slot and run ID transactionally. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '202':
+          description: Durably accepted; inspect operation and observed resource state
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/run_accepted
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/start
+  /v1/app-installations/{installation_id}/stop:
+    post:
+      tags:
+      - apps
+      operationId: stopAppInstallation
+      x-implementation-status: contract-only
+      description: Operator/developer/owner stops only expected_run_id bound to this installation. A delayed request
+        cannot resolve to a later run. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '202':
+          description: Durably accepted; inspect operation and observed resource state
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/run_accepted
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/stop
+  /v1/app-operations/{operation_id}:
+    get:
+      tags:
+      - apps
+      operationId: getAppOperation
+      x-implementation-status: contract-only
+      description: Read durable operation acceptance separately from observed installation or run. New Ringfour design;
+        see docs/apps-api-contract.md.
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/operation
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/organizations/{org_id}/app-runs:
+    get:
+      tags:
+      - apps
+      operationId: listAppRuns
+      x-implementation-status: contract-only
+      description: List App runs with immutable attribution. General and App-scoped views identify the same run records.
+        New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - *id009
+      - *id010
+      - name: app_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: installation_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: robot_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/run_page
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-runs/{run_id}:
+    get:
+      tags:
+      - apps
+      operationId: getAppRun
+      x-implementation-status: contract-only
+      description: Read the exact revision, image, configuration, publisher and initiating actor retained after updates/uninstall.
+        New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/run
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-runs/{run_id}/output:
+    get:
+      tags:
+      - apps
+      operationId: getAppRunOutput
+      x-implementation-status: contract-only
+      description: Read durable per-stream UTF-8 output. Offsets count bytes; sealed means local output is durably
+        final, independently of hosted upload progress. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: stream
+        in: query
+        required: true
+        schema:
+          enum:
+          - stdout
+          - stderr
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/output_page
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/organizations/{org_id}/app-logbook:
+    get:
+      tags:
+      - apps
+      operationId: listAppLogbook
+      x-implementation-status: contract-only
+      description: Workspace-wide App and robot events; optional App/installation/run filters link the same run. Legacy
+        history remains at its existing endpoint during migration. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - *id009
+      - *id010
+      - name: app_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: installation_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: run_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: robot_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/logbook/v3/app-history-page.schema.json
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-runs/{run_id}/interactions/{request_id}:
+    get:
+      tags:
+      - apps
+      operationId: getAppRunInteraction
+      x-implementation-status: contract-only
+      description: Read only an interaction attributed to this run and organization. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/interactions/v2/app-interaction.schema.json
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-runs/{run_id}/interactions/{request_id}/responses:
+    post:
+      tags:
+      - apps
+      operationId: respondToAppRunInteraction
+      x-implementation-status: contract-only
+      description: Operator/developer/owner submits one provisional response. Submitted does not mean applied; only
+        device acknowledgement confirms application. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/interactions/v2/app-interaction.schema.json
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/interactions/v1/response-request.schema.json
+  /v1/app-runs/{run_id}/artifacts/{artifact_id}:
+    get:
+      tags:
+      - apps
+      operationId: getAppRunArtifact
+      x-implementation-status: contract-only
+      description: Inspect one run-owned artifact. Availability is independent of run completion. New Ringfour design;
+        see docs/apps-api-contract.md.
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/artifacts/v2/app-artifact.schema.json
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-runs/{run_id}/artifacts/{artifact_id}/content:
+    get:
+      tags:
+      - apps
+      operationId: downloadAppRunArtifact
+      x-implementation-status: contract-only
+      description: Authorize bytes by run, artifact and workspace. Pending bytes are unavailable; never use a publisher
+        listing to authorize access. New Ringfour design; see docs/apps-api-contract.md.
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Authorized scoped result
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
   /v1/device/interactions/{request_id}:
     put:
       tags: [interactions, device]
@@ -1864,6 +3125,12 @@ components:
       schema:
         type: string
         pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    AppIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Required for App mutations. Scope by principal, route and target; identical canonical input replays the original IDs/result before re-evaluating current state. Changed input conflicts. Retain a replay tombstone for the lifetime of the referenced records; no automatic expiry in the Apps v1 release.
+      schema: { type: string, minLength: 1, maxLength: 200 }
     IdempotencyKey:
       name: idempotency-key
       in: header

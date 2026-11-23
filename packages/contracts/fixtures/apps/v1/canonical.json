@@ -1,0 +1,4 @@
+{
+  "json": "{\"app_key\":\"robot-check\",\"capabilities\":{\"optional\":[{\"capability\":\"cameras\"}],\"required\":[{\"capability\":\"imu\"}]},\"configuration\":{\"defaults\":{\"sample_count\":1},\"schema\":{\"additionalProperties\":false,\"properties\":{\"sample_count\":{\"maximum\":20,\"minimum\":1,\"type\":\"integer\"}},\"required\":[\"sample_count\"],\"type\":\"object\"}},\"display\":{\"description\":\"Read an IMU sample and write the result.\",\"name\":\"Robot Check\"},\"release\":\"0.1.0\",\"schema_version\":1,\"targets\":[{\"architecture\":\"amd64\",\"image\":\"registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"native_requirements\":[],\"os\":\"linux\"}]}",
+  "digest": "sha256:1123acdf65791587b211b0b3b4d9aa428e95cd667aa19b540d2c90b5e2e34db3"
+}

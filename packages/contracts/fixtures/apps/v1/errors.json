@@ -1,0 +1,98 @@
+[
+  {
+    "name": "inventory_unavailable",
+    "schema": "errors/v2/app-error.schema.json",
+    "value": {
+      "error": {
+        "code": "inventory_unavailable",
+        "message": "inventory unavailable",
+        "request_id": "fixture-request",
+        "details": {
+          "retryable": true,
+          "inventory_observed_at": null
+        }
+      }
+    }
+  },
+  {
+    "name": "missing_required",
+    "schema": "errors/v2/app-error.schema.json",
+    "value": {
+      "error": {
+        "code": "missing_required",
+        "message": "missing required",
+        "request_id": "fixture-request",
+        "details": {
+          "retryable": false,
+          "missing_required": [
+            {
+              "capability": "groups",
+              "instance_kind": "arm"
+            }
+          ],
+          "missing_optional": []
+        }
+      }
+    }
+  },
+  {
+    "name": "no_matching_image",
+    "schema": "errors/v2/app-error.schema.json",
+    "value": {
+      "error": {
+        "code": "no_matching_image",
+        "message": "no matching image",
+        "request_id": "fixture-request",
+        "details": {
+          "retryable": false,
+          "os": "linux",
+          "architecture": "arm64"
+        }
+      }
+    }
+  },
+  {
+    "name": "pull_failed",
+    "schema": "errors/v2/app-error.schema.json",
+    "value": {
+      "error": {
+        "code": "pull_failed",
+        "message": "pull failed",
+        "request_id": "fixture-request",
+        "details": {
+          "retryable": true
+        }
+      }
+    }
+  },
+  {
+    "name": "container_lost",
+    "schema": "errors/v2/app-error.schema.json",
+    "value": {
+      "error": {
+        "code": "container_lost",
+        "message": "container lost",
+        "request_id": "fixture-request",
+        "details": {
+          "retryable": false
+        }
+      }
+    }
+  },
+  {
+    "name": "active_run_changed",
+    "schema": "errors/v2/app-error.schema.json",
+    "value": {
+      "error": {
+        "code": "active_run_changed",
+        "message": "active run changed",
+        "request_id": "fixture-request",
+        "details": {
+          "retryable": false,
+          "expected_run_id": "00000000-0000-4000-8000-000000000012",
+          "active_run_id": "00000000-0000-4000-8000-000000000033"
+        }
+      }
+    }
+  }
+]

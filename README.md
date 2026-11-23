@@ -14,14 +14,16 @@ Build a hosted robotics application platform in small, sequential vertical slice
 | Platform tests | xUnit + Testcontainers with real PostgreSQL |
 | Shared contracts | OpenAPI + JSON Schema |
 | Device coordinator | Python FastAPI daemon, durable SQLite state |
-| Execution | Fixed, separate Python Runner container; `uv`; cached per-revision virtual environments; no Docker socket |
+| Execution | Apps: digest-pinned containers managed by the enrolled Daemon through an operator-provided engine socket. Legacy: fixed Runner and uv until migration acceptance. |
 | Developer tool | Python Typer + Rich CLI |
 | Console | Internal development-only React + TypeScript + Vite + shadcn/ui; authenticated, deliberate privileges |
 | Repository | Monorepo now; independent application dependencies, packaging and release boundaries for later extraction |
 | Robotics | Existing SDK and Agent stay separate projects; Agent owns ROS, capabilities and safety |
 | Robot profile | Owned by Agent/robot repository; Ringfour references its identity/version, never becomes its authoring authority |
 
-Deployment infrastructure owns service containers. Base101 owns robot deployment configuration; Platform owns the server stack. Ringfour provisions Python application code inside the fixed Runner. v0.1 runs trusted customer-authored code. A virtual environment isolates dependencies, not hostile code. Studio, third-party mission distribution, WhatsApp integration and generalized execution backends are deferred.
+Deployment infrastructure owns Daemon and Agent containers; only the enrolled Daemon manages its robot’s App workloads. The engine socket grants engine authority and is never passed to Apps or the server. Robot deployments remain operator-owned. The Agent owns ROS and safety. Legacy source execution remains in the fixed Runner during migration; uv environments isolate dependencies, not hostile code.
+
+The active implementation plan is [Apps pivot](docs/milestones/apps-pivot.md), governed by [the pivot specification](../app-pivot.md) and [backlog](../apps-pivot-backlog.md). [App manifest v1](docs/apps-contract.md), [API/runtime](docs/apps-api-contract.md) and [device negotiation](docs/apps-device-contract.md) complete the AP-01 contract gate. App product endpoints and execution are not implemented yet. Existing milestones and source/Runner contracts remain legacy regression references.
 
 ## Repository
 
@@ -45,7 +47,7 @@ Applications communicate through versioned contracts, never imports of another a
 
 Use the [starter database schema](docs/database-schema.md) for milestones 00–03 and its change rules for later persistence work.
 
-Read [AGENTS.md](AGENTS.md), then [architecture](docs/architecture.md). Complete these milestones in order:
+Read [AGENTS.md](AGENTS.md), then [architecture](docs/architecture.md) and the active [Apps pivot plan](docs/milestones/apps-pivot.md). The following earlier milestones describe the legacy implementation and its regression obligations:
 
 - [00-foundation.md](docs/milestones/00-foundation.md)
 - [01-identity.md](docs/milestones/01-identity.md)

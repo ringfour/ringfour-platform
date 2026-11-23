@@ -1,0 +1,332 @@
+[
+  {
+    "name": "install_ack",
+    "kind": "operation",
+    "input": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "accepted",
+      "phase": "accepted",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": null,
+      "received_at": null,
+      "completed_at": null,
+      "failure": null
+    },
+    "expected": {
+      "operation_id": "00000000-0000-4000-8000-000000000011",
+      "state": "accepted",
+      "phase": "accepted",
+      "run_id": null,
+      "observed_at": null,
+      "failure_code": null
+    }
+  },
+  {
+    "name": "start_ack",
+    "kind": "operation",
+    "input": {
+      "id": "00000000-0000-4000-8000-000000000024",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "kind": "start",
+      "state": "accepted",
+      "phase": "accepted",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": null,
+      "received_at": null,
+      "completed_at": null,
+      "failure": null
+    },
+    "expected": {
+      "operation_id": "00000000-0000-4000-8000-000000000024",
+      "state": "accepted",
+      "phase": "accepted",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "observed_at": null,
+      "failure_code": null
+    }
+  },
+  {
+    "name": "install_applied",
+    "kind": "operation",
+    "input": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "succeeded",
+      "phase": "applied",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": "2026-11-23T10:00:03Z",
+      "received_at": "2026-11-23T10:00:03Z",
+      "completed_at": "2026-11-23T10:00:03Z",
+      "failure": null
+    },
+    "expected": {
+      "operation_id": "00000000-0000-4000-8000-000000000011",
+      "state": "succeeded",
+      "phase": "applied",
+      "run_id": null,
+      "observed_at": "2026-11-23T10:00:03Z",
+      "failure_code": null
+    }
+  },
+  {
+    "name": "staged_operation",
+    "kind": "operation",
+    "input": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "running",
+      "phase": "staged",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": "2026-11-23T10:00:03Z",
+      "received_at": "2026-11-23T10:00:03Z",
+      "completed_at": null,
+      "failure": null
+    },
+    "expected": {
+      "operation_id": "00000000-0000-4000-8000-000000000011",
+      "state": "running",
+      "phase": "staged",
+      "run_id": null,
+      "observed_at": "2026-11-23T10:00:03Z",
+      "failure_code": null
+    }
+  },
+  {
+    "name": "failed_preparation",
+    "kind": "operation",
+    "input": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "failed",
+      "phase": "failed",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": "2026-11-23T10:00:03Z",
+      "received_at": "2026-11-23T10:00:03Z",
+      "completed_at": "2026-11-23T10:00:03Z",
+      "failure": {
+        "code": "pull_failed",
+        "message": "Image pull failed; installed revision was preserved.",
+        "details": {
+          "retryable": true
+        }
+      }
+    },
+    "expected": {
+      "operation_id": "00000000-0000-4000-8000-000000000011",
+      "state": "failed",
+      "phase": "failed",
+      "run_id": null,
+      "observed_at": "2026-11-23T10:00:03Z",
+      "failure_code": "pull_failed"
+    }
+  },
+  {
+    "name": "start_observed",
+    "kind": "operation",
+    "input": {
+      "id": "00000000-0000-4000-8000-000000000024",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "kind": "start",
+      "state": "succeeded",
+      "phase": "observed_running",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": "2026-11-23T10:00:03Z",
+      "received_at": "2026-11-23T10:00:03Z",
+      "completed_at": "2026-11-23T10:00:03Z",
+      "failure": null
+    },
+    "expected": {
+      "operation_id": "00000000-0000-4000-8000-000000000024",
+      "state": "succeeded",
+      "phase": "observed_running",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "observed_at": "2026-11-23T10:00:03Z",
+      "failure_code": null
+    }
+  },
+  {
+    "name": "stop_observed",
+    "kind": "operation",
+    "input": {
+      "id": "00000000-0000-4000-8000-000000000024",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "kind": "stop",
+      "state": "succeeded",
+      "phase": "stopped",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": "2026-11-23T10:00:03Z",
+      "received_at": "2026-11-23T10:00:03Z",
+      "completed_at": "2026-11-23T10:00:03Z",
+      "failure": null
+    },
+    "expected": {
+      "operation_id": "00000000-0000-4000-8000-000000000024",
+      "state": "succeeded",
+      "phase": "stopped",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "observed_at": "2026-11-23T10:00:03Z",
+      "failure_code": null
+    }
+  },
+  {
+    "name": "inventory_unavailable",
+    "kind": "failure",
+    "input": {
+      "code": "inventory_unavailable",
+      "message": "inventory unavailable",
+      "request_id": "fixture-request",
+      "details": {
+        "retryable": true,
+        "inventory_observed_at": null
+      }
+    },
+    "expected": {
+      "code": "inventory_unavailable",
+      "message": "inventory unavailable",
+      "retryable": true
+    }
+  },
+  {
+    "name": "missing_required",
+    "kind": "failure",
+    "input": {
+      "code": "missing_required",
+      "message": "missing required",
+      "request_id": "fixture-request",
+      "details": {
+        "retryable": false,
+        "missing_required": [
+          {
+            "capability": "groups",
+            "instance_kind": "arm"
+          }
+        ],
+        "missing_optional": []
+      }
+    },
+    "expected": {
+      "code": "missing_required",
+      "message": "missing required",
+      "retryable": false
+    }
+  },
+  {
+    "name": "no_matching_image",
+    "kind": "failure",
+    "input": {
+      "code": "no_matching_image",
+      "message": "no matching image",
+      "request_id": "fixture-request",
+      "details": {
+        "retryable": false,
+        "os": "linux",
+        "architecture": "arm64"
+      }
+    },
+    "expected": {
+      "code": "no_matching_image",
+      "message": "no matching image",
+      "retryable": false
+    }
+  },
+  {
+    "name": "pull_failed",
+    "kind": "failure",
+    "input": {
+      "code": "pull_failed",
+      "message": "pull failed",
+      "request_id": "fixture-request",
+      "details": {
+        "retryable": true
+      }
+    },
+    "expected": {
+      "code": "pull_failed",
+      "message": "pull failed",
+      "retryable": true
+    }
+  },
+  {
+    "name": "container_lost",
+    "kind": "failure",
+    "input": {
+      "code": "container_lost",
+      "message": "container lost",
+      "request_id": "fixture-request",
+      "details": {
+        "retryable": false
+      }
+    },
+    "expected": {
+      "code": "container_lost",
+      "message": "container lost",
+      "retryable": false
+    }
+  },
+  {
+    "name": "active_run_changed",
+    "kind": "failure",
+    "input": {
+      "code": "active_run_changed",
+      "message": "active run changed",
+      "request_id": "fixture-request",
+      "details": {
+        "retryable": false,
+        "expected_run_id": "00000000-0000-4000-8000-000000000012",
+        "active_run_id": "00000000-0000-4000-8000-000000000033"
+      }
+    },
+    "expected": {
+      "code": "active_run_changed",
+      "message": "active run changed",
+      "retryable": false
+    }
+  }
+]

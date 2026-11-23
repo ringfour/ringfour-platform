@@ -1,0 +1,475 @@
+[
+  {
+    "name": "unsupported_negotiated_version",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/negotiation_response",
+    "value": {
+      "session_id": "10000000-0000-4000-8000-000000000002",
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "selected_app_protocol_version": 2,
+      "server_time": "2026-11-23T10:00:03Z"
+    }
+  },
+  {
+    "name": "duplicate_offer",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/negotiation_request",
+    "value": {
+      "session_id": "10000000-0000-4000-8000-000000000002",
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "supported_app_protocol_versions": [
+        1,
+        1
+      ]
+    }
+  },
+  {
+    "name": "current_is_not_cached",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/inventory_report",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 1,
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64",
+        "native_facts": []
+      },
+      "inventory": {
+        "state": "available",
+        "attempted_at": "2026-11-23T10:00:03Z",
+        "current": {
+          "observed_at": "2026-11-23T10:00:03Z",
+          "source": {
+            "kind": "agent_welcome",
+            "protocol": 1,
+            "profile": {
+              "name": "base101",
+              "model": "base101 (chassis only)",
+              "version": "0"
+            }
+          },
+          "capabilities": [
+            "mobility",
+            "cameras",
+            "lidar",
+            "imu",
+            "slam",
+            "teleop",
+            "watches",
+            "places",
+            "audit",
+            "status"
+          ],
+          "instances": {
+            "cameras": [
+              "base"
+            ]
+          }
+        },
+        "last_successful": {
+          "observed_at": "2026-11-23T10:00:03Z",
+          "source": {
+            "kind": "agent_welcome",
+            "protocol": 1,
+            "profile": {
+              "name": "base101",
+              "model": "base101 (chassis only)",
+              "version": "0"
+            }
+          },
+          "capabilities": [
+            "mobility",
+            "cameras",
+            "lidar",
+            "imu",
+            "slam",
+            "teleop",
+            "watches",
+            "places",
+            "audit",
+            "status"
+          ],
+          "instances": {
+            "cameras": [
+              "base"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unavailable_has_no_current",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/inventory_report",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 1,
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64",
+        "native_facts": []
+      },
+      "inventory": {
+        "state": "unavailable",
+        "attempted_at": "2026-11-23T10:01:00Z",
+        "reason": "agent_unreachable",
+        "last_successful": {
+          "observed_at": "2026-11-23T10:00:03Z",
+          "source": {
+            "kind": "agent_welcome",
+            "protocol": 1,
+            "profile": {
+              "name": "base101",
+              "model": "base101 (chassis only)",
+              "version": "0"
+            }
+          },
+          "capabilities": [
+            "mobility",
+            "cameras",
+            "lidar",
+            "imu",
+            "slam",
+            "teleop",
+            "watches",
+            "places",
+            "audit",
+            "status"
+          ],
+          "instances": {
+            "cameras": [
+              "base"
+            ]
+          }
+        },
+        "current": {
+          "observed_at": "2026-11-23T10:00:03Z",
+          "source": {
+            "kind": "agent_welcome",
+            "protocol": 1,
+            "profile": {
+              "name": "base101",
+              "model": "base101 (chassis only)",
+              "version": "0"
+            }
+          },
+          "capabilities": [
+            "mobility",
+            "cameras",
+            "lidar",
+            "imu",
+            "slam",
+            "teleop",
+            "watches",
+            "places",
+            "audit",
+            "status"
+          ],
+          "instances": {
+            "cameras": [
+              "base"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "missing_profile_source",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/inventory_report",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 1,
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64",
+        "native_facts": []
+      },
+      "inventory": {
+        "state": "available",
+        "attempted_at": "2026-11-23T10:00:03Z",
+        "current": {
+          "observed_at": "2026-11-23T10:00:03Z",
+          "capabilities": [
+            "mobility",
+            "cameras",
+            "lidar",
+            "imu",
+            "slam",
+            "teleop",
+            "watches",
+            "places",
+            "audit",
+            "status"
+          ],
+          "instances": {
+            "cameras": [
+              "base"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "inventory_is_not_sensor_reading",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/inventory_report",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 1,
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64",
+        "native_facts": []
+      },
+      "inventory": {
+        "state": "available",
+        "attempted_at": "2026-11-23T10:00:03Z",
+        "current": {
+          "observed_at": "2026-11-23T10:00:03Z",
+          "source": {
+            "kind": "agent_welcome",
+            "protocol": 1,
+            "profile": {
+              "name": "base101",
+              "model": "base101 (chassis only)",
+              "version": "0"
+            }
+          },
+          "capabilities": [
+            "mobility",
+            "cameras",
+            "lidar",
+            "imu",
+            "slam",
+            "teleop",
+            "watches",
+            "places",
+            "audit",
+            "status"
+          ],
+          "instances": {
+            "cameras": [
+              "base"
+            ]
+          },
+          "imu_sample": {
+            "stamp": "2026-11-23T10:00:03Z"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "missing_ownership_namespace",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/start_command",
+    "value": {
+      "app_protocol_version": 1,
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "snapshot": {
+        "app_id": "00000000-0000-4000-8000-000000000005",
+        "revision_id": "00000000-0000-4000-8000-000000000006",
+        "import_id": "00000000-0000-4000-8000-000000000008",
+        "publisher_organization_id": "00000000-0000-4000-8000-000000000001",
+        "manifest_digest": "sha256:1123acdf65791587b211b0b3b4d9aa428e95cd667aa19b540d2c90b5e2e34db3",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+        "configuration": {
+          "sample_count": 3
+        },
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "stop_is_never_dynamic",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/stop_command",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "expected_run_id": null
+    }
+  },
+  {
+    "name": "registry_token_never_durable",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/apply_command",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "expected_revision_id": null,
+      "expected_configuration_revision_id": null,
+      "release": {
+        "app_id": "00000000-0000-4000-8000-000000000005",
+        "revision_id": "00000000-0000-4000-8000-000000000006",
+        "manifest_digest": "sha256:1123acdf65791587b211b0b3b4d9aa428e95cd667aa19b540d2c90b5e2e34db3",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+        "configuration": {
+          "sample_count": 3
+        },
+        "target": {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      },
+      "registry_token": "not-a-real-token"
+    }
+  },
+  {
+    "name": "entrypoint_never_overridden",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/start_command",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "snapshot": {
+        "app_id": "00000000-0000-4000-8000-000000000005",
+        "revision_id": "00000000-0000-4000-8000-000000000006",
+        "import_id": "00000000-0000-4000-8000-000000000008",
+        "publisher_organization_id": "00000000-0000-4000-8000-000000000001",
+        "manifest_digest": "sha256:1123acdf65791587b211b0b3b4d9aa428e95cd667aa19b540d2c90b5e2e34db3",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+        "configuration": {
+          "sample_count": 3
+        },
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "entrypoint": [
+        "sh"
+      ]
+    }
+  },
+  {
+    "name": "zero_report_sequence",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/inventory_report",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 0,
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64",
+        "native_facts": []
+      },
+      "inventory": {
+        "state": "available",
+        "attempted_at": "2026-11-23T10:00:03Z",
+        "current": {
+          "observed_at": "2026-11-23T10:00:03Z",
+          "source": {
+            "kind": "agent_welcome",
+            "protocol": 1,
+            "profile": {
+              "name": "base101",
+              "model": "base101 (chassis only)",
+              "version": "0"
+            }
+          },
+          "capabilities": [
+            "mobility",
+            "cameras",
+            "lidar",
+            "imu",
+            "slam",
+            "teleop",
+            "watches",
+            "places",
+            "audit",
+            "status"
+          ],
+          "instances": {
+            "cameras": [
+              "base"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "device_cannot_assert_server_actor",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/observations",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 1,
+      "operations": [
+        {
+          "operation_id": "00000000-0000-4000-8000-000000000011",
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "run_id": null,
+          "kind": "install",
+          "state": "succeeded",
+          "phase": "applied",
+          "observed_at": "2026-11-23T10:00:03Z",
+          "failure": null,
+          "requested_by": "00000000-0000-4000-8000-000000000020"
+        }
+      ],
+      "installations": [
+        {
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-23T10:00:03Z",
+          "installed": {
+            "revision_id": "00000000-0000-4000-8000-000000000006",
+            "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+            "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "applied_operation_id": "00000000-0000-4000-8000-000000000011",
+            "installed_at": "2026-11-23T10:00:02Z"
+          },
+          "candidate": null
+        }
+      ],
+      "runs": []
+    }
+  },
+  {
+    "name": "ack_is_not_application",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/observations",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 1,
+      "operations": [
+        {
+          "operation_id": "00000000-0000-4000-8000-000000000011",
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "run_id": null,
+          "kind": "install",
+          "state": "accepted",
+          "phase": "applied",
+          "observed_at": "2026-11-23T10:00:03Z",
+          "failure": null
+        }
+      ],
+      "installations": [
+        {
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-23T10:00:03Z",
+          "installed": {
+            "revision_id": "00000000-0000-4000-8000-000000000006",
+            "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+            "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "applied_operation_id": "00000000-0000-4000-8000-000000000011",
+            "installed_at": "2026-11-23T10:00:02Z"
+          },
+          "candidate": null
+        }
+      ],
+      "runs": []
+    }
+  }
+]

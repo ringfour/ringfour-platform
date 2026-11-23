@@ -1,0 +1,132 @@
+[
+  {
+    "name": "publish",
+    "schema": "apps/v1/requests.schema.json#/$defs/publish",
+    "value": {
+      "manifest": {
+        "schema_version": 1,
+        "app_key": "robot-check",
+        "release": "0.1.0",
+        "display": {
+          "name": "Robot Check",
+          "description": "Read an IMU sample and write the result."
+        },
+        "targets": [
+          {
+            "os": "linux",
+            "architecture": "amd64",
+            "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "native_requirements": []
+          }
+        ],
+        "capabilities": {
+          "required": [
+            {
+              "capability": "imu"
+            }
+          ],
+          "optional": [
+            {
+              "capability": "cameras"
+            }
+          ]
+        },
+        "configuration": {
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sample_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [
+              "sample_count"
+            ]
+          },
+          "defaults": {
+            "sample_count": 1
+          }
+        }
+      },
+      "visibility": "unlisted"
+    }
+  },
+  {
+    "name": "share",
+    "schema": "apps/v1/requests.schema.json#/$defs/share",
+    "value": {
+      "destination_organization_id": "00000000-0000-4000-8000-000000000002",
+      "expires_at": "2026-11-24T10:00:00Z"
+    }
+  },
+  {
+    "name": "import",
+    "schema": "apps/v1/requests.schema.json#/$defs/import",
+    "value": {
+      "revision_id": "00000000-0000-4000-8000-000000000006",
+      "share_id": "00000000-0000-4000-8000-000000000007"
+    }
+  },
+  {
+    "name": "install",
+    "schema": "apps/v1/requests.schema.json#/$defs/install",
+    "value": {
+      "revision_id": "00000000-0000-4000-8000-000000000006",
+      "share_id": "00000000-0000-4000-8000-000000000007",
+      "configuration": {
+        "sample_count": 3
+      }
+    }
+  },
+  {
+    "name": "configure",
+    "schema": "apps/v1/requests.schema.json#/$defs/configure",
+    "value": {
+      "expected_configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+      "configuration": {
+        "sample_count": 4
+      }
+    }
+  },
+  {
+    "name": "update",
+    "schema": "apps/v1/requests.schema.json#/$defs/update",
+    "value": {
+      "expected_revision_id": "00000000-0000-4000-8000-000000000006",
+      "expected_configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+      "revision_id": "00000000-0000-4000-8000-000000000022",
+      "share_id": null,
+      "configuration": {
+        "sample_count": 5
+      }
+    }
+  },
+  {
+    "name": "rollback",
+    "schema": "apps/v1/requests.schema.json#/$defs/rollback",
+    "value": {
+      "expected_revision_id": "00000000-0000-4000-8000-000000000022",
+      "expected_configuration_revision_id": "00000000-0000-4000-8000-000000000023",
+      "revision_id": "00000000-0000-4000-8000-000000000006",
+      "configuration_revision_id": "00000000-0000-4000-8000-000000000010"
+    }
+  },
+  {
+    "name": "start",
+    "schema": "apps/v1/requests.schema.json#/$defs/start",
+    "value": {
+      "expected_revision_id": "00000000-0000-4000-8000-000000000006",
+      "expected_configuration_revision_id": "00000000-0000-4000-8000-000000000010"
+    }
+  },
+  {
+    "name": "stop",
+    "schema": "apps/v1/requests.schema.json#/$defs/stop",
+    "value": {
+      "expected_run_id": "00000000-0000-4000-8000-000000000012"
+    }
+  }
+]

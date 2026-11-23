@@ -1,0 +1,2 @@
+# OpenAPI YAML checks only; not a product/runtime dependency.
+PyYAML==6.0.3

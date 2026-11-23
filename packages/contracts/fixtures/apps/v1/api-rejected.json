@@ -1,0 +1,368 @@
+[
+  {
+    "name": "ack_is_not_completed",
+    "schema": "apps/v1/api.schema.json#/$defs/operation",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "succeeded",
+      "phase": "accepted",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": null,
+      "received_at": null,
+      "completed_at": null,
+      "failure": null
+    }
+  },
+  {
+    "name": "ack_cannot_claim_running_phase",
+    "schema": "apps/v1/api.schema.json#/$defs/operation",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "accepted",
+      "phase": "observed_running",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": null,
+      "received_at": null,
+      "completed_at": null,
+      "failure": null
+    }
+  },
+  {
+    "name": "staged_is_not_applied",
+    "schema": "apps/v1/api.schema.json#/$defs/operation",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "succeeded",
+      "phase": "staged",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": "2026-11-23T10:00:02Z",
+      "received_at": "2026-11-23T10:00:03Z",
+      "completed_at": "2026-11-23T10:00:03Z",
+      "failure": null
+    }
+  },
+  {
+    "name": "install_creates_no_run",
+    "schema": "apps/v1/api.schema.json#/$defs/operation",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": "00000000-0000-4000-8000-000000000012",
+      "kind": "install",
+      "state": "accepted",
+      "phase": "accepted",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": null,
+      "received_at": null,
+      "completed_at": null,
+      "failure": null
+    }
+  },
+  {
+    "name": "running_requires_observation",
+    "schema": "apps/v1/api.schema.json#/$defs/run",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "start_operation_id": "00000000-0000-4000-8000-000000000024",
+      "snapshot": {
+        "app_id": "00000000-0000-4000-8000-000000000005",
+        "revision_id": "00000000-0000-4000-8000-000000000006",
+        "import_id": "00000000-0000-4000-8000-000000000008",
+        "publisher_organization_id": "00000000-0000-4000-8000-000000000001",
+        "manifest_digest": "sha256:1123acdf65791587b211b0b3b4d9aa428e95cd667aa19b540d2c90b5e2e34db3",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+        "configuration": {
+          "sample_count": 3
+        },
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "state": "running",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "started_at": "2026-11-23T10:00:02Z",
+      "ended_at": null,
+      "observed_at": null,
+      "received_at": "2026-11-23T10:00:03Z",
+      "exit_code": null,
+      "failure": null,
+      "completed_at": null
+    }
+  },
+  {
+    "name": "interruption_has_no_exit_status",
+    "schema": "apps/v1/api.schema.json#/$defs/run",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "start_operation_id": "00000000-0000-4000-8000-000000000024",
+      "snapshot": {
+        "app_id": "00000000-0000-4000-8000-000000000005",
+        "revision_id": "00000000-0000-4000-8000-000000000006",
+        "import_id": "00000000-0000-4000-8000-000000000008",
+        "publisher_organization_id": "00000000-0000-4000-8000-000000000001",
+        "manifest_digest": "sha256:1123acdf65791587b211b0b3b4d9aa428e95cd667aa19b540d2c90b5e2e34db3",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+        "configuration": {
+          "sample_count": 3
+        },
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "state": "interrupted",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-11-23T10:00:01Z",
+      "started_at": "2026-11-23T10:00:02Z",
+      "ended_at": null,
+      "observed_at": "2026-11-23T10:01:00Z",
+      "received_at": "2026-11-23T10:01:01Z",
+      "exit_code": 0,
+      "failure": {
+        "code": "container_lost",
+        "message": "Previously started container is absent; outcome is unknown.",
+        "details": {
+          "retryable": false
+        }
+      },
+      "completed_at": "2026-11-23T10:01:01Z"
+    }
+  },
+  {
+    "name": "unobserved_installed_binding",
+    "schema": "apps/v1/api.schema.json#/$defs/installation",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "app_id": "00000000-0000-4000-8000-000000000005",
+      "created_by": "00000000-0000-4000-8000-000000000020",
+      "created_at": "2026-11-23T10:00:01Z",
+      "available_revision_id": "00000000-0000-4000-8000-000000000006",
+      "installed": {
+        "revision_id": "00000000-0000-4000-8000-000000000006",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "applied_operation_id": "00000000-0000-4000-8000-000000000011",
+        "installed_at": "2026-11-23T10:00:02Z",
+        "observed_at": null
+      },
+      "candidate": null,
+      "last_observed_at": "2026-11-23T10:00:02Z"
+    }
+  },
+  {
+    "name": "staged_requires_observation",
+    "schema": "apps/v1/api.schema.json#/$defs/installation",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "app_id": "00000000-0000-4000-8000-000000000005",
+      "created_by": "00000000-0000-4000-8000-000000000020",
+      "created_at": "2026-11-23T10:00:01Z",
+      "available_revision_id": "00000000-0000-4000-8000-000000000022",
+      "installed": {
+        "revision_id": "00000000-0000-4000-8000-000000000006",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "applied_operation_id": "00000000-0000-4000-8000-000000000011",
+        "installed_at": "2026-11-23T10:00:02Z",
+        "observed_at": "2026-11-23T10:00:02Z"
+      },
+      "candidate": {
+        "operation_id": "00000000-0000-4000-8000-000000000021",
+        "revision_id": "00000000-0000-4000-8000-000000000022",
+        "configuration_revision_id": "00000000-0000-4000-8000-000000000023",
+        "image": "registry.example.com/ringfour/robot-check@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "state": "staged",
+        "requested_at": "2026-11-23T10:00:02Z",
+        "observed_at": null,
+        "staged_at": "2026-11-23T10:00:03Z",
+        "failure": null
+      },
+      "last_observed_at": "2026-11-23T10:00:03Z"
+    }
+  },
+  {
+    "name": "direct_share_requires_grant_id",
+    "schema": "apps/v1/api.schema.json#/$defs/import",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "app_id": "00000000-0000-4000-8000-000000000005",
+      "revision_id": "00000000-0000-4000-8000-000000000006",
+      "publisher_organization_id": "00000000-0000-4000-8000-000000000001",
+      "source": {
+        "kind": "direct_share"
+      },
+      "imported_by": "00000000-0000-4000-8000-000000000020",
+      "imported_at": "2026-11-23T10:00:01Z"
+    }
+  },
+  {
+    "name": "store_does_not_accept_publisher_claim",
+    "schema": "apps/v1/api.schema.json#/$defs/import",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "app_id": "00000000-0000-4000-8000-000000000005",
+      "revision_id": "00000000-0000-4000-8000-000000000006",
+      "publisher_organization_id": "00000000-0000-4000-8000-000000000001",
+      "source": {
+        "kind": "store",
+        "publisher_organization_id": "00000000-0000-4000-8000-000000000001"
+      },
+      "imported_by": "00000000-0000-4000-8000-000000000020",
+      "imported_at": "2026-11-23T10:00:01Z"
+    }
+  },
+  {
+    "name": "config_rejects_nested_values",
+    "schema": "apps/v1/api.schema.json#/$defs/configuration_revision",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "revision_id": "00000000-0000-4000-8000-000000000006",
+      "values": {
+        "engine": {
+          "privileged": true
+        }
+      },
+      "created_by": "00000000-0000-4000-8000-000000000020",
+      "created_at": "2026-11-23T10:00:01Z"
+    }
+  },
+  {
+    "name": "stop_requires_concrete_run",
+    "schema": "apps/v1/requests.schema.json#/$defs/stop",
+    "value": {
+      "expected_run_id": null
+    }
+  },
+  {
+    "name": "stop_has_no_active_selector",
+    "schema": "apps/v1/requests.schema.json#/$defs/stop",
+    "value": {
+      "expected_run_id": "00000000-0000-4000-8000-000000000012",
+      "active": true
+    }
+  },
+  {
+    "name": "install_cannot_assert_import_provenance",
+    "schema": "apps/v1/requests.schema.json#/$defs/install",
+    "value": {
+      "revision_id": "00000000-0000-4000-8000-000000000006",
+      "share_id": "00000000-0000-4000-8000-000000000007",
+      "configuration": {
+        "sample_count": 3
+      },
+      "publisher_organization_id": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "impossible_calendar_date",
+    "schema": "apps/v1/api.schema.json#/$defs/operation",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "organization_id": "00000000-0000-4000-8000-000000000002",
+      "robot_id": "00000000-0000-4000-8000-000000000004",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "run_id": null,
+      "kind": "install",
+      "state": "accepted",
+      "phase": "accepted",
+      "requested_by": "00000000-0000-4000-8000-000000000020",
+      "requested_at": "2026-02-30T10:00:00Z",
+      "deadline_at": "2026-11-23T10:05:00Z",
+      "acknowledged_at": "2026-11-23T10:00:02Z",
+      "observed_at": null,
+      "received_at": null,
+      "completed_at": null,
+      "failure": null
+    }
+  },
+  {
+    "name": "run_event_requires_revision",
+    "schema": "logbook/v3/app-history-page.schema.json",
+    "value": {
+      "items": [
+        {
+          "event_id": "00000000-0000-4000-8000-000000000031",
+          "organization_id": "00000000-0000-4000-8000-000000000002",
+          "robot_id": "00000000-0000-4000-8000-000000000004",
+          "run_id": "00000000-0000-4000-8000-000000000012",
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "app_id": "00000000-0000-4000-8000-000000000005",
+          "revision_id": null,
+          "operation_id": "00000000-0000-4000-8000-000000000024",
+          "actor_user_id": "00000000-0000-4000-8000-000000000020",
+          "local_sequence": 1,
+          "type": "app.run.started",
+          "schema_version": 3,
+          "occurred_at": "2026-11-23T10:00:02Z",
+          "received_at": "2026-11-23T10:00:03Z",
+          "payload": {}
+        },
+        {
+          "event_id": "00000000-0000-4000-8000-000000000032",
+          "organization_id": "00000000-0000-4000-8000-000000000002",
+          "robot_id": "00000000-0000-4000-8000-000000000004",
+          "run_id": null,
+          "installation_id": null,
+          "app_id": null,
+          "revision_id": null,
+          "operation_id": null,
+          "actor_user_id": null,
+          "local_sequence": 2,
+          "type": "agent.motion.event",
+          "schema_version": 3,
+          "occurred_at": "2026-11-23T10:00:02Z",
+          "received_at": "2026-11-23T10:00:03Z",
+          "payload": {}
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "install_response_has_no_run",
+    "schema": "apps/v1/api.schema.json#/$defs/installation_accepted",
+    "value": {
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "operation_id": "00000000-0000-4000-8000-000000000011",
+      "run_id": "00000000-0000-4000-8000-000000000012"
+    }
+  }
+]

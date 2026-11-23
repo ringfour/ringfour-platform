@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Ringfour versioned contracts: JSON Schemas, OpenAPI documents and representative fixtures. Applications consume these files; they never import each other's implementations.",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:openapi": "python3 test/openapi_refs.py"
   },
   "devDependencies": {
     "ajv": "^8.17.1"

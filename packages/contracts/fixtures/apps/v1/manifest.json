@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "app_key": "robot-check",
+  "release": "0.1.0",
+  "display": {
+    "name": "Robot Check",
+    "description": "Read an IMU sample and write the result."
+  },
+  "targets": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "native_requirements": []
+    }
+  ],
+  "capabilities": {
+    "required": [
+      {
+        "capability": "imu"
+      }
+    ],
+    "optional": [
+      {
+        "capability": "cameras"
+      }
+    ]
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "sample_count"
+      ]
+    },
+    "defaults": {
+      "sample_count": 1
+    }
+  }
+}

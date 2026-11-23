@@ -1,0 +1,1053 @@
+[
+  {
+    "name": "mutable tag",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/robot-check:latest",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "tag plus digest",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "malformed digest",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "publisher assertion",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      },
+      "publisher_id": "publisher-from-file"
+    }
+  },
+  {
+    "name": "entrypoint override",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      },
+      "entrypoint": [
+        "sh"
+      ]
+    }
+  },
+  {
+    "name": "socket mount",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": [],
+          "mounts": [
+            "/var/run/docker.sock"
+          ]
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown version",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 2,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown arm vocabulary",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "arm.motion"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid arm predicate",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "mobility",
+            "instance_kind": "arm"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "ambiguous target",
+    "error": "ambiguous_target",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        },
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "bad default",
+    "error": "invalid_config",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "missing required default",
+    "error": "invalid_config",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {}
+      }
+    }
+  },
+  {
+    "name": "unknown default",
+    "error": "invalid_config",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1,
+          "secret": "x"
+        }
+      }
+    }
+  },
+  {
+    "name": "remote schema",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "$ref": "https://example.com/schema.json"
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown constraint",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "multipleOf": 2
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "undeclared required property",
+    "error": "unknown_required_config",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count",
+            "unknown"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "reversed bounds",
+    "error": "invalid_config_bounds",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 21,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid enum",
+    "error": "invalid_config_enum",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "enum": [
+                0,
+                1
+              ]
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "overlapping capability",
+    "error": "overlapping_capability",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          },
+          {
+            "capability": "imu"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "digest reference with trailing newline",
+    "error": "invalid_manifest",
+    "manifest": {
+      "schema_version": 1,
+      "app_key": "robot-check",
+      "release": "0.1.0",
+      "display": {
+        "name": "Robot Check",
+        "description": "Read an IMU sample and write the result."
+      },
+      "targets": [
+        {
+          "os": "linux",
+          "architecture": "amd64",
+          "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+          "native_requirements": []
+        }
+      ],
+      "capabilities": {
+        "required": [
+          {
+            "capability": "imu"
+          }
+        ],
+        "optional": [
+          {
+            "capability": "cameras"
+          }
+        ]
+      },
+      "configuration": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sample_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "required": [
+            "sample_count"
+          ]
+        },
+        "defaults": {
+          "sample_count": 1
+        }
+      }
+    }
+  }
+]

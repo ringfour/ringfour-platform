@@ -1,5 +1,7 @@
 # Ringfour v0.1 starter database schema
 
+Apps migration: the existing tables and applied migrations remain intact. The AP-01 contract slices create no tables; [API/resource relationships](apps-api-contract.md) define the new persistence obligations. AP-02 must add forward migrations, immutable App/revision/import/installation/config/run attribution and a shared transactional execution slot before enabling App writes. Preserve all historical execution IDs, evidence and interaction acknowledgement timestamps. See [active plan](milestones/apps-pivot.md).
+
 This is the persistence contract for milestones 00–03. Each milestone ships its own migrations. Milestone 00 proves both databases can migrate and report readiness. Add business tables when their milestone introduces the feature.
 
 PostgreSQL holds platform records through EF Core and Npgsql. SQLite holds daemon records. Runner process metadata remains Runner-owned and is specified in milestone 04.

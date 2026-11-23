@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import Ajv2020 from "ajv/dist/2020.js";
+import { addContractFormats } from "./support/formats.mjs";
 
 const root = new URL("../", import.meta.url);
 
@@ -9,7 +10,7 @@ async function loadJson(relativePath) {
   return JSON.parse(await readFile(new URL(relativePath, root), "utf8"));
 }
 
-const ajv = new Ajv2020({ allErrors: true, strict: true });
+const ajv = addContractFormats(new Ajv2020({ allErrors: true, strict: true }));
 const validators = new Map();
 
 test("mission manifest fixture rejects traversal and unknown fields", async () => {
@@ -677,4 +678,15 @@ test("human interactions wait forever by default and require paired timeout fiel
   assert.equal(create({ ...request, timeout_outcome: "abort" }), false);
   assert.equal(create({ ...request, deadline: "2026-11-17T15:00:00Z" }), false);
   assert.ok(create({ ...request, deadline: "2026-11-17T15:00:00Z", timeout_outcome: "abort" }));
+});
+
+test("identity formats validate email and absolute URI", async () => {
+  const validate = await validatorFor("schemas/identity/v1/user.schema.json");
+  const { user } = await loadJson("fixtures/identity/v1/me.json");
+  assert.ok(validate({ ...user, email: "robot.owner+test@example.com", profile_picture_url: "https://example.com/photo.png" }));
+  for (const email of ["missing-at", "a@@example.com", "a..b@example.com", ".a@example.com", "a@-bad.com", "a@", "a b@example.com"]) {
+    assert.equal(validate({ ...user, email }), false, email);
+  }
+  assert.equal(validate({ ...user, profile_picture_url: "/relative.png" }), false);
+  assert.equal(validate({ ...user, profile_picture_url: "https://example.com/%XX" }), false);
 });

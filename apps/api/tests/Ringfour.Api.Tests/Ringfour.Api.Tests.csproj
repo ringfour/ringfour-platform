@@ -24,6 +24,9 @@
   <!-- Contracts are the shared boundary: tests validate live responses against
        the same schema files every other consumer uses. -->
   <ItemGroup>
+    <Content Include="../../../../packages/contracts/fixtures/**/*.json"
+             Link="contracts/fixtures/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../../../packages/contracts/schemas/**/*.json"
              Link="contracts/schemas/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />

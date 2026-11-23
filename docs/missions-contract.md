@@ -1,5 +1,7 @@
 # Mission v1 — new Ringfour design
 
+Migration status: this is the **legacy** contract, retained for existing clients and history. New Apps use [App manifest v1](apps-contract.md) and the image entrypoint, without a mission or fixed Runner. Retire these writers only after the [Apps plan](milestones/apps-pivot.md) AP-13–15 gates; preserve IDs, artifacts, Logbook and HITL acknowledgements.
+
 Status: **locally verified**. These interfaces are new Ringfour design and do not describe
 existing SDK or Agent APIs. Physical Balena verification remains pending.
 

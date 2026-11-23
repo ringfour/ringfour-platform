@@ -1,5 +1,13 @@
 # Architecture and shared contracts
 
+## Apps migration authority
+
+The [Apps pivot specification](../../app-pivot.md) and [active plan](milestones/apps-pivot.md) supersede the fixed-Runner execution decision for new Apps. Infrastructure owns Daemon and Agent lifecycle. Only the authorized Daemon manages its enrolled robot's App containers through an operator-provided engine socket. Engine administrators are trusted by all containers on that engine; labels scope workload reconciliation and are not a hostile-engine security boundary. Server, App and legacy Runner containers never receive this socket.
+
+App manifests cannot choose sockets, mounts, privileges, devices, networks, commands or entrypoints. Deployment settings belong to the robot owner. The Agent owns ROS and safety. New Apps use the image's plain entrypoint without Runner, uv preparation or an App-side Runner shim. Legacy execution remains operational until its clients, recovery and durable history are migrated. App and legacy executions must share one transactional robot execution slot before App start is enabled.
+
+The [manifest contract](apps-contract.md) is specified and fixture-tested first. The [API/runtime contracts](apps-api-contract.md) are also defined. The separate [device negotiation/inventory contract](apps-device-contract.md) preserves v1 transport. Persistence remains pending AP-02 and public App operation implementations pending later slices; no existing v1 envelope is extended by this slice. The flows and implementation details below describe the legacy implementation during migration.
+
 ## Ownership and flows
 
 CLI/Console → hosted API ↔ outbound device connection from the robot daemon → private Runner control API → Python process → existing SDK → existing Agent → ROS/robot.

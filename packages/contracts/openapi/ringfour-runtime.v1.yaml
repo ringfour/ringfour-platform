@@ -1,11 +1,327 @@
 openapi: 3.1.0
 info:
-  title: Ringfour mission runtime API
+  title: Ringfour runtime API
   version: '0.1.0'
   description: |
+    App runtime namespace is contract-only; legacy mission runtime remains supported.
     New Ringfour-local design, separate from the Agent API. The daemon control
     listener accepts execution-scoped credentials, separate from human and LAN grants.
 paths:
+  /v1/app-runtime/context:
+    get:
+      operationId: getAppRuntimeContext
+      x-implementation-status: contract-only
+      description: Credential resolves run identity; no payload or URL may select another run. No engine or registry
+        authority is disclosed.
+      security:
+      - AppRunCredential: []
+      parameters: []
+      responses:
+        '200':
+          description: Run-scoped local durable result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/runtime_context
+        '400':
+          description: Invalid runtime input
+          content:
+            application/json:
+              schema: &id001
+                $ref: ../schemas/errors/v2/app-error.schema.json
+        '401':
+          description: Invalid, expired or revoked App run credential
+          content:
+            application/json:
+              schema: *id001
+        '404':
+          description: Resource does not belong to credential run
+          content:
+            application/json:
+              schema: *id001
+        '409':
+          description: Replay or terminal state conflict
+          content:
+            application/json:
+              schema: *id001
+        '413':
+          description: Request size exceeded
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Local storage unavailable or full
+          content:
+            application/json:
+              schema: *id001
+  /v1/app-runtime/logbook/entries:
+    post:
+      operationId: recordAppLogbookEntry
+      x-implementation-status: contract-only
+      description: At most 8192 UTF-8 bytes. Derive all attribution from run credential; persist entry and outbox
+        before acknowledging. entry_id is the stable replay key.
+      security:
+      - AppRunCredential: []
+      parameters: []
+      responses:
+        '200':
+          description: Run-scoped local durable result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/logbook/v1/runtime-entry-accepted.schema.json
+        '400':
+          description: Invalid runtime input
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: Invalid, expired or revoked App run credential
+          content:
+            application/json:
+              schema: *id001
+        '404':
+          description: Resource does not belong to credential run
+          content:
+            application/json:
+              schema: *id001
+        '409':
+          description: Replay or terminal state conflict
+          content:
+            application/json:
+              schema: *id001
+        '413':
+          description: Request size exceeded
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Local storage unavailable or full
+          content:
+            application/json:
+              schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/logbook/v2/runtime-entry-request.schema.json
+  /v1/app-runtime/artifacts:
+    post:
+      operationId: publishAppArtifact
+      x-implementation-status: contract-only
+      description: artifact_id is the replay key. Snapshot a regular file from this run-owned artifact area with no
+        symlink/traversal escape, then persist metadata/outbox before acknowledging. No Runner dependency. Limit 16
+        artifacts/run and 16 MiB/artifact.
+      security:
+      - AppRunCredential: []
+      parameters: []
+      responses:
+        '200':
+          description: Run-scoped local durable result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/artifacts/v2/app-artifact.schema.json
+        '400':
+          description: Invalid runtime input
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: Invalid, expired or revoked App run credential
+          content:
+            application/json:
+              schema: *id001
+        '404':
+          description: Resource does not belong to credential run
+          content:
+            application/json:
+              schema: *id001
+        '409':
+          description: Replay or terminal state conflict
+          content:
+            application/json:
+              schema: *id001
+        '413':
+          description: Request size exceeded
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Local storage unavailable or full
+          content:
+            application/json:
+              schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/artifacts/v1/runtime-publish-request.schema.json
+  /v1/app-runtime/interactions:
+    post:
+      operationId: createAppInteraction
+      x-implementation-status: contract-only
+      description: request_id is the replay key. Derive run from credential, persist request and outbox before acknowledgement.
+        Submitted answers remain provisional until applied by this run. Request limit 8192 bytes.
+      security:
+      - AppRunCredential: []
+      parameters: []
+      responses:
+        '200':
+          description: Run-scoped local durable result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/interactions/v2/app-interaction.schema.json
+        '400':
+          description: Invalid runtime input
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: Invalid, expired or revoked App run credential
+          content:
+            application/json:
+              schema: *id001
+        '404':
+          description: Resource does not belong to credential run
+          content:
+            application/json:
+              schema: *id001
+        '409':
+          description: Replay or terminal state conflict
+          content:
+            application/json:
+              schema: *id001
+        '413':
+          description: Request size exceeded
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Local storage unavailable or full
+          content:
+            application/json:
+              schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/interactions/v1/create-request.schema.json
+  /v1/app-runtime/interactions/{request_id}:
+    get:
+      operationId: getAppInteraction
+      x-implementation-status: contract-only
+      description: Read only an interaction in the credential run.
+      security:
+      - AppRunCredential: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Run-scoped local durable result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/interactions/v2/app-interaction.schema.json
+        '400':
+          description: Invalid runtime input
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: Invalid, expired or revoked App run credential
+          content:
+            application/json:
+              schema: *id001
+        '404':
+          description: Resource does not belong to credential run
+          content:
+            application/json:
+              schema: *id001
+        '409':
+          description: Replay or terminal state conflict
+          content:
+            application/json:
+              schema: *id001
+        '413':
+          description: Request size exceeded
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Local storage unavailable or full
+          content:
+            application/json:
+              schema: *id001
+  /v1/app-runtime/interactions/{request_id}/wait:
+    get:
+      operationId: waitForAppInteraction
+      x-implementation-status: contract-only
+      description: Bounded poll timeout leaves state pending. No deadline by default; only an explicit interaction
+        deadline may produce timed_out.
+      security:
+      - AppRunCredential: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: wait_seconds
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 30
+          default: 30
+      responses:
+        '200':
+          description: Run-scoped local durable result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/interactions/v2/app-interaction.schema.json
+        '400':
+          description: Invalid runtime input
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: Invalid, expired or revoked App run credential
+          content:
+            application/json:
+              schema: *id001
+        '404':
+          description: Resource does not belong to credential run
+          content:
+            application/json:
+              schema: *id001
+        '409':
+          description: Replay or terminal state conflict
+          content:
+            application/json:
+              schema: *id001
+        '413':
+          description: Request size exceeded
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Local storage unavailable or full
+          content:
+            application/json:
+              schema: *id001
   /v1/runtime/interactions:
     post:
       operationId: createMissionInteraction
@@ -121,6 +437,10 @@ paths:
         '503': { description: Entry storage or outbox unavailable or full }
 components:
   securitySchemes:
+    AppRunCredential:
+      type: http
+      scheme: bearer
+      description: Proposed per-run credential verified by Daemon against durable run ownership and expiry; no Runner, human or registry authority.
     ExecutionCredential:
       type: http
       scheme: bearer
