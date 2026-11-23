@@ -1,0 +1,160 @@
+"""Independent CLI implementation of manifest/authoring v1 validation."""
+
+import copy
+import hashlib
+import json
+import math
+import re
+from importlib.resources import files
+from pathlib import PurePosixPath
+
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
+
+MAX_INTEGER = 9007199254740991
+
+
+def canonical(value):
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+
+
+def fingerprint(value):
+    return hashlib.sha256(canonical(value).encode()).hexdigest()
+
+
+def _unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON member")
+        result[key] = value
+    return result
+
+
+def _scalars(value):
+    if isinstance(value, str):
+        value.encode("utf-8", errors="strict")
+    elif isinstance(value, dict):
+        return {_scalars(key): _scalars(item) for key, item in value.items()}
+    elif isinstance(value, list):
+        return [_scalars(item) for item in value]
+    elif type(value) in (int, float):
+        if abs(value) > MAX_INTEGER or not math.isfinite(value) or int(value) != value:
+            raise ValueError("Only safe JSON integers are supported")
+        return int(value)
+    return value
+
+
+def read_json(path):
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(65537)
+        if len(raw) > 65536:
+            raise ValueError("App JSON exceeds 65536 bytes")
+        return _scalars(json.loads(raw.decode("utf-8"), object_pairs_hook=_unique))
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
+        raise ValueError("Invalid App UTF-8 JSON") from error
+
+
+def _structure(value, name):
+    schema = json.loads(
+        files("ringfour_cli").joinpath("data", name + ".schema.json").read_text()
+    )
+    try:
+        Draft202012Validator(schema).validate(value)
+    except ValidationError as error:
+        raise ValueError(
+            f"Invalid {name} at {'/'.join(map(str, error.absolute_path))}: {error.message[:300]}"
+        ) from error
+
+
+def validate_manifest(value):
+    value = _scalars(value)
+    if len(canonical(value).encode()) > 65536:
+        raise ValueError("Manifest exceeds 65536 bytes")
+    _structure(value, "manifest")
+    platforms = [(target["os"], target["architecture"]) for target in value["targets"]]
+    if len(set(platforms)) != len(platforms):
+        raise ValueError("Image target platforms must be unique")
+    required = {canonical(predicate) for predicate in value["capabilities"]["required"]}
+    if any(
+        canonical(predicate) in required
+        for predicate in value["capabilities"]["optional"]
+    ):
+        raise ValueError("Required and optional capabilities overlap")
+    schema = copy.deepcopy(value["configuration"]["schema"])
+    if any(key not in schema["properties"] for key in schema["required"]):
+        raise ValueError("Required configuration key is not declared")
+    for rule in schema["properties"].values():
+        if rule.get("minimum", -MAX_INTEGER) > rule.get(
+            "maximum", MAX_INTEGER
+        ) or rule.get("minLength", 0) > rule.get("maxLength", 4096):
+            raise ValueError("Configuration bounds are reversed")
+        if rule["type"] == "string":
+            rule.setdefault("maxLength", 4096)
+        if rule["type"] == "integer":
+            rule.setdefault("minimum", -MAX_INTEGER)
+            rule.setdefault("maximum", MAX_INTEGER)
+        if "enum" in rule:
+            bounds = {key: item for key, item in rule.items() if key != "enum"}
+            if any(
+                not Draft202012Validator(bounds).is_valid(choice)
+                for choice in rule["enum"]
+            ):
+                raise ValueError("Configuration enum violates its bounds/type")
+    defaults = value["configuration"]["defaults"]
+    if len(canonical(defaults).encode()) > 16384 or not Draft202012Validator(
+        schema
+    ).is_valid(defaults):
+        raise ValueError("Configuration defaults violate schema or byte limits")
+    return value
+
+
+def safe_source_path(name):
+    path = PurePosixPath(name)
+    if (
+        not isinstance(name, str)
+        or path.is_absolute()
+        or not re.fullmatch(r"[A-Za-z0-9_.][A-Za-z0-9_./-]*", name)
+        or any(part in ("", ".", "..") for part in name.split("/"))
+    ):
+        raise ValueError("Build inputs require safe relative file paths")
+    for part in path.parts:
+        if (
+            (part.startswith(".") and name != ".dockerignore")
+            or part.endswith((".context.json", ".auth.env"))
+            or part
+            in (
+                "credentials.json",
+                "token.json",
+                "id_rsa",
+                "id_ed25519",
+                "app.json",
+                "app.manifest.json",
+                "python-wheels",
+            )
+        ):
+            raise ValueError(
+                "Credentials, selections and generated files cannot be build inputs"
+            )
+    return path
+
+
+def validate_authoring(value):
+    value = _scalars(value)
+    _structure(value, "authoring")
+    source = copy.deepcopy(value)
+    source.pop("build")
+    source.pop("wheel_bundle")
+    for target in source["targets"]:
+        target["image"] = target.pop("repository") + "@sha256:" + "0" * 64
+    validate_manifest(source)  # Placeholder exists only inside semantic validation.
+    for name in [value["build"]["dockerfile"], *value["build"]["files"]]:
+        safe_source_path(name)
+    return value

@@ -85,19 +85,37 @@ No Platform/virtual stack reload is needed for this slice.
 - [x] Define and implement machine registry grants bound to negotiated session, current operation/candidate/import, exact image and deadline; request short-lived pull-only scope, recheck credential revocation after exchange, and keep credentials out of durable records and bind private repository policy to the original publisher.
 - [x] Pass full API regressions, contract/security fixtures and isolated Kestrel/PostgreSQL/real Distribution acceptance with private token refresh and API restart replay during registry outage.
 - [x] Add fail-closed server registry configuration and a human guide; retain installation/run dispatch for AP-07+.
-- [ ] Operator configures a hosted registry and reloads Platform API; verify publication/import with separate real Auth0 principals/workspaces and the selected provider's private pull policy.
+- [x] Operator reloads the stacks during AP-06; API readiness 200 and anonymous Store 401 confirm the route is deployed.
+- [ ] Configure a hosted registry and verify publication/import with separate real Auth0 principals/workspaces and the selected provider's private pull policy.
 
 Evidence: [AP-05](../evidence/AP-05.md). Human checks:
 [AP-05](../human-testing/AP-05.md). No new EF migration and no virtual reload.
 The process harness uses an isolated restricted Bearer gateway with real
-Distribution, not a hosted provider or real Auth0 credentials. AP-06 has not started.
+Distribution, not a hosted provider or real Auth0 credentials. The user explicitly
+authorized AP-06 component work before testing these external gates.
+
+## AP-06 — standalone Robot Check and publisher CLI (component/isolated acceptance complete)
+
+- [x] Record explicit user authorization to continue before deployed AP-05 acceptance; keep hosted registry/Auth0 checks pending.
+- [x] Create the independent `../robot-check` repository, plain entrypoint, typed `sample_count` configuration, pinned Docker/wheel dependencies and operator/author guide.
+- [x] Package a versioned, checksum-pinned template archive with source commit/tag; CLI includes its pointer rather than a divergent code copy. Template v0.1.1 retains byte-identical image inputs from process-tested v0.1.0.
+- [x] Add independent authoring/manifest/configuration validation and packaged schemas; distinguish editable repository input from finalized digest-pinned metadata.
+- [x] Implement `app init|validate|build|publish`, clean explicit build inputs, source/image identity checks, frozen releases, deterministic API retries and prepared-manifest support; preserve legacy CLI workflows.
+- [x] Pass 100 CLI tests, 5 example tests, 177 contracts and 5 OpenAPI checks, focused lint, template reproduction and standalone CLI wheel installation.
+- [x] Run actual CLI/Buildx/Docker/Distribution/Kestrel/PostgreSQL publication acceptance: API failure after push, fresh image-store pull, unchanged v1 after distinct v2 and registry-down replay. Only disposable fixture engines/containers are operated.
+- [ ] Verify hosted publication through real Auth0/registry policy and positive live simulator IMU output. Deployed Agent was reachable but sampling timed out with no running Base101 simulator; no live success is claimed.
+
+Evidence: [AP-06](../evidence/AP-06.md). Human checks:
+[AP-06](../human-testing/AP-06.md). Packaging contract:
+[App authoring](../apps-authoring.md). No API/virtual reload is required by AP-06.
+Runtime delivery, managed installation/execution and product UI remain later gates.
 
 ## Subsequent work
 
 AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local
 wheel distribution; public Python publication is deferred. AP-05 Store/share/import and registry grants pass isolated acceptance; operator
-deployment and hosted registry/Auth0 checks remain pending. AP-06 supplies authoring
-and publishing CLI workflows. Owner-scoped engine management (AP-08) precedes install
+deployment is confirmed, while hosted registry/Auth0 checks remain pending. AP-06 authoring and publication CLI workflows pass component/isolated acceptance;
+hosted publication and live sensor checks remain pending. Owner-scoped engine management (AP-08) precedes install
 (AP-07) and mutually exclusive runs (AP-09). Runtime evidence (AP-10), Studio
 (AP-11), CLI (AP-12) and virtual topology (AP-08V) converge at AP-13 acceptance.
 Retire managed UI (AP-14) and remaining Runner clients/defaults (AP-15) only
@@ -105,7 +123,7 @@ through their explicit drain and recovery gates. AP-16 is a separate follow-up.
 
 AP-01 defines the contracts and supplies independently tested readers; its acceptance does not claim live App execution. AP-02 persistence/reset is accepted. AP-03 negotiation and inventory routes are accepted, including deployed `virt2` verification; App installation/run dispatch remains disabled.
 
-AP-05 publication/read/import routes are implemented but await operator deployment.
+AP-05 publication/read/import routes are deployed; hosted registry/Auth0 acceptance remains pending.
 App installation/run dispatch is not enabled by these slices. Do not
 mark an external registry, Auth0, simulator or physical gate as passing from
 schema fixtures. The operator performs every Platform/virtual stack operation.

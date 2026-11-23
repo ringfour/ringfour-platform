@@ -375,3 +375,17 @@ packaging, `mission_context.py` for project context, and `dev_sync.py` for local
 sync. Component tests use doubles; real-process integration is recorded in
 [milestone 06 evidence](../../docs/evidence/06.md) and
 [milestone 07 evidence](../../docs/evidence/07.md).
+
+
+## App authoring preview (AP-06)
+
+The `app` group adds `init`, `validate`, `build` and `publish`. Use the
+[AP-06 guide](../../docs/human-testing/AP-06.md) for the transferred Robot Check
+template and local wheel bundle, clean image builds, registry login and immutable
+publication/retry flow. The [authoring contract](../../docs/apps-authoring.md)
+separates editable `app.json` from final `app.manifest.json`. Offline init and
+validation need no Auth0 session. Build/publish never restart a Ringfour stack.
+
+Legacy mission commands remain available during the pivot. App installation,
+operation controls and discovery CLI come in their respective later milestones;
+publishing alone starts no robot work.

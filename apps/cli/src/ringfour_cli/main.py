@@ -2,6 +2,7 @@ import base64
 import codecs
 import hashlib
 import http.client
+import json
 import os
 import secrets
 import shutil
@@ -13,16 +14,21 @@ import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlencode
 
 import httpx
 import typer
+from keyring.errors import KeyringError
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 from typer.core import TyperGroup
 
-from . import auth
+from . import app_project, auth
+from .app_manifest import fingerprint as app_fingerprint
+from .app_manifest import read_json as read_app_json
+from .app_manifest import validate_authoring, validate_manifest
 from .config import (
     ConfigError,
     load_settings,
@@ -74,6 +80,10 @@ dev_artifact_app = typer.Typer(help="List and download local development artifac
 dev_app.add_typer(dev_artifact_app, name="artifact")
 mission_app = typer.Typer(help="Publish and operate missions.", no_args_is_help=True)
 app.add_typer(mission_app, name="mission")
+apps_app = typer.Typer(
+    help="Initialize, validate, build and publish container Apps.", no_args_is_help=True
+)
+app.add_typer(apps_app, name="app")
 hitl_app = typer.Typer(help="Inspect and answer human interactions.", no_args_is_help=True)
 app.add_typer(hitl_app, name="hitl")
 logbook_app = typer.Typer(help="Inspect robot and mission history.", no_args_is_help=True)
@@ -176,30 +186,81 @@ def _api_request(
     store: auth.TokenStore,
     **kwargs,
 ) -> httpx.Response:
+    error_json = kwargs.pop("_error_json", False)
     tokens = store.load(settings)
     if tokens is None:
-        console.print("[red]Not logged in. Run `ringfour-cli login` first.[/red]")
+        if error_json:
+            typer.echo(
+                json.dumps(
+                    {
+                        "error": {
+                            "code": "unauthenticated",
+                            "message": "Run ringfour-cli login first.",
+                            "details": {"retryable": False},
+                        }
+                    }
+                )
+            )
+        else:
+            console.print("[red]Not logged in. Run `ringfour-cli login` first.[/red]")
         raise typer.Exit(code=1)
     extra_headers = kwargs.pop("headers", {})
     request_timeout = kwargs.pop("_timeout", 15.0)
     with httpx.Client(base_url=settings.api_url, timeout=request_timeout) as client:
         response = client.request(
-            method, path, headers={**extra_headers, "Authorization": f"Bearer {tokens['access_token']}"}, **kwargs
+            method,
+            path,
+            headers={
+                **extra_headers,
+                "Authorization": f"Bearer {tokens['access_token']}",
+            },
+            **kwargs,
         )
         if response.status_code == 401:
             try:
                 tokens = auth.refresh_tokens(client, settings, tokens)
             except auth.DeviceAuthError as error:
-                console.print(f"[red]{error}[/red]")
+                if error_json:
+                    typer.echo(
+                        json.dumps(
+                            {
+                                "error": {
+                                    "code": "unauthenticated",
+                                    "message": "Refresh failed; run ringfour-cli login.",
+                                    "details": {"retryable": False},
+                                }
+                            }
+                        )
+                    )
+                else:
+                    console.print(f"[red]{error}[/red]")
                 raise typer.Exit(code=1) from error
             store.save(settings, tokens)
             response = client.request(
                 method,
                 path,
-                headers={**extra_headers, "Authorization": f"Bearer {tokens['access_token']}"},
+                headers={
+                    **extra_headers,
+                    "Authorization": f"Bearer {tokens['access_token']}",
+                },
                 **kwargs,
             )
     if response.status_code >= 400:
+        if error_json:
+            try:
+                payload = response.json()
+                if not isinstance(payload.get("error"), dict):
+                    raise TypeError
+            except (ValueError, AttributeError, TypeError):
+                payload = {
+                    "error": {
+                        "code": "api_error",
+                        "message": f"API returned HTTP {response.status_code}.",
+                        "details": {"retryable": response.status_code >= 500},
+                    }
+                }
+            typer.echo(json.dumps(payload))
+            raise typer.Exit(code=1)
         try:
             error = response.json()["error"]
             console.print(f"[red]{response.status_code} {error['code']}: {error['message']}[/red]")
@@ -207,6 +268,168 @@ def _api_request(
             console.print(f"[red]Request failed with status {response.status_code}.[/red]")
         raise typer.Exit(code=1)
     return response
+
+
+def _app_result(action, json_output):
+    try:
+        value = action()
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        ConfigError,
+        httpx.HTTPError,
+        auth.DeviceAuthError,
+        KeyringError,
+    ) as error:
+        message = (
+            "API transport failed; verify the API URL and connection."
+            if isinstance(error, httpx.HTTPError)
+            else str(error)[:1000]
+        )
+        code = (
+            "build_failed"
+            if isinstance(error, app_project.DockerError)
+            else "invalid_input"
+        )
+        if isinstance(error, httpx.HTTPError):
+            code = "api_unavailable"
+        if isinstance(error, (auth.DeviceAuthError, KeyringError)):
+            code = "unauthenticated"
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {
+                        "error": {
+                            "code": code,
+                            "message": message,
+                            "details": {
+                                "retryable": isinstance(
+                                    error, (app_project.DockerError, httpx.HTTPError)
+                                )
+                            },
+                        }
+                    }
+                )
+            )
+        else:
+            typer.echo(f"{code}: {message}", err=True)
+        raise typer.Exit(code=1) from error
+    if json_output:
+        typer.echo(json.dumps(value, ensure_ascii=False))
+    else:
+        console.print_json(data=value)
+
+
+@apps_app.command("init")
+def app_init(
+    destination: Path,
+    app_key: Annotated[str, typer.Option("--app-key")],
+    repository: Annotated[str, typer.Option("--repository")],
+    template_archive: Annotated[Path | None, typer.Option("--template-archive")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+):
+    """Create a project from the pinned standalone Robot Check template."""
+    _app_result(
+        lambda: app_project.init_project(
+            destination.absolute(), app_key, repository, template_archive
+        ),
+        json_output,
+    )
+
+
+@apps_app.command("validate")
+def app_validate(
+    directory: Annotated[Path, typer.Argument()] = Path("."),
+    manifest: Annotated[Path | None, typer.Option("--manifest")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+):
+    """Validate editable authoring input or a finalized immutable manifest."""
+
+    def action():
+        if manifest is not None:
+            value = validate_manifest(read_app_json(manifest))
+            return {
+                "valid": True,
+                "kind": "manifest",
+                "manifest_digest": "sha256:" + app_fingerprint(value),
+            }
+        value = validate_authoring(read_app_json(directory / "app.json"))
+        source, _ = app_project.source_snapshot(directory.resolve(), value)
+        return {
+            "valid": True,
+            "kind": "authoring",
+            "app_key": value["app_key"],
+            "release": value["release"],
+            "source_fingerprint": source,
+        }
+
+    _app_result(action, json_output)
+
+
+@apps_app.command("build")
+def app_build(
+    directory: Annotated[Path, typer.Argument()] = Path("."),
+    wheels: Annotated[Path | None, typer.Option("--wheels")] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+):
+    """Build isolated App images from explicit sources and local hash-pinned wheels."""
+    _app_result(
+        lambda: app_project.build_project(directory.resolve(), wheels), json_output
+    )
+
+
+@apps_app.command("publish")
+def app_publish(
+    directory: Annotated[Path, typer.Argument()] = Path("."),
+    manifest: Annotated[Path | None, typer.Option("--manifest")] = None,
+    org: str | None = typer.Option(None, "--org"),
+    visibility: str = typer.Option("listed", "--visibility"),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key"),
+    json_output: bool = typer.Option(False, "--json"),
+):
+    """Push/verify images, freeze immutable release input, then publish AP-05 metadata."""
+
+    def action():
+        settings = load_settings()
+        require_auth0(settings)
+        organization = org or selected_org(settings)
+        if not organization:
+            raise ValueError("Select a workspace with org select or --org")
+        organization = str(uuid.UUID(organization))
+        if visibility not in ("listed", "unlisted"):
+            raise ValueError("visibility must be listed or unlisted")
+        if idempotency_key is not None and (
+            not 1 <= len(idempotency_key) <= 200
+            or any(ord(c) < 32 or ord(c) == 127 for c in idempotency_key)
+        ):
+            raise ValueError(
+                "Idempotency key must contain 1–200 non-control characters"
+            )
+        store = auth.TokenStore()
+        if store.load(settings) is None:
+            raise auth.DeviceAuthError("Run ringfour-cli login before publishing")
+        release = (
+            app_project.verify_prebuilt(manifest)
+            if manifest is not None
+            else app_project.prepare_publication(directory.resolve())
+        )
+        body = {"manifest": release, "visibility": visibility}
+        key = idempotency_key or "app:" + app_fingerprint(
+            {"api": settings.api_url, "organization": organization, "request": body}
+        )
+        return _api_request(
+            "POST",
+            f"/v1/organizations/{organization}/app-revisions",
+            settings,
+            store,
+            headers={"Idempotency-Key": key},
+            json=body,
+            _error_json=json_output,
+            _timeout=90,
+        ).json()
+
+    _app_result(action, json_output)
 
 
 def _execution_logs(settings, store, execution_id: str, follow: bool) -> dict:

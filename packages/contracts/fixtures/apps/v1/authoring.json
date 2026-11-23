@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "app_key": "robot-check",
+  "release": "0.1.0",
+  "display": {
+    "name": "Robot Check",
+    "description": "Read an IMU sample and write the result."
+  },
+  "targets": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "native_requirements": [],
+      "repository": "registry.example.com/ringfour/robot-check"
+    }
+  ],
+  "capabilities": {
+    "required": [
+      {
+        "capability": "imu"
+      }
+    ],
+    "optional": [
+      {
+        "capability": "cameras"
+      }
+    ]
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "sample_count"
+      ]
+    },
+    "defaults": {
+      "sample_count": 1
+    }
+  },
+  "build": {
+    "dockerfile": "Dockerfile",
+    "files": [
+      "main.py",
+      "config.schema.json",
+      "config.example.json",
+      ".dockerignore"
+    ]
+  },
+  "wheel_bundle": {
+    "version": "0.1.0.dev0",
+    "sha256": "7ea68b854805abcd2843793c2e981aef623f287bb6eadf0839e9cf7c9912f290"
+  }
+}

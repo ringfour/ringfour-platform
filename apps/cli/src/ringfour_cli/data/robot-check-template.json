@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "name": "robot-check",
+  "version": "0.1.1",
+  "source_repository": "robot-check",
+  "source_commit": "dc75983a10dfcbd84892d2f0bef3403ed17af6cf",
+  "source_tag": "v0.1.1",
+  "archive_name": "v0.1.1.tar.gz",
+  "sha256": "91bfd75fe4dcf74b2776236c13d8fa9bfad4db5f5d0e39f7aec38aff0012431d"
+}
