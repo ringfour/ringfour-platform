@@ -43,6 +43,22 @@ organizations. API readiness is 200 and all 35 migrations are applied. Virtual
 remains stopped and requires re-enrollment before later device integration.
 See [evidence](../evidence/AP-02.md) and [human guide](../human-testing/AP-02.md).
 
+## AP-03 — Agent inventory and compatibility (implemented; deployment check pending)
+
+- [x] Read bounded, fresh Agent hello over the existing protocol; preserve profile/capability/instance provenance without sensor or motion calls.
+- [x] Supply engine OS/architecture from virtual infrastructure and enforce hard/optional/arm/native/image requirements on a fresh device observation.
+- [x] Negotiate App protocol per current session and stable namespace; persist inventory projection, exact report deduplication and original receipt times.
+- [x] Fence old/replaced sessions and enforce robot/workspace/revision read authority independently.
+- [x] Add scoped status and compatibility endpoints; retain offline and last-successful observations as explanatory data.
+- [x] Run independent fixtures/regressions and real Agent/Daemon/Kestrel/PostgreSQL process acceptance, including restart, Agent outage and offline retention.
+- [ ] Operator reloads Platform API and virtual Daemon, recovers old enrollment invalidated by AP-02, and confirms the deployed ROS-backed inventory. No stack operation is performed by the agent.
+
+Evidence: [AP-03](../evidence/AP-03.md). Operator steps:
+[AP-03](../human-testing/AP-03.md). The ROS-free acceptance proves advertised
+inventory and transport/recovery behavior; it does not prove sensor freshness or
+simulator/physical operation. Pre-pull/start refusal with zero engine effects is
+retained for AP-13 after those execution paths exist.
+
 ## Subsequent work
 
 AP-01 and AP-02 acceptance are complete.
@@ -53,8 +69,8 @@ publishing (AP-05/06). Owner-scoped engine management (AP-08) precedes install
 Retire managed UI (AP-14) and remaining Runner clients/defaults (AP-15) only
 through their explicit drain and recovery gates. AP-16 is a separate follow-up.
 
-AP-01 defines the contracts and supplies independently tested readers; its acceptance does not claim live App execution. App operation/negotiation routes remain dark. AP-02 implementation, authorized identity-only reset, and real Auth0 identity/owner acceptance are complete.
+AP-01 defines the contracts and supplies independently tested readers; its acceptance does not claim live App execution. AP-02 persistence/reset is accepted. AP-03 negotiation and inventory routes are implemented, with deployed reload/re-enrollment verification pending; App installation/run dispatch remains disabled.
 
-No App endpoints or dispatch are enabled by these contract slices. Do not
+No App publication/install/run endpoints or dispatch are enabled by these slices. Do not
 mark an external registry, Auth0, simulator or physical gate as passing from
 schema fixtures. The operator performs every Platform/virtual stack operation.

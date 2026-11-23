@@ -1,7 +1,7 @@
-"""Strict readers for the proposed, separately negotiated App protocol.
+"""Strict readers for the separately negotiated App protocol.
 
-Not wired into ConnectionManager: App dispatch stays disabled until its durable
-state and executor milestones. Agent calls and capability matching belong to AP-03.
+AP-03 wires negotiation/inventory into ConnectionManager. App command dispatch
+stays disabled until the installation and executor milestones.
 """
 
 from __future__ import annotations

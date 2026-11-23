@@ -1,0 +1,11 @@
+**
+!apps/
+!apps/api/
+!apps/api/**
+!packages/
+!packages/contracts/
+!packages/contracts/schemas/
+!packages/contracts/schemas/**
+**/bin/
+**/obj/
+**/.env*

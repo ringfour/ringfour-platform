@@ -20,6 +20,12 @@ class Settings:
     local_tls_path: str = "/data/local-dev-tls.pem"
     local_advertised_url: str | None = None
     agent_motion_socket: str | None = None
+    agent_uri: str | None = None
+    engine_os: str | None = None
+    engine_architecture: str | None = None
+    engine_native_facts: tuple[str, ...] = ()
+    app_inventory_interval_seconds: float = 15.0
+    agent_inventory_timeout_seconds: float = 3.0
 
     @staticmethod
     def from_env() -> "Settings":
@@ -44,4 +50,10 @@ class Settings:
             local_tls_path=os.environ.get("RINGFOUR_LOCAL_TLS_PATH", "/data/local-dev-tls.pem"),
             local_advertised_url=os.environ.get("RINGFOUR_LOCAL_DEV_URL") or None,
             agent_motion_socket=os.environ.get("RINGFOUR_AGENT_MOTION_SOCKET") or None,
+            agent_uri=os.environ.get("RINGFOUR_AGENT_URI") or None,
+            engine_os=os.environ.get("RINGFOUR_ENGINE_OS") or None,
+            engine_architecture=os.environ.get("RINGFOUR_ENGINE_ARCHITECTURE") or None,
+            engine_native_facts=tuple(filter(None, os.environ.get("RINGFOUR_ENGINE_NATIVE_FACTS", "").split(","))),
+            app_inventory_interval_seconds=float(os.environ.get("RINGFOUR_APP_INVENTORY_INTERVAL_SECONDS", "15")),
+            agent_inventory_timeout_seconds=float(os.environ.get("RINGFOUR_AGENT_INVENTORY_TIMEOUT_SECONDS", "3")),
         )

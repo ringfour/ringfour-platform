@@ -50,7 +50,7 @@ paths:
       - device
       - apps
       operationId: negotiateDeviceAppProtocol
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: After unchanged v1 welcome, negotiate App payload support for this exact active session and stable
         deployment namespace. No common version returns daemon_upgrade_required. Never dispatch App commands before
         success.
@@ -122,7 +122,7 @@ paths:
       - device
       - apps
       operationId: reportDeviceAppInventory
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Current negotiated session reports observed Agent inventory and engine target. Retain cached observation
         as explanatory only. Durable report ID/sequence replay is independent of reconnect session headers.
       parameters:
@@ -248,7 +248,7 @@ paths:
       - robots
       - apps
       operationId: getRobotAppStatus
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Workspace member reads current session support and last-received target/inventory. Offline status
         retains timestamps and never authorizes a current capability check.
       parameters:
@@ -277,7 +277,7 @@ paths:
       - robots
       - apps
       operationId: previewAppCompatibility
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Workspace member previews an accessible revision against last-known inventory. This preview does
         not pull, install or authorize dispatch; the Daemon must recheck current inventory before pull and start.
       parameters:

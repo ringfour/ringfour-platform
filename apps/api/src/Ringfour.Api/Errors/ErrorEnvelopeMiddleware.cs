@@ -32,6 +32,9 @@ public sealed record ErrorBody(string Code, string Message, string RequestId);
 
 public sealed record ErrorEnvelope(ErrorBody Error);
 
+// App endpoints opt into the v2 envelope without changing legacy consumers.
+public sealed class AppErrorResponse { }
+
 // Converts domain exceptions and bare 401/403/404 responses into the shared
 // error envelope; request_id correlates with server logs via TraceIdentifier.
 public sealed class ErrorEnvelopeMiddleware(RequestDelegate next)
@@ -91,6 +94,15 @@ public sealed class ErrorEnvelopeMiddleware(RequestDelegate next)
         context.Response.Clear();
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json";
+        if (context.GetEndpoint()?.Metadata.GetMetadata<AppErrorResponse>() is not null)
+        {
+            await context.Response.WriteAsJsonAsync(new { error = new {
+                code = code == "invalid_token" ? "unauthenticated" : code,
+                message = message.Length > 1000 ? message[..1000] : message,
+                details = new { retryable = false }, request_id = context.TraceIdentifier,
+            } }, RingfourJson.Options);
+            return;
+        }
         var envelope = new ErrorEnvelope(new ErrorBody(code, message, context.TraceIdentifier));
         await context.Response.WriteAsJsonAsync(envelope, RingfourJson.Options);
     }

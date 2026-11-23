@@ -40,6 +40,37 @@ uv run pytest -q
 
 Start with `src/ringfour_daemon/main.py`, `connection.py`, `pairing.py`,
 `scripts.py` and `status_page.py`. SQLite migrations are under `migrations/`.
+
+## App capability inventory (AP-03)
+
+Set `RINGFOUR_AGENT_URI` to the real Agent's `unix:///run/ringfour.sock` or
+`ws://agent:10101` endpoint. The Daemon sends only the existing protocol 1
+JSON-RPC hello and records the advertised profile/capabilities/instances.
+It does not read sensors or infer live measurements from a capability name.
+
+Set `RINGFOUR_ENGINE_OS` and `RINGFOUR_ENGINE_ARCHITECTURE` to the actual
+deployment engine's platform (for Docker, obtain these from `docker info`).
+The virtual launchers supply these values; they are not inferred from this
+container's potentially emulated process architecture. `x86_64` normalizes to
+`amd64`, `aarch64` to `arm64`. Unknown well-formed targets remain observable and
+will fail matching when no image exists. Optional `RINGFOUR_ENGINE_NATIVE_FACTS`
+is a comma-separated list of operator-verified prerequisites. Missing engine
+platform configuration disables reporting.
+
+After v1 welcome, the Daemon separately negotiates App protocol 1 with the active
+session ID and its persisted deployment namespace. SQLite retains a serial
+inventory-report outbox and the last successful Agent observation. A retry sends
+the original ID/sequence/body under the new session header. Current inventory
+failure is reported as unavailable with explanatory last-successful data.
+Defaults: 3-second bounded Agent call and 15-second reporting interval; override
+with `RINGFOUR_AGENT_INVENTORY_TIMEOUT_SECONDS` and
+`RINGFOUR_APP_INVENTORY_INTERVAL_SECONDS`.
+
+`agent_inventory.check_fresh` is the install/start requirement gate for later
+executor slices: it always obtains a new hello and never authorizes an engine
+action from cached inventory. App dispatch and the engine adapter remain later
+milestones. See `docs/human-testing/AP-03.md` in the Platform repository.
+
 The [architecture](../../docs/architecture.md),
 [enrollment](../../docs/human-testing/02.md), and
 [mission testing](../../docs/human-testing/06.md) guides explain its boundaries

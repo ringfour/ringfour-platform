@@ -6,7 +6,7 @@ The [Apps pivot specification](../../app-pivot.md) and [active plan](milestones/
 
 App manifests cannot choose sockets, mounts, privileges, devices, networks, commands or entrypoints. Deployment settings belong to the robot owner. The Agent owns ROS and safety. New Apps use the image's plain entrypoint without Runner, uv preparation or an App-side Runner shim. Legacy execution remains operational until its clients, recovery and durable history are migrated. App and legacy executions must share one transactional robot execution slot before App start is enabled.
 
-The [manifest contract](apps-contract.md) is specified and fixture-tested first. The [API/runtime contracts](apps-api-contract.md) are also defined. The separate [device negotiation/inventory contract](apps-device-contract.md) preserves v1 transport. Persistence remains pending AP-02 and public App operation implementations pending later slices; no existing v1 envelope is extended by this slice. The flows and implementation details below describe the legacy implementation during migration.
+The [manifest contract](apps-contract.md) is specified and fixture-tested first. The [API/runtime contracts](apps-api-contract.md) are also defined. AP-02 adds Apps persistence and the authorized identity-only reset; AP-03 implements the separate [device negotiation/inventory contract](apps-device-contract.md), preserving v1 envelopes. The Daemon reads the real Agent hello, persists and reports observations, and Platform provides scoped status/compatibility previews. App installation/execution remains in later slices. The flows and implementation details below describe the legacy implementation during migration.
 
 ## Ownership and flows
 

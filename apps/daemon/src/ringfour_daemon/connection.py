@@ -13,7 +13,15 @@ from typing import Any
 import httpx
 import websockets
 
-from . import __version__, local_execution, local_grants, operations, runner, scripts
+from . import (
+    __version__,
+    app_inventory,
+    local_execution,
+    local_grants,
+    operations,
+    runner,
+    scripts,
+)
 from .enrollment import credential_error, load_identity
 
 logger = logging.getLogger(__name__)
@@ -51,6 +59,7 @@ class ProtocolError(Exception):
 @dataclass
 class _SessionState:
     robot_id: str
+    session_id: str | None = None
     outbound_sequence: int = 1  # hello consumes sequence 1
     inbound_sequence: int = 0  # welcome must carry sequence 1
 
@@ -147,6 +156,9 @@ class ConnectionManager:
                 await self._say_hello(outbound, state)
                 heartbeat_seconds = await self._await_welcome(socket, state)
                 self.connected = True
+                if self._settings.agent_uri:
+                    tasks.append(asyncio.create_task(app_inventory.run_session(
+                        self._settings, identity, state.session_id, headers)))
                 tasks.append(
                     asyncio.create_task(
                         self._reconcile_later(replayed_ids)
@@ -196,6 +208,7 @@ class ConnectionManager:
             raise ProtocolError(f"expected welcome, got {envelope['type']}")
         payload = envelope["payload"]
         heartbeat = int(payload["heartbeat_interval_seconds"])
+        state.session_id = payload["session_id"]
         logger.info(
             "connected to platform as robot %s (session %s, heartbeat %ds)",
             state.robot_id,

@@ -1,12 +1,13 @@
 # Pinned .NET 10 LTS images; no host SDK required anywhere in this repo.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /src
+WORKDIR /src/apps/api
 
-COPY Directory.Build.props ./
-COPY src/Ringfour.Api/Ringfour.Api.csproj src/Ringfour.Api/
+COPY apps/api/Directory.Build.props ./
+COPY apps/api/src/Ringfour.Api/Ringfour.Api.csproj src/Ringfour.Api/
 RUN dotnet restore src/Ringfour.Api/Ringfour.Api.csproj
 
-COPY src/ src/
+COPY apps/api/src/ src/
+COPY packages/contracts/schemas/ /src/packages/contracts/schemas/
 RUN dotnet publish src/Ringfour.Api/Ringfour.Api.csproj \
     --configuration Release \
     --no-restore \

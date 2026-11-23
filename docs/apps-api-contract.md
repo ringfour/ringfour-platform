@@ -1,9 +1,11 @@
 # Apps API and runtime v1 — new Ringfour design
 
-Status: AP-01 contract definitions and executable fixtures; AP-02 persistence
-model and migration are being implemented. None of the new routes is enabled.
-Existing API/device/runtime behavior remains unchanged. [Manifest v1](apps-contract.md) defines release validation;
-[active plan](milestones/apps-pivot.md) tracks the next migration milestone. [Device protocol v1](apps-device-contract.md) defines the separate negotiated exchange.
+Status: AP-01 contracts and AP-02 persistence/reset are complete. AP-03 implements
+device negotiation/inventory and scoped status/compatibility previews. App
+publication, installation, execution and runtime routes remain contract-only.
+[Manifest v1](apps-contract.md) defines release validation; the
+[active plan](milestones/apps-pivot.md) tracks implementation.
+[Device protocol v1](apps-device-contract.md) defines the separate exchange.
 
 OpenAPI: [hosted API](../packages/contracts/openapi/ringfour-api.v1.yaml) and
 [local runtime](../packages/contracts/openapi/ringfour-runtime.v1.yaml). New
@@ -202,10 +204,10 @@ block. `daemon_upgrade_required` identifies a peer without negotiated support;
 `ownership_conflict` and `container_lost` must never trigger blind recreation.
 Do not expose registry tokens or full engine inspections in error messages.
 
-New Daemon inventory/negotiation and CLI/Studio summary readers are independently
-tested against the same fixtures, with C# schema/manifest checks. They remain
-unwired: no active API/CLI/Studio/Daemon path switches to App behavior yet. Their implementation milestones must consume
-the same `state`, `phase`, `failure.code/details`, IDs and observation fields.
+Daemon inventory/negotiation and CLI/Studio summary readers are independently
+tested against the same fixtures. AP-03 wires inventory into the Daemon and
+API; CLI/Studio product surfaces remain later slices. Their implementations
+must consume the same state, failure, ID and observation fields.
 Negotiation/inventory schemas and cross-language reader fixtures are defined in the device contract.
 AP-02 adds the Apps PostgreSQL persistence model and a shared execution-slot
 constraint across App and legacy execution rows. The approved reset boundary
@@ -213,9 +215,9 @@ initializes a fresh application schema and restores only users, organizations,
 memberships/roles and Auth0 subject mappings with their IDs. Historical
 application rows, outputs, artifact bytes, HITL timestamps and pending work are
 discarded under the explicit user-authorized reset; only identity JSON is
-retained. Full application backup gates are waived for this reset. Device SQLite migration and its exact reset/preservation
-policy remain separate AP-02 work. Do not enable App writers or dispatch until
-the disposable initialization, identity restore and authorization gates pass.
+retained. Full application backup gates were waived for this reset. AP-02
+preserves device SQLite enrollment/outbox data; AP-03 adds inventory reporting.
+App writers/dispatch remain gated by their installation/execution milestones.
 
 Socket-test migration remains narrow: `tests/e2e/04-runner.sh` continues rejecting
 Runner sockets. `tests/e2e/06-missions.sh` keeps its no-socket assertion for the

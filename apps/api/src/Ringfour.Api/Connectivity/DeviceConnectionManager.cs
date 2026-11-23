@@ -25,6 +25,9 @@ public sealed class DeviceConnection
 public sealed class DeviceConnectionManager
 {
     private readonly ConcurrentDictionary<Guid, DeviceConnection> _sessions = new();
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _appSessionFences = new();
+
+    public SemaphoreSlim AppSessionFence(Guid robotId) => _appSessionFences.GetOrAdd(robotId, _ => new SemaphoreSlim(1, 1));
 
     public DeviceConnection? Get(Guid robotId) =>
         _sessions.TryGetValue(robotId, out var session) ? session : null;

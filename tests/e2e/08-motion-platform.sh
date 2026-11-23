@@ -20,7 +20,7 @@ set -a
 . ./.auth.env
 set +a
 export RINGFOUR_AUTH0_DOMAIN="$AUTH0_DOMAIN" RINGFOUR_AUTH0_CLIENT_ID="$AUTH0_CLI_CLIENT_ID" RINGFOUR_AUTH0_AUDIENCE="$AUTH0_AUDIENCE"
-docker build -q -t ringfour-api:08-test apps/api >/dev/null
+docker build -q -t ringfour-api:08-test -f apps/api/Dockerfile . >/dev/null
 docker build -q -t ringfour-daemon:08-test apps/daemon >/dev/null
 docker network create "$network" >/dev/null
 docker volume create "$volume" >/dev/null

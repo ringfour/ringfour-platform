@@ -56,7 +56,7 @@ if [ "${RINGFOUR_TEST_SKIP_BUILD:-0}" = 1 ]; then
     docker image inspect "$image" >/dev/null
   done
 else
-  docker build -q -t ringfour-api:07-test apps/api >/dev/null
+  docker build -q -t ringfour-api:07-test -f apps/api/Dockerfile . >/dev/null
   docker build -q -t ringfour-daemon:07-test apps/daemon >/dev/null
   docker build -q -t ringfour-runner:07-test apps/runner >/dev/null
 fi

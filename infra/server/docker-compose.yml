@@ -28,7 +28,9 @@ services:
       - "127.0.0.1:${ADMINER_PORT:-8083}:8080"
 
   api:
-    build: ../../apps/api
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
     environment:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD}
       Auth0__Domain: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN}

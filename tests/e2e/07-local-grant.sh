@@ -26,7 +26,7 @@ export RINGFOUR_AUTH0_DOMAIN="$AUTH0_DOMAIN" RINGFOUR_AUTH0_CLIENT_ID="$AUTH0_CL
 export RINGFOUR_API_URL="http://127.0.0.1:18095"
 cli=(uv run --project "$PWD/apps/cli" ringfour-cli)
 secret=$(openssl rand -hex 32)
-docker build -q -t ringfour-api:07-test apps/api >/dev/null
+docker build -q -t ringfour-api:07-test -f apps/api/Dockerfile . >/dev/null
 docker build -q -t ringfour-daemon:07-test apps/daemon >/dev/null
 docker build -q -t ringfour-runner:07-test apps/runner >/dev/null
 docker network create "$network" >/dev/null

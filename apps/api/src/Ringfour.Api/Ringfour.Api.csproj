@@ -7,8 +7,15 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <PackageReference Include="JsonSchema.Net" Version="9.6.0" />
     <!-- Overrides a vulnerable transitive 9.0.0 pulled by Npgsql. -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="9.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="../../../../packages/contracts/schemas/**/*.json"
+             Link="contracts/schemas/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

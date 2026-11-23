@@ -96,7 +96,7 @@ class OpenApiContracts(unittest.TestCase):
             document = load(source)
             for path, item in document["paths"].items():
                 for method, operation in item.items():
-                    if not isinstance(operation, dict) or operation.get("x-implementation-status") != "contract-only":
+                    if not isinstance(operation, dict) or operation.get("x-implementation-status") not in ("contract-only", "implemented"):
                         continue
                     count += 1
                     with self.subTest(path=path, method=method):

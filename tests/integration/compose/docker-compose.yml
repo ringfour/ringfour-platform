@@ -23,7 +23,9 @@ services:
       retries: 30
 
   api:
-    build: ../../../apps/api
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile
     environment:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:-ringfour_dev}
       # Auth0 tenant values come from .auth.env (symlinked as .env next to this file).

@@ -220,16 +220,23 @@ public static class DeviceSocketEndpoints
                         }
 
                         helloAccepted = true;
-                        var replaced = manager.Register(session);
-                        logger.LogInformation("Device session {SessionId} connected for robot {RobotId}; replaced={Replaced}",
-                            session.SessionId, session.RobotId, replaced is not null);
-                        await ReplacePresenceAsync(db, robot.Id, session, daemonVersion, cancellationToken);
-                        await manager.SendAsync(session, options, "welcome", new JsonObject
+                        var appFence = manager.AppSessionFence(robot.Id);
+                        await appFence.WaitAsync(cancellationToken);
+                        DeviceConnection? replaced;
+                        try
                         {
-                            ["server_time"] = RingfourJson.UtcTimestamp(DateTimeOffset.UtcNow),
-                            ["heartbeat_interval_seconds"] = heartbeatSeconds,
-                            ["session_id"] = session.SessionId.ToString(),
-                        });
+                            replaced = manager.Register(session);
+                            logger.LogInformation("Device session {SessionId} connected for robot {RobotId}; replaced={Replaced}",
+                                session.SessionId, session.RobotId, replaced is not null);
+                            await ReplacePresenceAsync(db, robot.Id, session, daemonVersion, cancellationToken);
+                            await manager.SendAsync(session, options, "welcome", new JsonObject
+                            {
+                                ["server_time"] = RingfourJson.UtcTimestamp(DateTimeOffset.UtcNow),
+                                ["heartbeat_interval_seconds"] = heartbeatSeconds,
+                                ["session_id"] = session.SessionId.ToString(),
+                            });
+                        }
+                        finally { appFence.Release(); }
                         if (replaced is not null)
                         {
                             await manager.CloseWithErrorAsync(

@@ -68,6 +68,52 @@ namespace Ringfour.Api.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.AppDeviceReport", b =>
+                {
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<Guid>("ReportId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("report_id");
+
+                    b.Property<string>("BodySha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("body_sha256");
+
+                    b.Property<Guid>("DeploymentNamespace")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deployment_namespace");
+
+                    b.Property<string>("Receipt")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("receipt");
+
+                    b.Property<string>("Route")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("route");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequence");
+
+                    b.HasKey("RobotId", "ReportId");
+
+                    b.HasIndex("RobotId", "DeploymentNamespace", "Route", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("app_device_reports", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_app_device_report_sequence", "sequence BETWEEN 1 AND 9007199254740991");
+                        });
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.AppIdempotencyRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1812,6 +1858,59 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("robots", (string)null);
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.RobotAppInventory", b =>
+                {
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<Guid>("DeploymentNamespace")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deployment_namespace");
+
+                    b.Property<string>("Inventory")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("inventory");
+
+                    b.Property<DateTimeOffset>("NegotiatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("negotiated_at");
+
+                    b.Property<string>("OfferedVersions")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("offered_versions");
+
+                    b.Property<string>("Platform")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("platform");
+
+                    b.Property<DateTimeOffset?>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<long>("ReportSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("report_sequence");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<bool>("Supported")
+                        .HasColumnType("boolean")
+                        .HasColumnName("supported");
+
+                    b.HasKey("RobotId");
+
+                    b.ToTable("robot_app_inventory", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_app_inventory_projection", "(report_sequence = 0 AND received_at IS NULL AND platform IS NULL AND inventory IS NULL) OR (report_sequence > 0 AND received_at IS NOT NULL AND platform IS NOT NULL AND inventory IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_app_inventory_sequence", "report_sequence BETWEEN 0 AND 9007199254740991");
+                        });
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.RobotAuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2276,6 +2375,15 @@ namespace Ringfour.Api.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("RevisionId", "AppId")
                         .HasPrincipalKey("Id", "AppId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.AppDeviceReport", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.Robot", null)
+                        .WithMany()
+                        .HasForeignKey("RobotId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -2885,6 +2993,15 @@ namespace Ringfour.Api.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.RobotAppInventory", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.Robot", null)
+                        .WithMany()
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.RobotAuditEvent", b =>

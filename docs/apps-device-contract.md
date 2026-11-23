@@ -1,11 +1,9 @@
 # App device protocol v1 — new Ringfour design
 
-Status: AP-01 schemas and independently tested readers; AP-02 adds the
-additive SQLite persistence schema. New HTTP routes remain contract-only. No
-App negotiation, reporting, pull or dispatch is enabled by this change. AP-03
-adds actual Agent observation; AP-07/08/09 add device reporting, application
-and execution. The existing v1 device transport and legacy runtime remain
-operational without modification.
+Status: AP-03 implements separate session negotiation, Agent inventory reporting,
+durable projections and workspace-scoped status/compatibility reads. AP-07/08/09
+implement installation observations and engine execution; App dispatch remains
+disabled. The original v1 device envelopes and legacy runtime are unchanged.
 
 ## Separate support negotiation
 
@@ -91,6 +89,21 @@ started may proceed through its persisted intent. AP-08 must journal these
 boundaries before engine calls and preserve output before cleanup.
 
 ## Observed Agent inventory and target
+
+AP-03 implementation uses a minimal JSON-RPC 2.0 `hello` reader matching the
+SDK's existing protocol 1 over `unix://` or `ws://`/`wss://`. The call has a
+bounded timeout and 1 MiB welcome limit (the Agent may include a description).
+It projects only profile/capability/instance metadata and sends no robot action.
+`RINGFOUR_AGENT_URI` enables reporting. Until AP-08 verifies engine facts through
+the owner-scoped engine adapter, set `RINGFOUR_ENGINE_OS` and
+`RINGFOUR_ENGINE_ARCHITECTURE` from the actual deployment engine; unset values
+disable reporting, never substitute the Daemon's process architecture.
+`RINGFOUR_ENGINE_NATIVE_FACTS` is a comma-separated, operator-verified list.
+The Daemon refreshes inventory every 15 seconds by default and retains only
+observations as explanatory cache; each later install/start must call the fresh
+reader again. PostgreSQL persists negotiated session/namespace, latest inventory
+projection and report deduplication. SQLite migration 0016 persists the last
+successful Agent observation alongside the existing durable report outbox.
 
 `PUT /v1/device/app-inventory` uses the machine credentials and the
 `x-ringfour-device-session` header for a currently negotiated session. The body
@@ -183,7 +196,8 @@ as a current reply.
 `GET /v1/robots/{robot_id}/app-compatibility?revision_id=...` authorizes the
 revision independently through listing, publisher membership, destination share
 or existing import. Preview has no pull/install side effect or dispatch
-permission. Deterministic refusal priority is: unsupported/unnegotiated Daemon;
+permission. Offline robots return `inventory_unavailable`. For online robots,
+deterministic refusal priority is: unsupported/unnegotiated Daemon;
 unavailable or stale inventory; no matching engine target; missing required
 predicates; missing native prerequisites; compatible. Preserve optional omissions
 as explanatory arrays. Do not report absence from unavailable inventory as a

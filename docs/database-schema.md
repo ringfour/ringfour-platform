@@ -136,6 +136,23 @@ the authorized identity-only Platform reset is complete. Real Auth0 identity/own
 
 ### Milestone 06 mission persistence
 
+### App capability inventory (AP-03)
+
+Migration `AppInventory` adds `robot_app_inventory`, one row per enrolled robot,
+and `app_device_reports`. The first binds a stable deployment namespace to the
+current negotiated session/versions and holds the last inventory, engine target,
+sequence and server receipt time. The second retains each report ID, canonical
+body hash and original acknowledgement; unique robot/namespace/route/sequence
+keys prevent gaps from being accepted as new observations. A robot row lock
+serializes persisted changes and the live session fence serializes them against
+WebSocket replacement. Read-time connectivity comes from the active connection
+and presence freshness; cached rows never imply current liveness.
+
+Daemon SQLite migration 0016 adds the full last-successful Agent observation to
+the existing local inventory row. Projection and report outbox insertion are
+atomic; a pending report is resent unchanged before a new observation is queued.
+Acknowledgements retain the original receipt and report IDs across reconnects.
+
 The initial schema leaves 06 mission tables to the milestone. The implementation
 adds `missions`, immutable `mission_revisions`, one `mission_deployments` row per
 robot, and durable `deployment_actions`. Lifecycle actions use existing

@@ -45,6 +45,8 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<AppRun> AppRuns => Set<AppRun>();
     public DbSet<AppIdempotencyRecord> AppIdempotencyRecords => Set<AppIdempotencyRecord>();
     public DbSet<RobotExecutionSlot> RobotExecutionSlots => Set<RobotExecutionSlot>();
+    public DbSet<RobotAppInventory> RobotAppInventories => Set<RobotAppInventory>();
+    public DbSet<AppDeviceReport> AppDeviceReports => Set<AppDeviceReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -679,6 +681,36 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
 
     private static void ConfigureApps(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<RobotAppInventory>(e =>
+        {
+            e.ToTable("robot_app_inventory"); e.HasKey(x => x.RobotId);
+            e.Property(x => x.RobotId).HasColumnName("robot_id");
+            e.Property(x => x.DeploymentNamespace).HasColumnName("deployment_namespace");
+            e.Property(x => x.SessionId).HasColumnName("session_id");
+            e.Property(x => x.OfferedVersions).HasColumnName("offered_versions").HasColumnType("jsonb");
+            e.Property(x => x.Supported).HasColumnName("supported");
+            e.Property(x => x.NegotiatedAt).HasColumnName("negotiated_at");
+            e.Property(x => x.ReportSequence).HasColumnName("report_sequence");
+            e.Property(x => x.ReceivedAt).HasColumnName("received_at");
+            e.Property(x => x.Platform).HasColumnName("platform").HasColumnType("jsonb");
+            e.Property(x => x.Inventory).HasColumnName("inventory").HasColumnType("jsonb");
+            e.HasOne<Robot>().WithMany().HasForeignKey(x => x.RobotId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_inventory_sequence", "report_sequence BETWEEN 0 AND 9007199254740991"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_inventory_projection", "(report_sequence = 0 AND received_at IS NULL AND platform IS NULL AND inventory IS NULL) OR (report_sequence > 0 AND received_at IS NOT NULL AND platform IS NOT NULL AND inventory IS NOT NULL)"));
+        });
+        modelBuilder.Entity<AppDeviceReport>(e =>
+        {
+            e.ToTable("app_device_reports"); e.HasKey(x => new { x.RobotId, x.ReportId });
+            e.Property(x => x.RobotId).HasColumnName("robot_id"); e.Property(x => x.ReportId).HasColumnName("report_id");
+            e.Property(x => x.DeploymentNamespace).HasColumnName("deployment_namespace");
+            e.Property(x => x.Route).HasColumnName("route").HasMaxLength(32);
+            e.Property(x => x.Sequence).HasColumnName("sequence");
+            e.Property(x => x.BodySha256).HasColumnName("body_sha256").HasMaxLength(64);
+            e.Property(x => x.Receipt).HasColumnName("receipt").HasColumnType("jsonb");
+            e.HasIndex(x => new { x.RobotId, x.DeploymentNamespace, x.Route, x.Sequence }).IsUnique();
+            e.HasOne<Robot>().WithMany().HasForeignKey(x => x.RobotId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_device_report_sequence", "sequence BETWEEN 1 AND 9007199254740991"));
+        });
         modelBuilder.Entity<AppRecord>(e =>
         {
             e.ToTable("apps"); e.HasKey(x => x.Id);
