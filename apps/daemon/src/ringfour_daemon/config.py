@@ -27,9 +27,24 @@ class Settings:
     app_inventory_interval_seconds: float = 15.0
     agent_inventory_timeout_seconds: float = 3.0
 
+    apps_enabled: bool = False
+    engine_socket: str = "/var/run/docker.sock"
+    app_network: str | None = None
+    app_memory_bytes: int = 268435456
+    app_nano_cpus: int = 1000000000
+
+    def __post_init__(self):
+        if self.apps_enabled and (self.app_memory_bytes < 16777216 or self.app_nano_cpus <= 0 or not self.engine_socket.startswith("/")):
+            raise ValueError("App engine requires an absolute socket path and positive resource limits")
+
     @staticmethod
     def from_env() -> "Settings":
         return Settings(
+            apps_enabled=os.environ.get("RINGFOUR_APPS_ENABLED", "false").lower() == "true",
+            engine_socket=os.environ.get("RINGFOUR_ENGINE_SOCKET", "/var/run/docker.sock"),
+            app_network=os.environ.get("RINGFOUR_APP_NETWORK") or None,
+            app_memory_bytes=int(os.environ.get("RINGFOUR_APP_MEMORY_BYTES", "268435456")),
+            app_nano_cpus=int(os.environ.get("RINGFOUR_APP_NANO_CPUS", "1000000000")),
             db_path=os.environ.get("DAEMON_DB_PATH", "/data/ringfour.db"),
             runner_url=os.environ.get("RUNNER_URL", "http://localhost:8082"),
             platform_url=os.environ.get("PLATFORM_API_URL", "http://localhost:8080"),

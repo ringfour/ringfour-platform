@@ -110,6 +110,20 @@ Evidence: [AP-06](../evidence/AP-06.md). Human checks:
 [App authoring](../apps-authoring.md). No API/virtual reload is required by AP-06.
 Runtime delivery, managed installation/execution and product UI remain later gates.
 
+## AP-08 — owner-scoped engine prerequisite (isolated acceptance complete)
+
+AP-07 requires AP-08, so the user-authorized installation work lands this prerequisite first.
+
+- [x] Pin Engine REST v1.46/httpx, owner socket/network policy and actual engine target detection.
+- [x] Persist create/start boundaries in SQLite 0017 and hold a lifetime enrollment/namespace writer fence.
+- [x] Verify full ownership/image/network/ID before actions; retain exact-ID recovery, unknown outcomes and durable output before removal.
+- [x] Keep App readiness/status independent of Runner; retain legacy mode and non-root/resource-limited workloads.
+- [x] Pass 136 Daemon tests and actual registry/pull/create/start fault recovery with two replacement Daemon processes, stop/output/remove.
+- [ ] Operator deploys the Daemon socket/GID/network topology; AP-08V and hosted AP-07/AP-09 dispatch are separate gates.
+
+Evidence: [AP-08](../evidence/AP-08.md). Human checks: [AP-08](../human-testing/AP-08.md).
+No live stack operation was performed; the test engines/stores were isolated.
+
 ## Subsequent work
 
 AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local

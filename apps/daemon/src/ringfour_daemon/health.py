@@ -19,7 +19,8 @@ def live() -> dict[str, str]:
 def ready(request: Request) -> JSONResponse:
     checks = {
         "sqlite": _check_sqlite(request.app.state.settings.db_path),
-        "runner": _check_runner(request),
+        **({"engine": _check_engine(request)} if request.app.state.settings.apps_enabled
+           else {"runner": _check_runner(request)}),
     }
     status = "ok" if all(v == "ok" for v in checks.values()) else "fail"
     return JSONResponse(
@@ -47,3 +48,15 @@ def _check_runner(request: Request) -> str:
             return "ok" if response.status_code == 200 and body.get("status") == "ok" else "fail"
     except (httpx.HTTPError, ValueError):
         return "fail"
+
+
+def _check_engine(request):
+    from .app_engine import Engine, EngineError
+    engine = Engine(request.app.state.settings)
+    try:
+        engine.platform()
+        return "ok"
+    except EngineError:
+        return "fail"
+    finally:
+        engine.close()

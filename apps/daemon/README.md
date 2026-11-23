@@ -75,3 +75,12 @@ The [architecture](../../docs/architecture.md),
 [enrollment](../../docs/human-testing/02.md), and
 [mission testing](../../docs/human-testing/06.md) guides explain its boundaries
 and end-to-end workflows.
+
+## App engine preview (AP-08)
+
+The optional owner-scoped engine executor is documented in
+[engine policy](../../docs/apps-engine.md) and the
+[AP-08 operator guide](../../docs/human-testing/AP-08.md). It uses Engine REST
+v1.46 over an operator-provided Unix socket and a persistent writer fence;
+App readiness is independent of Runner. Hosted App lifecycle dispatch remains
+AP-07/AP-09 work. Stack rebuild/recreate is always operator-run.

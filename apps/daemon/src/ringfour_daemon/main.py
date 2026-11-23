@@ -12,7 +12,7 @@ from .agent_motion import run as run_agent_motion
 from .config import Settings
 from .connection import ConnectionManager
 from .db import migrate
-from .enrollment import check_device_state
+from .enrollment import check_device_state, load_identity
 from .enrollment import router as enrollment_router
 from .health import router as health_router
 from .local_advertisement import publish_local_endpoint
@@ -36,9 +36,17 @@ from .status_page import create_status_app
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
+    from .app_engine import Executor, run_reconciliation
+    executor = None
+    # The lifetime writer fence precedes any App consumer. Enrollment may be pending.
+    if settings.apps_enabled and load_identity(settings.db_path):
+        executor = Executor(settings).open()
+    app.state.app_executor = executor
     connection = ConnectionManager(settings)
+    connection.app_executor = executor
     app.state.connection_manager = connection
     task = asyncio.create_task(connection.run())
+    app_engine_task = asyncio.create_task(run_reconciliation(settings, connection))
     ui_connection = MissionUiConnectionManager(settings)
     app.state.mission_ui_connection_manager = ui_connection
     ui_task = asyncio.create_task(ui_connection.run())
@@ -58,6 +66,7 @@ async def lifespan(app: FastAPI):
         connection.stop()
         ui_connection.stop()
         task.cancel()
+        app_engine_task.cancel()
         ui_task.cancel()
         pairing_task.cancel()
         sync_task.cancel()
@@ -69,12 +78,14 @@ async def lifespan(app: FastAPI):
         agent_motion_task.cancel()
         interaction_task.cancel()
         interaction_delivery_task.cancel()
-        await asyncio.gather(pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, artifact_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
+        await asyncio.gather(app_engine_task, pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, artifact_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
         try:
             await task
         except asyncio.CancelledError:
             pass
         await asyncio.gather(ui_task, return_exceptions=True)
+        if connection.app_executor:
+            connection.app_executor.close()
 
 
 def create_app(settings: Settings | None = None, http_client_factory=None) -> FastAPI:

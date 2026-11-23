@@ -30,6 +30,13 @@ def utc_now():
 
 def engine_platform(settings):
     """Use declared engine facts, never os.uname() of an emulated Daemon."""
+    if settings.apps_enabled:
+        from .app_engine import Engine
+        engine = Engine(settings)
+        try:
+            return engine.platform()
+        finally:
+            engine.close()
     if not settings.engine_os or not settings.engine_architecture:
         raise InventoryUnavailable("engine_platform_unconfigured")
     architecture = {"x86_64": "amd64", "aarch64": "arm64"}.get(

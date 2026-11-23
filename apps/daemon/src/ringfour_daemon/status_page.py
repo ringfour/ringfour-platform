@@ -136,7 +136,8 @@ def create_status_app(settings, control_app=None, client_factory=httpx.AsyncClie
             detail = f"Robot ID: {identity['robot_id']}"
             extra = "Check the daemon credential." if broken else "This device is paired."
             style = "error" if broken else "ready"
-            events, latest = _activity(settings.db_path)
+            events, latest = (_app_activity(settings.db_path) if settings.apps_enabled
+                              else _activity(settings.db_path))
             rows = "".join(
                 f'<li><span><strong>{html.escape(title)}</strong>'
                 f'{" · " + html.escape(filename) if filename else ""}'
@@ -145,7 +146,8 @@ def create_status_app(settings, control_app=None, client_factory=httpx.AsyncClie
             ) or '<li class="muted">No mission or execution activity yet.</li>'
             output_html = '<p class="muted">No execution output yet.</p>'
             if latest:
-                snapshot, error = await _runner_snapshot(settings, latest[0], client_factory)
+                snapshot, error = (_app_snapshot(settings.db_path, latest[0]) if settings.apps_enabled
+                                   else await _runner_snapshot(settings, latest[0], client_factory))
                 if error:
                     output_html = f'<p class="muted">{html.escape(error)}</p>'
                 else:
@@ -179,3 +181,18 @@ def create_status_app(settings, control_app=None, client_factory=httpx.AsyncClie
         return HTMLResponse(markup, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'"})
 
     return app
+
+
+def _app_activity(db_path):
+    with connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        rows = conn.execute("SELECT run_id,state,observed_at FROM app_runs ORDER BY rowid DESC LIMIT 12").fetchall()
+    return [("App " + state, None, state, observed or "Awaiting observation") for _,state,observed in rows], (None if not rows else (rows[0][0], "App", False))
+
+
+def _app_snapshot(db_path, run_id):
+    with connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        row = conn.execute("SELECT state,stdout,stderr,stdout_truncated,stderr_truncated FROM app_runs WHERE run_id=?", (run_id,)).fetchone()
+    if not row:
+        return None, "No observed App run."
+    output = {name: (bytes(row[index])[-DISPLAY_LIMIT:].decode("utf-8", errors="replace"), len(row[index]) > DISPLAY_LIMIT, bool(row[index+2])) for name,index in (("stdout",1),("stderr",2))}
+    return {"state": row[0], "output": output}, None

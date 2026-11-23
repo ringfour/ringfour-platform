@@ -74,7 +74,7 @@ def test_migrations_are_repeatable(tmp_path):
     db = str(tmp_path / "daemon.db")
     first = migrate(db)
     second = migrate(db)
-    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
     assert second == []
 
 
@@ -90,8 +90,28 @@ def test_script_sync_migrates_from_previous_schema_with_identity_and_operations(
             conn.execute("INSERT INTO schema_migrations VALUES (?, '2026-01-01T00:00:00Z')", (version,))
         conn.execute("INSERT INTO device_identity VALUES (1, 'robot', 'org', 'https://api.example', 'credential')")
         conn.execute("INSERT INTO device_operations VALUES ('operation', 'robot', 'diagnostic.noop', 1, '{}', 'succeeded', '2026-01-01', '2026-01-01', '{}')")
-    assert migrate(db) == [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    assert migrate(db) == [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT robot_id FROM device_identity").fetchone() == ("robot",)
         assert conn.execute("SELECT operation_id FROM device_operations").fetchone() == ("operation",)
         assert conn.execute("SELECT count(*) FROM script_sync").fetchone() == (0,)
+
+
+def test_app_readiness_uses_engine_without_calling_runner(tmp_path, monkeypatch):
+    from ringfour_daemon import app_engine
+    class Engine:
+        def __init__(self, settings): pass
+        def platform(self): return 'linux/amd64'
+        def close(self): pass
+    monkeypatch.setattr(app_engine, 'Engine', Engine)
+    settings = Settings(db_path=str(tmp_path/'app.db'),runner_url='http://unused',apps_enabled=True)
+    def forbidden(): raise AssertionError('App readiness called Runner')
+    client = TestClient(create_app(settings,http_client_factory=forbidden))
+    assert client.get('/health/ready').json()['checks']=={'sqlite':'ok','engine':'ok'}
+
+
+def test_app_readiness_missing_socket_is_distinct(tmp_path):
+    settings = Settings(db_path=str(tmp_path/'app.db'),runner_url='http://unused',apps_enabled=True,engine_socket=str(tmp_path/'missing.sock'))
+    client=TestClient(create_app(settings))
+    response=client.get('/health/ready')
+    assert response.status_code==503 and response.json()['checks']=={'sqlite':'ok','engine':'fail'}

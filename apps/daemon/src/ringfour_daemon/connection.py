@@ -96,6 +96,7 @@ class ConnectionManager:
         self._uuid = uuid or (lambda: f"{time.monotonic_ns():x}")
         self._stopped = False
         self.connected = False
+        self.app_executor = None
         # Total effect executions across reconnects; exposed for tests.
         self.effects = 0
 
@@ -111,6 +112,9 @@ class ConnectionManager:
                 logger.info("device is not enrolled yet; waiting")
                 await self._sleep(_ENROLLMENT_POLL_SECONDS)
                 continue
+            if self._settings.apps_enabled and self.app_executor is None:
+                from .app_engine import Executor
+                self.app_executor = Executor(self._settings).open()
             await self._run_connected(identity)
 
     async def _run_connected(self, identity: dict) -> None:

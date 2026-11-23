@@ -230,3 +230,14 @@ request fingerprint scoped to principal/route/target/key. No TTL is added.
 Registry credentials and grant responses are ephemeral and are never persisted.
 Machine grants read existing operation/candidate/import authority; AP-07 owns
 creating the installation operations used by those checks.
+
+### App engine intent journal (AP-08)
+
+SQLite migration 0017 adds `app_engine_intents`, keyed by durable App run, with
+immutable ownership/image/network/name intent and create/start/observation/
+terminal/removal boundaries. `stop_requested` distinguishes an intentional stop
+from natural process exit. Existing App run/output rows retain their identity and
+bounded durable output; output retention discontinuities set truncation flags
+without erasing a saved prefix. Enrollment, namespace, legacy operations and
+output are retained. A lifetime flock beside the database fences competing App
+writers. No hosted PostgreSQL migration or new run dispatch is introduced here.
