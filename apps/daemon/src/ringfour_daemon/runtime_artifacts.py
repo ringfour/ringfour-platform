@@ -13,6 +13,7 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from .db import connect
 from .enrollment import credential_error, load_identity
 from .runtime_logbook import _execution_token, _operation
 from .scripts import machine_headers
@@ -38,7 +39,7 @@ def validate(raw):
 
 def enqueue(db_path, execution, artifact):
     values = (artifact["artifact_id"], execution, artifact["path"], artifact["size"], artifact["sha256"], artifact["content_type"])
-    with sqlite3.connect(db_path, timeout=5) as conn:
+    with connect(db_path, timeout=5) as conn:
         row = conn.execute("SELECT artifact_id,execution_id,path,size,sha256,content_type FROM live_artifact_queue WHERE artifact_id=?",
                            (artifact["artifact_id"],)).fetchone()
         if row and row != values:
@@ -108,11 +109,11 @@ async def deliver_one(settings, identity, row):
                     params={"artifact_id": artifact_id, "path": path, "sha256": sha256, "content_type": content_type},
                     headers={"Content-Length": str(size)}, content=chunks())
                 response.raise_for_status()
-            with sqlite3.connect(settings.db_path, timeout=5) as conn:
+            with connect(settings.db_path, timeout=5) as conn:
                 conn.execute("UPDATE live_artifact_queue SET state='uploaded' WHERE artifact_id=?", (artifact_id,))
         response = await local.post(f"/v1/executions/{execution}/live-artifacts/{artifact_id}/ack")
         response.raise_for_status()
-    with sqlite3.connect(settings.db_path, timeout=5) as conn:
+    with connect(settings.db_path, timeout=5) as conn:
         conn.execute("DELETE FROM live_artifact_queue WHERE artifact_id=?", (artifact_id,))
 
 
@@ -121,7 +122,7 @@ async def deliver(settings):
         try:
             identity = load_identity(settings.db_path)
             if identity is not None and not credential_error(settings.credential_path) and settings.runner_auth_token:
-                with sqlite3.connect(settings.db_path) as conn:
+                with connect(settings.db_path) as conn:
                     rows = conn.execute("SELECT artifact_id,execution_id,path,size,sha256,content_type,state FROM live_artifact_queue ORDER BY created_at LIMIT 2").fetchall()
                 for row in rows:
                     try:

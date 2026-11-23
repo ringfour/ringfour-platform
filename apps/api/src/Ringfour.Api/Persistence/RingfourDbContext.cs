@@ -35,6 +35,16 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<HumanInteraction> HumanInteractions => Set<HumanInteraction>();
     public DbSet<HumanInteractionResponse> HumanInteractionResponses => Set<HumanInteractionResponse>();
     public DbSet<MissionUiSession> MissionUiSessions => Set<MissionUiSession>();
+    public DbSet<AppRecord> Apps => Set<AppRecord>();
+    public DbSet<AppRevision> AppRevisions => Set<AppRevision>();
+    public DbSet<AppShare> AppShares => Set<AppShare>();
+    public DbSet<AppImport> AppImports => Set<AppImport>();
+    public DbSet<AppInstallation> AppInstallations => Set<AppInstallation>();
+    public DbSet<AppConfigurationRevision> AppConfigurationRevisions => Set<AppConfigurationRevision>();
+    public DbSet<AppOperation> AppOperations => Set<AppOperation>();
+    public DbSet<AppRun> AppRuns => Set<AppRun>();
+    public DbSet<AppIdempotencyRecord> AppIdempotencyRecords => Set<AppIdempotencyRecord>();
+    public DbSet<RobotExecutionSlot> RobotExecutionSlots => Set<RobotExecutionSlot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -488,6 +498,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
         {
             entity.ToTable("robots");
             entity.HasKey(robot => robot.Id);
+            entity.HasAlternateKey(robot => new { robot.Id, robot.OrganizationId });
             entity.Property(robot => robot.Id).HasColumnName("id");
             entity.Property(robot => robot.OrganizationId).HasColumnName("organization_id");
             entity.Property(robot => robot.Name).HasColumnName("name");
@@ -661,6 +672,157 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
                 .WithMany()
                 .HasForeignKey(record => record.OutcomeOperationId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        ConfigureApps(modelBuilder);
+    }
+
+    private static void ConfigureApps(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AppRecord>(e =>
+        {
+            e.ToTable("apps"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.PublisherOrganizationId).HasColumnName("publisher_organization_id");
+            e.Property(x => x.AppKey).HasColumnName("app_key").HasMaxLength(100);
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(100);
+            e.Property(x => x.Description).HasColumnName("description").HasMaxLength(4096);
+            e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasAlternateKey(x => new { x.Id, x.PublisherOrganizationId });
+            e.HasIndex(x => new { x.PublisherOrganizationId, x.AppKey }).IsUnique();
+            e.HasOne<Organization>().WithMany().HasForeignKey(x => x.PublisherOrganizationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_key", "app_key ~ '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'"));
+        });
+        modelBuilder.Entity<AppRevision>(e =>
+        {
+            e.ToTable("app_revisions"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.AppId).HasColumnName("app_id");
+            e.Property(x => x.PublisherOrganizationId).HasColumnName("publisher_organization_id");
+            e.Property(x => x.Release).HasColumnName("release").HasMaxLength(100);
+            e.Property(x => x.Manifest).HasColumnName("manifest").HasColumnType("jsonb");
+            e.Property(x => x.ManifestDigest).HasColumnName("manifest_digest").HasMaxLength(71);
+            e.Property(x => x.Visibility).HasColumnName("visibility").HasMaxLength(16);
+            e.Property(x => x.PublishedByUserId).HasColumnName("published_by_user_id"); e.Property(x => x.PublishedAt).HasColumnName("published_at");
+            e.HasAlternateKey(x => new { x.Id, x.AppId, x.PublisherOrganizationId });
+            e.HasAlternateKey(x => new { x.Id, x.AppId });
+            e.HasIndex(x => new { x.AppId, x.Release }).IsUnique();
+            e.HasOne<AppRecord>().WithMany().HasForeignKey(x => new { x.AppId, x.PublisherOrganizationId }).HasPrincipalKey(x => new { x.Id, x.PublisherOrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.PublishedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_revision_visibility", "visibility IN ('listed','unlisted')"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_revision_digest", "manifest_digest ~ '^sha256:[0-9a-f]{64}$'"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_revision_manifest_object", "jsonb_typeof(manifest) = 'object'"));
+        });
+        modelBuilder.Entity<AppShare>(e =>
+        {
+            e.ToTable("app_shares"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.AppId).HasColumnName("app_id");
+            e.Property(x => x.RevisionId).HasColumnName("revision_id"); e.Property(x => x.PublisherOrganizationId).HasColumnName("publisher_organization_id");
+            e.Property(x => x.DestinationOrganizationId).HasColumnName("destination_organization_id"); e.Property(x => x.GrantedByUserId).HasColumnName("granted_by_user_id");
+            e.Property(x => x.GrantedAt).HasColumnName("granted_at"); e.Property(x => x.ExpiresAt).HasColumnName("expires_at"); e.Property(x => x.RevokedAt).HasColumnName("revoked_at");
+            e.HasAlternateKey(x => new { x.Id, x.RevisionId, x.AppId, x.PublisherOrganizationId, x.DestinationOrganizationId });
+            e.HasOne<AppRevision>().WithMany().HasForeignKey(x => new { x.RevisionId, x.AppId, x.PublisherOrganizationId }).HasPrincipalKey(x => new { x.Id, x.AppId, x.PublisherOrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Organization>().WithMany().HasForeignKey(x => x.DestinationOrganizationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.GrantedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_share_expiry", "expires_at > granted_at AND (revoked_at IS NULL OR revoked_at >= granted_at)"));
+        });
+        modelBuilder.Entity<AppImport>(e =>
+        {
+            e.ToTable("app_imports"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.AppId).HasColumnName("app_id"); e.Property(x => x.RevisionId).HasColumnName("revision_id");
+            e.Property(x => x.PublisherOrganizationId).HasColumnName("publisher_organization_id"); e.Property(x => x.SourceKind).HasColumnName("source_kind").HasMaxLength(20);
+            e.Property(x => x.ShareId).HasColumnName("share_id"); e.Property(x => x.ImportedByUserId).HasColumnName("imported_by_user_id"); e.Property(x => x.ImportedAt).HasColumnName("imported_at");
+            e.HasIndex(x => new { x.OrganizationId, x.RevisionId }).IsUnique();
+            e.HasAlternateKey(x => new { x.Id, x.AppId, x.OrganizationId });
+            e.HasOne<AppRevision>().WithMany().HasForeignKey(x => new { x.RevisionId, x.AppId, x.PublisherOrganizationId }).HasPrincipalKey(x => new { x.Id, x.AppId, x.PublisherOrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppShare>().WithMany().HasForeignKey(x => new { x.ShareId, x.RevisionId, x.AppId, x.PublisherOrganizationId, DestinationOrganizationId = x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.RevisionId, x.AppId, x.PublisherOrganizationId, x.DestinationOrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.ImportedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_import_source", "(source_kind = 'store' AND share_id IS NULL) OR (source_kind = 'direct_share' AND share_id IS NOT NULL)"));
+        });
+        modelBuilder.Entity<AppInstallation>(e =>
+        {
+            e.ToTable("app_installations"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.RobotId).HasColumnName("robot_id"); e.Property(x => x.AppId).HasColumnName("app_id"); e.Property(x => x.ImportId).HasColumnName("import_id"); e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at"); e.Property(x => x.AvailableRevisionId).HasColumnName("available_revision_id");
+            e.Property(x => x.InstalledBinding).HasColumnName("installed_binding").HasColumnType("jsonb"); e.Property(x => x.Candidate).HasColumnName("candidate").HasColumnType("jsonb"); e.Property(x => x.LastObservedAt).HasColumnName("last_observed_at");
+            e.HasIndex(x => new { x.RobotId, x.AppId }).IsUnique();
+            e.HasAlternateKey(x => new { x.Id, x.RobotId, x.OrganizationId });
+            e.HasAlternateKey(x => new { x.Id, x.AppId });
+            e.HasOne<Robot>().WithMany().HasForeignKey(x => new { x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppRecord>().WithMany().HasForeignKey(x => x.AppId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppImport>().WithMany().HasForeignKey(x => new { x.ImportId, x.AppId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.AppId, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppRevision>().WithMany().HasForeignKey(x => new { x.AvailableRevisionId, x.AppId }).HasPrincipalKey(x => new { x.Id, x.AppId }).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_installation_json_objects", "(installed_binding IS NULL OR jsonb_typeof(installed_binding) = 'object') AND (candidate IS NULL OR jsonb_typeof(candidate) = 'object')"));
+        });
+        modelBuilder.Entity<AppConfigurationRevision>(e =>
+        {
+            e.ToTable("app_configuration_revisions"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.InstallationId).HasColumnName("installation_id"); e.Property(x => x.AppId).HasColumnName("app_id"); e.Property(x => x.RevisionId).HasColumnName("revision_id");
+            e.Property(x => x.Values).HasColumnName("values").HasColumnType("jsonb"); e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id"); e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne<AppInstallation>().WithMany().HasForeignKey(x => new { x.InstallationId, x.AppId }).HasPrincipalKey(x => new { x.Id, x.AppId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppRevision>().WithMany().HasForeignKey(x => new { x.RevisionId, x.AppId }).HasPrincipalKey(x => new { x.Id, x.AppId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_configuration_values_object", "jsonb_typeof(values) = 'object'"));
+        });
+        modelBuilder.Entity<AppOperation>(e =>
+        {
+            e.ToTable("app_operations"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.OrganizationId).HasColumnName("organization_id"); e.Property(x => x.RobotId).HasColumnName("robot_id");
+            e.Property(x => x.InstallationId).HasColumnName("installation_id"); e.Property(x => x.RunId).HasColumnName("run_id"); e.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(24);
+            e.Property(x => x.State).HasColumnName("state").HasMaxLength(16); e.Property(x => x.Phase).HasColumnName("phase").HasMaxLength(32); e.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id");
+            e.Property(x => x.RequestedAt).HasColumnName("requested_at"); e.Property(x => x.DeadlineAt).HasColumnName("deadline_at"); e.Property(x => x.AcknowledgedAt).HasColumnName("acknowledged_at");
+            e.Property(x => x.ObservedAt).HasColumnName("observed_at"); e.Property(x => x.ReceivedAt).HasColumnName("received_at"); e.Property(x => x.CompletedAt).HasColumnName("completed_at"); e.Property(x => x.Failure).HasColumnName("failure").HasColumnType("jsonb");
+            e.HasIndex(x => new { x.RobotId, x.RequestedAt, x.Id }); e.HasIndex(x => x.InstallationId).IsUnique().HasFilter("state IN ('queued','accepted','running')");
+            e.HasOne<Robot>().WithMany().HasForeignKey(x => new { x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppInstallation>().WithMany().HasForeignKey(x => new { x.InstallationId, x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.RobotId, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppRun>().WithMany().HasForeignKey(x => new { x.RunId, x.InstallationId, x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.InstallationId, x.RobotId, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_operation_state", "state IN ('queued','accepted','running','succeeded','failed','cancelled')"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_operation_deadline", "deadline_at >= requested_at"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_operation_failure_object", "failure IS NULL OR jsonb_typeof(failure) = 'object'"));
+        });
+        modelBuilder.Entity<AppRun>(e =>
+        {
+            e.ToTable("app_runs"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.OrganizationId).HasColumnName("organization_id"); e.Property(x => x.RobotId).HasColumnName("robot_id");
+            e.Property(x => x.InstallationId).HasColumnName("installation_id"); e.Property(x => x.StartOperationId).HasColumnName("start_operation_id"); e.Property(x => x.Snapshot).HasColumnName("snapshot").HasColumnType("jsonb");
+            e.Property(x => x.State).HasColumnName("state").HasMaxLength(16); e.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id"); e.Property(x => x.RequestedAt).HasColumnName("requested_at");
+            e.Property(x => x.StartedAt).HasColumnName("started_at"); e.Property(x => x.EndedAt).HasColumnName("ended_at"); e.Property(x => x.ObservedAt).HasColumnName("observed_at"); e.Property(x => x.ReceivedAt).HasColumnName("received_at");
+            e.Property(x => x.ExitCode).HasColumnName("exit_code"); e.Property(x => x.Failure).HasColumnName("failure").HasColumnType("jsonb"); e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.HasIndex(x => x.StartOperationId).IsUnique(); e.HasIndex(x => new { x.RobotId, x.RequestedAt, x.Id });
+            e.HasAlternateKey(x => new { x.Id, x.InstallationId, x.RobotId, x.OrganizationId });
+            e.HasOne<Robot>().WithMany().HasForeignKey(x => new { x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppInstallation>().WithMany().HasForeignKey(x => new { x.InstallationId, x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.RobotId, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppOperation>().WithMany().HasForeignKey(x => x.StartOperationId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_run_state", "state IN ('accepted','running','succeeded','failed','stopped','interrupted')"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_run_completion", "(state IN ('accepted','running') AND completed_at IS NULL) OR (state IN ('succeeded','failed','stopped','interrupted') AND completed_at IS NOT NULL)"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_run_snapshot_object", "jsonb_typeof(snapshot) = 'object'"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_run_failure_object", "failure IS NULL OR jsonb_typeof(failure) = 'object'"));
+        });
+        modelBuilder.Entity<AppIdempotencyRecord>(e =>
+        {
+            e.ToTable("app_idempotency_records"); e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.PrincipalUserId).HasColumnName("principal_user_id"); e.Property(x => x.Route).HasColumnName("route").HasMaxLength(200);
+            e.Property(x => x.Target).HasColumnName("target").HasMaxLength(200); e.Property(x => x.Key).HasColumnName("key").HasMaxLength(200); e.Property(x => x.RequestFingerprint).HasColumnName("request_fingerprint").HasMaxLength(64);
+            e.Property(x => x.Outcome).HasColumnName("outcome").HasColumnType("jsonb"); e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.PrincipalUserId, x.Route, x.Target, x.Key }).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.PrincipalUserId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_app_idempotency_key", "length(key) BETWEEN 1 AND 200"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_idempotency_fingerprint", "request_fingerprint ~ '^[0-9a-f]{64}$'"));
+            e.ToTable(t => t.HasCheckConstraint("ck_app_idempotency_outcome_object", "jsonb_typeof(outcome) = 'object'"));
+        });
+        modelBuilder.Entity<RobotExecutionSlot>(e =>
+        {
+            e.ToTable("robot_execution_slots"); e.HasKey(x => x.RobotId);
+            e.Property(x => x.RobotId).HasColumnName("robot_id"); e.Property(x => x.Source).HasColumnName("source").HasMaxLength(16); e.Property(x => x.ExecutionId).HasColumnName("execution_id"); e.Property(x => x.ClaimedAt).HasColumnName("claimed_at");
+            e.HasOne<Robot>().WithMany().HasForeignKey(x => x.RobotId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("ck_robot_execution_slot_source", "source IN ('legacy','app')"));
         });
     }
 }

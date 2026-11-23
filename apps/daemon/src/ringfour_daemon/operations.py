@@ -3,6 +3,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from .db import connect
+
 # Local deduplication and reconciliation records for hosted operations. The
 # platform owns queued; a device record starts at accepted once the command is
 # committed locally (before the ack goes out). Terminal states are immutable.
@@ -69,7 +71,7 @@ def record_command(db_path: str, robot_id: str, command: dict) -> tuple[DeviceOp
     different content is a protocol error.
     """
     operation_id = command["operation_id"]
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT * FROM device_operations WHERE operation_id = ?", (operation_id,)
@@ -124,7 +126,7 @@ def record_command(db_path: str, robot_id: str, command: dict) -> tuple[DeviceOp
 def apply_status(
     db_path: str, operation_id: str, state: str, result: dict | None = None
 ) -> DeviceOperation:
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT * FROM device_operations WHERE operation_id = ?", (operation_id,)
@@ -158,7 +160,7 @@ def apply_status(
 
 
 def get(db_path: str, operation_id: str) -> DeviceOperation | None:
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT * FROM device_operations WHERE operation_id = ?", (operation_id,)
@@ -167,7 +169,7 @@ def get(db_path: str, operation_id: str) -> DeviceOperation | None:
 
 
 def list_nonterminal(db_path: str) -> list[DeviceOperation]:
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM device_operations"

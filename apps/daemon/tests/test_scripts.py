@@ -12,11 +12,19 @@ import httpx
 import pytest
 from ringfour_daemon import operations, runner, scripts
 from ringfour_daemon.config import Settings
-from ringfour_daemon.db import migrate
+from ringfour_daemon.db import connect, migrate
 
 
 def sha(value):
     return hashlib.sha256(value).hexdigest()
+
+
+def enrolled_script_database(db):
+    migrate(db)
+    with connect(db) as conn:
+        conn.execute(
+            "INSERT INTO device_identity VALUES (1, 'robot', 'org', 'http://platform', 'credential-id')"
+        )
 
 
 def sample():
@@ -72,7 +80,7 @@ def test_mission_staging_rejects_insufficient_storage_without_publishing(tmp_pat
 
 def test_output_retry_resumes_without_duplicate_bytes(tmp_path, monkeypatch):
     db = str(tmp_path / "daemon.db")
-    migrate(db)
+    enrolled_script_database(db)
     execution = "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b"
     operations.record_command(db, "robot", {"operation_id": execution, "kind": "script.execution.start",
         "payload_version": 1, "payload": {}, "deadline_at": (datetime.now(UTC) + timedelta(minutes=1)).isoformat()})
@@ -129,7 +137,7 @@ def test_output_retry_resumes_without_duplicate_bytes(tmp_path, monkeypatch):
 
 def test_missing_confirmed_runner_execution_reports_unknown_outcome(tmp_path, monkeypatch):
     db = str(tmp_path / "daemon.db")
-    migrate(db)
+    enrolled_script_database(db)
     execution = "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b"
     operations.record_command(db, "robot", {"operation_id": execution, "kind": "script.execution.start",
         "payload_version": 1, "payload": {}, "deadline_at": (datetime.now(UTC) + timedelta(minutes=1)).isoformat()})

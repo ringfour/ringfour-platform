@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from . import logbook
+from .db import connect
 from .enrollment import load_identity
 
 router = APIRouter()
@@ -73,7 +74,7 @@ def _execution_token(settings, header):
 
 
 def _operation(db_path, robot_id, execution):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         row = conn.execute("SELECT operation_id FROM local_dev_runs WHERE execution_id=?", (execution,)).fetchone()
         operation = row[0] if row else execution
         row = conn.execute("SELECT 1 FROM device_operations WHERE operation_id=? AND robot_id=? AND kind IN ('dev.session.restart','script.execution.start')", (operation, robot_id)).fetchone()
@@ -83,7 +84,7 @@ def _operation(db_path, robot_id, execution):
 def _record(settings, robot, execution, operation, entry):
     canonical = json.dumps({"execution_id": execution, **entry}, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
-    with sqlite3.connect(settings.db_path, timeout=5) as conn:
+    with connect(settings.db_path, timeout=5) as conn:
         conn.execute("BEGIN IMMEDIATE")
         replay = conn.execute("SELECT execution_id,request_hash FROM logbook_entry_replays WHERE entry_id=?", (entry["entry_id"],)).fetchone()
         if replay:

@@ -1,8 +1,8 @@
 # Apps API and runtime v1 — new Ringfour design
 
-Status: AP-01 contract definitions and executable fixtures. None of the new
-routes is implemented or enabled. Existing API/device/runtime behavior remains
-unchanged. [Manifest v1](apps-contract.md) defines release validation;
+Status: AP-01 contract definitions and executable fixtures; AP-02 persistence
+model and migration are being implemented. None of the new routes is enabled.
+Existing API/device/runtime behavior remains unchanged. [Manifest v1](apps-contract.md) defines release validation;
 [active plan](milestones/apps-pivot.md) tracks the next migration milestone. [Device protocol v1](apps-device-contract.md) defines the separate negotiated exchange.
 
 OpenAPI: [hosted API](../packages/contracts/openapi/ringfour-api.v1.yaml) and
@@ -207,10 +207,15 @@ tested against the same fixtures, with C# schema/manifest checks. They remain
 unwired: no active API/CLI/Studio/Daemon path switches to App behavior yet. Their implementation milestones must consume
 the same `state`, `phase`, `failure.code/details`, IDs and observation fields.
 Negotiation/inventory schemas and cross-language reader fixtures are defined in the device contract.
-AP-02 must add forward PostgreSQL/SQLite migrations, membership/robot-scoped
-relationships, replay rows, immutable attribution and the one-active shared
-execution constraint before any App writer/dispatch is enabled. Preserve applied
-migrations, existing outputs, artifact bytes, HITL timestamps and pending work.
+AP-02 adds the Apps PostgreSQL persistence model and a shared execution-slot
+constraint across App and legacy execution rows. The approved reset boundary
+initializes a fresh application schema and restores only users, organizations,
+memberships/roles and Auth0 subject mappings with their IDs. Historical
+application rows, outputs, artifact bytes, HITL timestamps and pending work are
+discarded under the explicit user-authorized reset; only identity JSON is
+retained. Full application backup gates are waived for this reset. Device SQLite migration and its exact reset/preservation
+policy remain separate AP-02 work. Do not enable App writers or dispatch until
+the disposable initialization, identity restore and authorization gates pass.
 
 Socket-test migration remains narrow: `tests/e2e/04-runner.sh` continues rejecting
 Runner sockets. `tests/e2e/06-missions.sh` keeps its no-socket assertion for the

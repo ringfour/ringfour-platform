@@ -5,6 +5,13 @@ from pathlib import Path
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 
+def connect(database: str, *args, **kwargs) -> sqlite3.Connection:
+    """Open a daemon SQLite connection with relational constraints enabled."""
+    conn = sqlite3.connect(database, *args, **kwargs)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
 def migrate(db_path: str) -> list[int]:
     """Apply pending SQL migrations in filename order; returns applied versions.
 
@@ -12,7 +19,7 @@ def migrate(db_path: str) -> list[int]:
     """
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     applied: list[int] = []
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations ("
             "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"

@@ -1,10 +1,11 @@
 # App device protocol v1 — new Ringfour design
 
-Status: AP-01 schemas and independently tested readers. New HTTP routes are
-contract-only. No App negotiation, reporting, pull or dispatch is enabled by
-this change. AP-03 adds actual Agent observation; AP-02/07/08/09 add durable
-projections, application and execution. The existing v1 device transport and
-legacy runtime remain operational without modification.
+Status: AP-01 schemas and independently tested readers; AP-02 adds the
+additive SQLite persistence schema. New HTTP routes remain contract-only. No
+App negotiation, reporting, pull or dispatch is enabled by this change. AP-03
+adds actual Agent observation; AP-07/08/09 add device reporting, application
+and execution. The existing v1 device transport and legacy runtime remain
+operational without modification.
 
 ## Separate support negotiation
 
@@ -38,8 +39,11 @@ change their dispatch/replay consumers together before this gate is enabled.
 ## Ownership and command payloads
 
 Provision one durable deployment namespace UUID alongside the enrolled robot
-identity in Daemon data. Replacement retains it; a different enrollment cannot
-adopt it silently. Enforce a single writer/fence for that enrollment/namespace.
+identity in Daemon data. Migration 0015 backfills one for existing enrolled
+devices, and new enrollment creates it in the same SQLite transaction as the
+identity binding. Replacement retaining the Daemon database retains this
+namespace; a different enrollment cannot adopt it silently. Enforce a single
+writer/fence for that enrollment/namespace.
 A session replacement invalidates the old session's authority. These schema
 fields do not implement the durable fence; AP-02/08 must do so before dispatch.
 

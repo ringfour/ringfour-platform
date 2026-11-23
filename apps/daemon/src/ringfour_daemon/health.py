@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
+from .db import connect
 
 router = APIRouter()
 
@@ -29,7 +30,7 @@ def ready(request: Request) -> JSONResponse:
 
 def _check_sqlite(db_path: str) -> str:
     try:
-        with sqlite3.connect(db_path, timeout=2) as conn:
+        with connect(db_path, timeout=2) as conn:
             conn.execute("SELECT 1")
             conn.execute("BEGIN IMMEDIATE")
             conn.rollback()

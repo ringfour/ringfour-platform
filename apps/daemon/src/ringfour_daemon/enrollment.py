@@ -1,15 +1,17 @@
 import logging
 import os
-import sqlite3
 import stat
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from .db import connect
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +26,11 @@ class EnrollRequest(BaseModel):
 
 
 def load_identity(db_path: str) -> dict | None:
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         row = conn.execute(
-            "SELECT robot_id, organization_id, platform_url, credential_id"
-            " FROM device_identity WHERE singleton_id = 1"
+            "SELECT i.robot_id, i.organization_id, i.platform_url, i.credential_id, n.deployment_namespace"
+            " FROM device_identity i LEFT JOIN device_deployment_namespace n USING (singleton_id)"
+            " WHERE i.singleton_id = 1"
         ).fetchone()
     if row is None:
         return None
@@ -36,6 +39,7 @@ def load_identity(db_path: str) -> dict | None:
         "organization_id": row[1],
         "platform_url": row[2],
         "credential_id": row[3],
+        "deployment_namespace": row[4],
     }
 
 
@@ -81,7 +85,7 @@ def _write_credential(credential_path: str, secret: str) -> None:
 
 
 def _commit_identity(db_path: str, identity: dict) -> None:
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute(
             "INSERT INTO device_identity"
             " (singleton_id, robot_id, organization_id, platform_url, credential_id)"
@@ -92,6 +96,11 @@ def _commit_identity(db_path: str, identity: dict) -> None:
                 identity["platform_url"],
                 identity["credential_id"],
             ),
+        )
+        conn.execute(
+            "INSERT INTO device_deployment_namespace"
+            " (singleton_id, deployment_namespace, created_at) VALUES (1, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            (str(uuid.uuid4()),),
         )
 
 

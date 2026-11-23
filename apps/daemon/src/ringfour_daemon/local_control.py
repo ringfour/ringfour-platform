@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
 from . import local_execution, local_source
+from .db import connect
 from .local_grants import authorize, grant_identity
 
 
@@ -21,7 +22,7 @@ def create_local_app(settings):
         token = header[7:] if header.startswith("Bearer ") else ""
         if not authorize(settings.db_path, session_id, token):
             return JSONResponse({"error": {"code": "invalid_grant", "message": "A valid local grant is required.", "request_id": str(uuid.uuid4())}}, status_code=401)
-        with sqlite3.connect(settings.db_path) as conn:
+        with connect(settings.db_path) as conn:
             generation = conn.execute("SELECT coalesce(max(generation), 0) FROM local_source_syncs WHERE session_id=? AND state IN ('committed','reported')", (session_id,)).fetchone()[0]
             pending = conn.execute("SELECT count(*) FROM local_source_syncs WHERE session_id=? AND state='committed'", (session_id,)).fetchone()[0]
         return {"session_id": session_id, "state": "ready", "generation": generation, "report_pending": pending}
@@ -133,7 +134,7 @@ def create_local_app(settings):
         token = header[7:] if header.startswith("Bearer ") else ""
         if not authorize(settings.db_path, session_id, token):
             return JSONResponse({"error": {"code": "invalid_grant", "message": "A valid local grant is required.", "request_id": str(uuid.uuid4())}}, status_code=401)
-        with sqlite3.connect(settings.db_path) as conn:
+        with connect(settings.db_path) as conn:
             row = conn.execute("SELECT generation,manifest,archive_sha256 FROM local_source_syncs WHERE session_id=? AND state IN ('committed','reported') ORDER BY generation DESC LIMIT 1", (session_id,)).fetchone()
         return {"generation": row[0], "paths": sorted(item["path"] for item in json.loads(row[1])["files"]), "archive_sha256": row[2]} if row else {"generation": 0, "paths": [], "archive_sha256": None}
 

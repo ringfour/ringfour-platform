@@ -20,6 +20,7 @@ from pathlib import Path
 import httpx
 
 from . import runner
+from .db import connect
 from .enrollment import credential_error, load_identity
 
 logger = logging.getLogger(__name__)
@@ -46,17 +47,17 @@ def digest(data):
 
 
 def record_sync(db_path, execution_id):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("INSERT OR IGNORE INTO script_sync(execution_id) VALUES (?)", (execution_id,))
 
 
 def complete_sync(db_path, execution_id):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("UPDATE script_sync SET completed=1 WHERE execution_id=?", (execution_id,))
 
 
 def mark_started(db_path, execution_id):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("UPDATE script_sync SET started=1 WHERE execution_id=?", (execution_id,))
 
 
@@ -314,13 +315,13 @@ async def prepare_mission(settings, operation):
 
 
 def sync_rows(db_path):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         return conn.execute("SELECT execution_id,stdout_offset,stderr_offset,started FROM script_sync WHERE completed=0 ORDER BY rowid").fetchall()
 
 
 def advance(db_path, execution_id, stream, offset):
     column = "stdout_offset" if stream == "stdout" else "stderr_offset"
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute(f"UPDATE script_sync SET {column}=? WHERE execution_id=?", (offset, execution_id))
 
 

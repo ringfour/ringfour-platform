@@ -11,6 +11,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 
+from .db import connect
 from .enrollment import credential_error, load_identity
 from .pairing import format_code, pending_path
 
@@ -22,7 +23,7 @@ DISPLAY_LIMIT = 8192
 def _activity(db_path):
     """Read only known operation fields; never render raw payloads or results."""
     try:
-        with sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        with connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True) as conn:
             rows = conn.execute(
                 "SELECT operation_id, kind, state, updated_at, payload FROM device_operations "
                 "WHERE kind IN ('mission.prepare','script.execution.start','script.execution.stop') "

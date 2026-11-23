@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 import httpx
 from fastapi import APIRouter, Request
 
+from .db import connect
 from .enrollment import credential_error, load_identity
 from .runtime_logbook import _execution_token, _operation, error
 from .scripts import machine_headers
@@ -95,7 +96,7 @@ def _document(row: sqlite3.Row) -> dict:
 
 
 def _load(db_path: str, request_id: str, execution: str, *, resolve_deadline: bool = True) -> dict | None:
-    with sqlite3.connect(db_path, timeout=5) as conn:
+    with connect(db_path, timeout=5) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM runtime_interactions WHERE request_id=? AND execution_id=?", (request_id, execution)).fetchone()
@@ -133,14 +134,14 @@ async def reconcile(settings) -> None:
     while True:
         try:
             now = time.time()
-            with sqlite3.connect(settings.db_path, timeout=5) as conn:
+            with connect(settings.db_path, timeout=5) as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 conn.execute("UPDATE runtime_interactions SET state='timed_out',outcome=timeout_outcome,updated_at=? WHERE state='pending' AND deadline IS NOT NULL AND deadline<=?", (now, now))
                 executions = [row[0] for row in conn.execute("SELECT DISTINCT execution_id FROM runtime_interactions WHERE state='pending'")]
             for execution in executions:
                 if await _running(settings, execution) is False:
                     changed = time.time()
-                    with sqlite3.connect(settings.db_path, timeout=5) as conn:
+                    with connect(settings.db_path, timeout=5) as conn:
                         conn.execute("UPDATE runtime_interactions SET state='cancelled',updated_at=? WHERE execution_id=? AND state='pending'", (changed, execution))
         except (sqlite3.Error, OSError):
             pass
@@ -155,7 +156,7 @@ def _apply_response(db_path: str, request_id: str, response: object) -> None:
     for key in ("response_id", "actor_user_id"):
         if str(uuid.UUID(response[key])) != response[key]:
             raise ValueError("Invalid hosted interaction response")
-    with sqlite3.connect(db_path, timeout=5) as conn:
+    with connect(db_path, timeout=5) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM runtime_interactions WHERE request_id=?", (request_id,)).fetchone()
@@ -183,7 +184,7 @@ async def deliver(settings) -> None:
             try:
                 identity = load_identity(settings.db_path)
                 if identity is not None and not credential_error(settings.credential_path):
-                    with sqlite3.connect(settings.db_path) as conn:
+                    with connect(settings.db_path) as conn:
                         conn.row_factory = sqlite3.Row
                         rows = conn.execute("SELECT * FROM runtime_interactions ORDER BY created_at LIMIT 100").fetchall()
                     for row in rows:
@@ -223,7 +224,7 @@ async def create_interaction(request: Request):
         if running is None:
             return error(503, "runtime_unavailable", "Runner state is unavailable.")
         now = time.time()
-        with sqlite3.connect(request.app.state.settings.db_path, timeout=5) as conn:
+        with connect(request.app.state.settings.db_path, timeout=5) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT * FROM runtime_interactions WHERE request_id=?", (value["request_id"],)).fetchone()
@@ -274,7 +275,7 @@ async def wait_interaction(request_id: str, request: Request, wait_seconds: floa
             running = await _running(request.app.state.settings, execution)
             if running is False:
                 now = time.time()
-                with sqlite3.connect(request.app.state.settings.db_path, timeout=5) as conn:
+                with connect(request.app.state.settings.db_path, timeout=5) as conn:
                     conn.execute("UPDATE runtime_interactions SET state='cancelled',updated_at=? WHERE request_id=? AND execution_id=? AND state='pending'", (now, request_id, execution))
                 return _load(request.app.state.settings.db_path, request_id, execution)
             await asyncio.sleep(min(0.25, max(0, until - time.monotonic())))

@@ -9,6 +9,8 @@ import sqlite3
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from .db import connect
+
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 
@@ -38,7 +40,7 @@ def record_session(db_path, session_id, expires_at, reason):
     if not _id(session_id) or reason not in {"create", "close", "expire"}:
         raise GrantRejected("Invalid lifecycle.")
     _timestamp(expires_at)
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT expires_at,state FROM local_dev_sessions WHERE session_id=?", (session_id,)).fetchone()
         if row and row[0] != expires_at:
@@ -71,7 +73,7 @@ def install(db_path, body, *, now=None):
     if expires <= now or expires > now + timedelta(minutes=5):
         raise GrantRejected("Invalid expiry.")
     fingerprint = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         old = conn.execute("SELECT fingerprint FROM local_dev_grant_operations WHERE operation_id=?", (body["operation_id"],)).fetchone()
         if old:
@@ -97,7 +99,7 @@ def revoke(db_path, body):
             or any(not _id(item) for item in body["grant_ids"])
             or len(set(body["grant_ids"])) != len(body["grant_ids"])):
         raise GrantRejected("Invalid grant revocation.")
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         conn.executemany("DELETE FROM local_dev_grants WHERE grant_id=?", ((item,) for item in body["grant_ids"]))
     return {"revoked_grant_ids": body["grant_ids"]}
@@ -113,7 +115,7 @@ def grant_identity(db_path, session_id, token, *, now=None):
             return False
     except (ValueError, binascii.Error):
         return False
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         row = conn.execute("SELECT g.token_sha256,g.expires_at,s.expires_at,s.state,g.grant_id FROM local_dev_grants g JOIN local_dev_sessions s ON s.session_id=g.session_id WHERE g.session_id=?", (session_id,)).fetchone()
     if row and row[3] == "open" and _timestamp(row[1]) > now and _timestamp(row[2]) > now and hmac.compare_digest(row[0], hashlib.sha256(raw).hexdigest()):
         return row[4]

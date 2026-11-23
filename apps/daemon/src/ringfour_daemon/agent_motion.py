@@ -9,6 +9,7 @@ from contextlib import closing
 from datetime import datetime
 
 from . import logbook
+from .db import connect
 from .enrollment import load_identity
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ def _id(value):
 
 
 def _checkpoint(path):
-    with closing(sqlite3.connect(path)) as conn:
+    with closing(connect(path)) as conn:
         row = conn.execute('SELECT stream_id,sequence FROM agent_motion_checkpoint WHERE singleton_id=1').fetchone()
     return row or (None, 0)
 
@@ -95,7 +96,7 @@ def _store(path, old_stream, after, page):
         encoded.append((sequence, event['event_id'], body))
     if not events and after < last:
         raise HandoffError('Agent history has a gap')
-    with closing(sqlite3.connect(path)) as conn, conn:
+    with closing(connect(path)) as conn, conn:
         conn.execute('BEGIN IMMEDIATE')
         current = conn.execute('SELECT stream_id,sequence FROM agent_motion_checkpoint WHERE singleton_id=1').fetchone()
         if (current or (None, 0)) != (old_stream, after):
@@ -119,7 +120,7 @@ async def sync_once(db_path, socket_path):
 
 def promote(db_path, robot_id):
     """Atomically allocate a device sequence and move one event to the outbox."""
-    with closing(sqlite3.connect(db_path)) as conn, conn:
+    with closing(connect(db_path)) as conn, conn:
         conn.execute('BEGIN IMMEDIATE')
         row = conn.execute('SELECT sequence,event_json FROM agent_motion_inbox ORDER BY sequence LIMIT 1').fetchone()
         if row is None:

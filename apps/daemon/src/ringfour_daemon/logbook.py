@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from .db import connect
 from .enrollment import credential_error, load_identity
 from .scripts import machine_headers
 
@@ -86,7 +87,7 @@ def append(conn, robot_id, operation_id, state, *, now=None, event_id=None, exec
 
 
 def batch(db_path, robot_id):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         state = conn.execute("SELECT robot_id,acknowledged_sequence FROM logbook_outbox_state WHERE singleton_id=1").fetchone()
         if not state:
             return []
@@ -110,7 +111,7 @@ def batch(db_path, robot_id):
 def acknowledge(db_path, robot_id, sent, checkpoint):
     if not sent or type(checkpoint) is not int:
         raise OutboxError("Invalid acknowledgement.")
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         state = conn.execute("SELECT robot_id,last_sequence,acknowledged_sequence FROM logbook_outbox_state WHERE singleton_id=1").fetchone()
         if (not state or state[0] != robot_id or checkpoint < sent[-1]["local_sequence"]

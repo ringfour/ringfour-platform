@@ -1,6 +1,6 @@
 # Ringfour v0.1 starter database schema
 
-Apps migration: the existing tables and applied migrations remain intact. The AP-01 contract slices create no tables; [API/resource relationships](apps-api-contract.md) define the new persistence obligations. AP-02 must add forward migrations, immutable App/revision/import/installation/config/run attribution and a shared transactional execution slot before enabling App writes. Preserve all historical execution IDs, evidence and interaction acknowledgement timestamps. See [active plan](milestones/apps-pivot.md).
+Apps reset decision: initialize a fresh schema and restore only users, organizations, memberships/roles, Auth0 subject mappings and their IDs. The user explicitly waived full application backups and authorized deleting historical application records and object storage; see [reset boundary](../../app-pivot.md#data-reset-boundary). On 23 November 2026 the stopped Platform database was replaced with a fresh 35-migration cluster preserving 3 users, 2 organizations and 4 memberships, with all 37 application tables empty. Object storage was cleared. Preserve App-era execution IDs and evidence created after this reset. See [active plan](milestones/apps-pivot.md).
 
 This is the persistence contract for milestones 00–03. Each milestone ships its own migrations. Milestone 00 proves both databases can migrate and report readiness. Add business tables when their milestone introduces the feature.
 
@@ -103,6 +103,36 @@ object storage. `script_execution_events` records actor-attributed observed stat
 changes. Device SQLite `script_sync` records durable output offsets and whether
 Runner accepted the start, so reconnects replay offsets and reconcile stable
 IDs. The complete persistence and retention contract is in `scripts-contract.md`.
+
+### Apps pivot persistence (AP-02)
+
+`AppsPersistence` adds `apps`, immutable `app_revisions`, `app_shares`,
+workspace-scoped `app_imports`, per-robot `app_installations`, append-only
+`app_configuration_revisions`, durable `app_operations`, attributed `app_runs`,
+and permanent `app_idempotency_records`. Release manifests, installation
+bindings/candidates, configurations, run snapshots and structured failures use
+JSONB; identity, workspace, robot and lifecycle fields remain typed and
+constrained. Composite foreign keys ensure revisions retain publisher identity,
+imports retain revision/share provenance, installations match the imported App
+and robot workspace, and operations/runs match their installation's robot and
+workspace.
+The filtered unique operation index permits only one queued, accepted or
+running mutation per installation.
+
+`robot_execution_slots` is the single active slot per robot. Migration triggers
+claim and release it from both legacy `script_executions` and App `app_runs`,
+with active legacy rows backfilled during migration. PostgreSQL therefore
+rejects concurrent active App/legacy rows even if callers race. This only
+provides the persistence invariant; no App write or dispatch path is enabled by
+this migration. The fresh-schema reset restores identities only, as described
+at the top of this document. Daemon SQLite migration 0015 adds a durable
+deployment namespace, local App installation/run/output state, hashed run
+credentials and sequenced observation outbox. It leaves enrolled identity,
+existing device operations, script output, Logbook and pending interaction data
+untouched. `device_execution_slots` and triggers make active `script_sync` work
+mutually exclusive with App runs on that Daemon. Existing noncompleted script
+sync rows are backfilled. The migrations were rehearsed on disposable stores;
+the authorized identity-only Platform reset is complete. Real Auth0 identity/owner checks passed after operator startup.
 
 ### Milestone 06 mission persistence
 

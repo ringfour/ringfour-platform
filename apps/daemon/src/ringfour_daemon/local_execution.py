@@ -6,6 +6,7 @@ import sqlite3
 import httpx
 
 from . import runner
+from .db import connect
 from .enrollment import credential_error, load_identity
 from .scripts import machine_headers, valid_id
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def record(db_path, payload):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute("SELECT session_id,operation_id FROM local_dev_runs WHERE execution_id=?", (payload["execution_id"],)).fetchone()
         if existing and existing != (payload["session_id"], payload["operation_id"]):
@@ -25,12 +26,12 @@ def record(db_path, payload):
 def belongs(db_path, session_id, execution_id):
     if not valid_id(session_id) or not valid_id(execution_id):
         return False
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         return conn.execute("SELECT 1 FROM local_dev_runs WHERE session_id=? AND execution_id=?", (session_id, execution_id)).fetchone() is not None
 
 
 def fail_unstarted(db_path, operation_id):
-    with sqlite3.connect(db_path) as conn:
+    with connect(db_path) as conn:
         conn.execute("UPDATE local_dev_runs SET completed=1 WHERE operation_id=? AND started=0", (operation_id,))
 
 
@@ -62,7 +63,7 @@ async def restart(settings, operation):
         if (not isinstance(result, dict) or result.get("session_id") != payload["session_id"] or result.get("generation") != payload["generation"]
                 or not isinstance(result.get("execution"), dict) or result["execution"].get("execution_id") != payload["execution_id"]):
             raise httpx.HTTPError("Invalid Runner response; reconcile the same operation.")
-    with sqlite3.connect(settings.db_path) as conn:
+    with connect(settings.db_path) as conn:
         conn.execute("UPDATE local_dev_runs SET started=1 WHERE execution_id=?", (payload["execution_id"],))
     return result
 
@@ -83,7 +84,7 @@ async def report(settings, identity, session_id, execution_id, started):
         response = await platform.put(f"/v1/device/dev-sessions/{session_id}/runs/{execution_id}", json=status)
         response.raise_for_status()
     if status["state"] in ("succeeded", "failed", "cancelled"):
-        with sqlite3.connect(settings.db_path) as conn:
+        with connect(settings.db_path) as conn:
             conn.execute("UPDATE local_dev_runs SET completed=1 WHERE execution_id=?", (execution_id,))
 
 
@@ -92,7 +93,7 @@ async def reconcile(settings):
         try:
             identity = load_identity(settings.db_path)
             if identity is not None and not credential_error(settings.credential_path) and settings.runner_auth_token:
-                with sqlite3.connect(settings.db_path) as conn:
+                with connect(settings.db_path) as conn:
                     rows = conn.execute("SELECT session_id,execution_id,started FROM local_dev_runs WHERE completed=0 ORDER BY rowid LIMIT 100").fetchall()
                 for session_id, execution_id, started in rows:
                     try:

@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from . import source_validation
+from .db import connect
 from .enrollment import credential_error, load_identity
 from .scripts import machine_headers
 
@@ -56,7 +57,7 @@ def prepare(settings, session_id, grant_id, key, body):
         raise ValueError("invalid_source") from None
     fingerprint = _hash(json.dumps(body, sort_keys=True, separators=(",", ":")).encode())
     key_hash = _hash(key.encode())
-    with sqlite3.connect(settings.db_path) as conn:
+    with connect(settings.db_path) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("BEGIN IMMEDIATE")
         session = conn.execute("SELECT state FROM local_dev_sessions WHERE session_id=?", (session_id,)).fetchone()
@@ -115,7 +116,7 @@ async def process(settings, operation_id):
     if not _GUARD.acquire(blocking=False):
         return None
     try:
-        with sqlite3.connect(settings.db_path) as conn:
+        with connect(settings.db_path) as conn:
             row = _row(conn, operation_id)
             if not row:
                 return None
@@ -152,7 +153,7 @@ async def process(settings, operation_id):
                         code = "invalid_source"
                     if code not in {"invalid_source", "stale_generation", "capacity_exceeded", "session_unavailable", "conflict"}:
                         code = "invalid_source"
-                    with sqlite3.connect(settings.db_path) as conn:
+                    with connect(settings.db_path) as conn:
                         conn.execute("UPDATE local_source_syncs SET state='failed',error_code=? WHERE operation_id=? AND state='pending'", (code, operation_id))
                     (Path(settings.stage_dir) / record["staged_archive"]).unlink(missing_ok=True)
                     return {"error": code}
@@ -162,7 +163,7 @@ async def process(settings, operation_id):
         expected = {"session_id": record["session_id"], "generation": record["generation"], "archive_sha256": record["archive_sha256"]}
         if value != expected:
             return None
-        with sqlite3.connect(settings.db_path) as conn:
+        with connect(settings.db_path) as conn:
             conn.execute("UPDATE local_source_syncs SET state='committed' WHERE operation_id=? AND state='pending'", (operation_id,))
         (Path(settings.stage_dir) / record["staged_archive"]).unlink(missing_ok=True)
         return expected
@@ -171,7 +172,7 @@ async def process(settings, operation_id):
 
 
 async def report(settings, operation_id):
-    with sqlite3.connect(settings.db_path) as conn:
+    with connect(settings.db_path) as conn:
         row = _row(conn, operation_id)
         if not row or row["state"] != "committed":
             return
@@ -187,7 +188,7 @@ async def report(settings, operation_id):
             response = await client.post(f"/v1/device/dev-sessions/{record['session_id']}/generations", json=body)
             if response.status_code == 204:
                 (Path(settings.stage_dir) / record["staged_archive"]).unlink(missing_ok=True)
-                with sqlite3.connect(settings.db_path) as conn:
+                with connect(settings.db_path) as conn:
                     conn.execute("UPDATE local_source_syncs SET state='reported' WHERE operation_id=? AND state='committed'", (operation_id,))
     except (httpx.HTTPError, OSError):
         return
@@ -198,7 +199,7 @@ def clean_orphaned_staging(settings, *, now=None):
     root = Path(settings.stage_dir) / "dev-sync"
     if root.is_symlink() or not root.is_dir():
         return
-    with sqlite3.connect(settings.db_path) as conn:
+    with connect(settings.db_path) as conn:
         referenced = {row[0] for row in conn.execute("SELECT staged_archive FROM local_source_syncs WHERE state='pending'")}
     cutoff = (now if now is not None else time.time()) - 300
     for directory in root.iterdir():
@@ -224,7 +225,7 @@ async def reconcile(settings):
             if cleanup_cycle % 30 == 0:
                 clean_orphaned_staging(settings)
             cleanup_cycle += 1
-            with sqlite3.connect(settings.db_path) as conn:
+            with connect(settings.db_path) as conn:
                 rows = conn.execute("SELECT operation_id,state FROM local_source_syncs WHERE state IN ('pending','committed') ORDER BY session_id,generation LIMIT 40").fetchall()
             for operation_id, state in rows:
                 if state == "pending":
