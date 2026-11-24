@@ -77,6 +77,7 @@ public static class ScriptRunEndpoints
             return Results.Json(new { operation_id = previous.OutcomeOperationId, execution_id = previous.OutcomeOperationId }, statusCode: 202);
         }
         if (previous is not null) db.OperationIdempotencyRecords.Remove(previous);
+        await Ringfour.Api.Apps.AppInstallationEndpoints.RequireNoPendingMutation(db, robotId, ct);
         var presence = await db.RobotPresences.SingleOrDefaultAsync(candidate => candidate.RobotId == robotId, ct);
         if (manager.Get(robotId) is null || !OperationEndpoints.ComputeOnline(presence?.LastSeenAt, now,
             configuration.GetValue("Connectivity:OfflineThresholdSeconds", 45)))

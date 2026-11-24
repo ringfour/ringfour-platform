@@ -1,0 +1,1825 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/device/apps/v1/protocol.schema.json",
+  "title": "App protocol v1 negotiated over legacy device transport",
+  "$defs": {
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture",
+        "native_facts"
+      ],
+      "properties": {
+        "os": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "not": {
+            "pattern": "\\s"
+          }
+        },
+        "architecture": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "not": {
+            "pattern": "\\s"
+          }
+        },
+        "native_facts": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._:+-]*$",
+            "not": {
+              "pattern": "\\s"
+            }
+          }
+        }
+      }
+    },
+    "agent_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observed_at",
+        "source",
+        "capabilities",
+        "instances"
+      ],
+      "properties": {
+        "observed_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "protocol",
+            "profile"
+          ],
+          "properties": {
+            "kind": {
+              "const": "agent_welcome"
+            },
+            "protocol": {
+              "const": 1
+            },
+            "profile": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "version",
+                "model"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              }
+            }
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "not": {
+              "pattern": "\\s"
+            }
+          }
+        },
+        "instances": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "not": {
+              "pattern": "\\s"
+            }
+          },
+          "additionalProperties": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            }
+          }
+        }
+      }
+    },
+    "inventory": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "attempted_at",
+            "current"
+          ],
+          "properties": {
+            "state": {
+              "const": "available"
+            },
+            "attempted_at": {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            "current": {
+              "$ref": "#/$defs/agent_observation"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "attempted_at",
+            "reason",
+            "last_successful"
+          ],
+          "properties": {
+            "state": {
+              "const": "unavailable"
+            },
+            "attempted_at": {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            "reason": {
+              "enum": [
+                "agent_unreachable",
+                "handshake_invalid",
+                "unsupported_agent_protocol"
+              ]
+            },
+            "last_successful": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/agent_observation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "negotiation_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "deployment_namespace",
+        "supported_app_protocol_versions"
+      ],
+      "properties": {
+        "session_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "supported_app_protocol_versions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "supports_app_installations": {
+          "type": "boolean",
+          "description": "AP-07 installation consumer with AP-08 executor; omitted means false."
+        }
+      }
+    },
+    "negotiation_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "deployment_namespace",
+        "selected_app_protocol_version",
+        "server_time"
+      ],
+      "properties": {
+        "session_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "selected_app_protocol_version": {
+          "const": 1
+        },
+        "server_time": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "inventory_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_protocol_version",
+        "deployment_namespace",
+        "report_id",
+        "report_sequence",
+        "platform",
+        "inventory"
+      ],
+      "properties": {
+        "app_protocol_version": {
+          "const": 1
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "report_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "report_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "platform": {
+          "$ref": "#/$defs/platform"
+        },
+        "inventory": {
+          "$ref": "#/$defs/inventory"
+        }
+      }
+    },
+    "report_accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_id",
+        "report_sequence",
+        "received_at"
+      ],
+      "properties": {
+        "report_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "report_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "received_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "robot_app_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "robot_id",
+        "connectivity",
+        "last_seen_at",
+        "support",
+        "negotiated_at",
+        "deployment_namespace",
+        "report_sequence",
+        "received_at",
+        "platform",
+        "inventory"
+      ],
+      "properties": {
+        "robot_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "connectivity": {
+          "enum": [
+            "online",
+            "offline"
+          ]
+        },
+        "last_seen_at": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "support": {
+          "enum": [
+            "not_negotiated",
+            "supported",
+            "upgrade_required"
+          ]
+        },
+        "negotiated_at": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployment_namespace": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/platform"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inventory": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/inventory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "support": {
+                "const": "supported"
+              }
+            },
+            "required": [
+              "support"
+            ]
+          },
+          "then": {
+            "properties": {
+              "negotiated_at": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+              },
+              "deployment_namespace": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "report_sequence": {
+                "const": 0
+              }
+            },
+            "required": [
+              "report_sequence"
+            ]
+          },
+          "then": {
+            "properties": {
+              "received_at": {
+                "type": "null"
+              },
+              "platform": {
+                "type": "null"
+              },
+              "inventory": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "report_sequence": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "received_at": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+              },
+              "platform": {
+                "$ref": "#/$defs/platform"
+              },
+              "inventory": {
+                "$ref": "#/$defs/inventory"
+              },
+              "deployment_namespace": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "checked_at",
+        "inventory_observed_at",
+        "target",
+        "missing_required",
+        "missing_optional",
+        "missing_native"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "compatible",
+            "daemon_upgrade_required",
+            "inventory_unavailable",
+            "missing_required",
+            "no_matching_image",
+            "native_requirement_unavailable"
+          ]
+        },
+        "checked_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        },
+        "inventory_observed_at": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/imageTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "missing_required": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/capabilityPredicate"
+          }
+        },
+        "missing_optional": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/capabilityPredicate"
+          }
+        },
+        "missing_native": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "compatible"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/imageTarget"
+              },
+              "inventory_observed_at": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+              },
+              "missing_required": {
+                "type": "array",
+                "maxItems": 0
+              },
+              "missing_native": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "missing_required"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "missing_required": {
+                "type": "array",
+                "minItems": 1
+              },
+              "inventory_observed_at": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "no_matching_image"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "native_requirement_unavailable"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "missing_native": {
+                "type": "array",
+                "minItems": 1
+              },
+              "inventory_observed_at": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "robot_id",
+        "deployment_namespace",
+        "installation_id",
+        "run_id"
+      ],
+      "properties": {
+        "robot_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        }
+      }
+    },
+    "command_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_id",
+        "revision_id",
+        "manifest_digest",
+        "configuration_revision_id",
+        "configuration",
+        "target"
+      ],
+      "properties": {
+        "app_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "manifest_digest": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/digest"
+        },
+        "configuration_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "configuration": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/configuration"
+        },
+        "target": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/imageTarget"
+        }
+      }
+    },
+    "apply_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_protocol_version",
+        "deployment_namespace",
+        "installation_id",
+        "expected_revision_id",
+        "expected_configuration_revision_id",
+        "release"
+      ],
+      "properties": {
+        "app_protocol_version": {
+          "const": 1
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "expected_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_configuration_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "release": {
+          "$ref": "#/$defs/command_release"
+        }
+      },
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "expected_revision_id": {
+                  "type": "null"
+                },
+                "expected_configuration_revision_id": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "properties": {
+                "expected_revision_id": {
+                  "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+                },
+                "expected_configuration_revision_id": {
+                  "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "start_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_protocol_version",
+        "deployment_namespace",
+        "installation_id",
+        "run_id",
+        "snapshot"
+      ],
+      "properties": {
+        "app_protocol_version": {
+          "const": 1
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "snapshot": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/run_snapshot"
+        }
+      }
+    },
+    "stop_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_protocol_version",
+        "deployment_namespace",
+        "installation_id",
+        "expected_run_id"
+      ],
+      "properties": {
+        "app_protocol_version": {
+          "const": 1
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "expected_run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        }
+      }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_protocol_version",
+        "deployment_namespace",
+        "report_id",
+        "report_sequence",
+        "operations",
+        "installations",
+        "runs"
+      ],
+      "properties": {
+        "app_protocol_version": {
+          "const": 1
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "report_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "report_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "operations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/operation_observation"
+          }
+        },
+        "installations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/installation_observation"
+          }
+        },
+        "runs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/run_observation"
+          }
+        }
+      }
+    },
+    "operation_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "installation_id",
+        "run_id",
+        "kind",
+        "state",
+        "phase",
+        "observed_at",
+        "failure"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "install",
+            "configure",
+            "update",
+            "rollback",
+            "start",
+            "stop"
+          ]
+        },
+        "state": {
+          "enum": [
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "checking",
+            "staging",
+            "staged",
+            "applied",
+            "starting",
+            "observed_running",
+            "stopping",
+            "stopped",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "observed_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/errors/v2/app-error.schema.json#/$defs/failure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "install",
+                  "configure",
+                  "update",
+                  "rollback"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "run_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "start",
+                  "stop"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "run_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "not": {
+                  "pattern": "\\s"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "queued"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "const": "queued"
+              },
+              "observed_at": {
+                "type": "null"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "accepted"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "const": "accepted"
+              },
+              "observed_at": {
+                "type": "null"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "running"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "enum": [
+                  "checking",
+                  "staging",
+                  "staged",
+                  "starting",
+                  "stopping"
+                ]
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "succeeded"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "enum": [
+                  "applied",
+                  "observed_running",
+                  "stopped"
+                ]
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "failed"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "const": "failed"
+              },
+              "failure": {
+                "$ref": "https://contracts.ringfour.dev/errors/v2/app-error.schema.json#/$defs/failure"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "cancelled"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "const": "cancelled"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "install",
+                  "configure",
+                  "update",
+                  "rollback"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "enum": [
+                  "queued",
+                  "accepted",
+                  "checking",
+                  "staging",
+                  "staged",
+                  "applied",
+                  "failed",
+                  "cancelled"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "start"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "enum": [
+                  "queued",
+                  "accepted",
+                  "checking",
+                  "starting",
+                  "observed_running",
+                  "failed",
+                  "cancelled"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "stop"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "enum": [
+                  "queued",
+                  "accepted",
+                  "stopping",
+                  "stopped",
+                  "failed",
+                  "cancelled"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "installation_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installation_id",
+        "observed_at",
+        "installed",
+        "candidate"
+      ],
+      "properties": {
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "observed_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        },
+        "installed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/installed_binding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/candidate_binding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "installed_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision_id",
+        "configuration_revision_id",
+        "image",
+        "applied_operation_id",
+        "installed_at"
+      ],
+      "properties": {
+        "revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "configuration_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "image": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/image"
+        },
+        "applied_operation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installed_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "candidate_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "revision_id",
+        "configuration_revision_id",
+        "image",
+        "state",
+        "staged_at",
+        "failure"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "configuration_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "image": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/image"
+        },
+        "state": {
+          "enum": [
+            "staging",
+            "staged",
+            "failed"
+          ]
+        },
+        "staged_at": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/errors/v2/app-error.schema.json#/$defs/failure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "staging"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "staged_at": {
+                "type": "null"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "staged"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "staged_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "failed"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "$ref": "https://contracts.ringfour.dev/errors/v2/app-error.schema.json#/$defs/failure"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "run_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "installation_id",
+        "state",
+        "started_at",
+        "ended_at",
+        "observed_at",
+        "exit_code",
+        "failure"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "enum": [
+            "accepted",
+            "running",
+            "succeeded",
+            "failed",
+            "stopped",
+            "interrupted"
+          ]
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/errors/v2/app-error.schema.json#/$defs/failure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "accepted"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "started_at": {
+                "type": "null"
+              },
+              "ended_at": {
+                "type": "null"
+              },
+              "exit_code": {
+                "type": "null"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "running"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "started_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              },
+              "ended_at": {
+                "type": "null"
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              },
+              "exit_code": {
+                "type": "null"
+              },
+              "failure": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "succeeded"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "started_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              },
+              "exit_code": {
+                "const": 0
+              },
+              "failure": {
+                "type": "null"
+              },
+              "ended_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "failed",
+                  "interrupted"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "$ref": "https://contracts.ringfour.dev/errors/v2/app-error.schema.json#/$defs/failure"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "interrupted"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "exit_code": {
+                "type": "null"
+              },
+              "ended_at": {
+                "type": "null"
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "stopped"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "type": "null"
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "command": {
+      "allOf": [
+        {
+          "$ref": "https://contracts.ringfour.dev/device/v1/command.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "app.install",
+                "app.configure",
+                "app.update",
+                "app.rollback",
+                "app.start",
+                "app.stop"
+              ]
+            },
+            "payload_version": {
+              "const": 1
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "app.install",
+                  "app.configure",
+                  "app.update",
+                  "app.rollback"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/apply_command"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "app.start"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/start_command"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "app.stop"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/stop_command"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -98,10 +98,25 @@ class Engine:
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
-                    if line and (
-                        "error" in json.loads(line) or "errorDetail" in json.loads(line)
-                    ):
-                        raise EngineError("pull_failed")
+                    if line:
+                        event = json.loads(line)
+                        if "error" in event or "errorDetail" in event:
+                            description = str(
+                                event.get("error", event.get("errorDetail"))
+                            ).lower()
+                            storage = any(
+                                text in description
+                                for text in (
+                                    "no space left",
+                                    "disk full",
+                                    "not enough space",
+                                )
+                            )
+                            raise EngineError(
+                                "storage_unavailable" if storage else "pull_failed"
+                            )
+        except EngineError:
+            raise
         except (httpx.HTTPError, ValueError) as error:
             raise EngineError("pull_failed") from error
         image = self.image(reference)
@@ -192,6 +207,7 @@ class Executor:
         self.lock = descriptor
         return self
 
+    @serialized
     def close(self):
         if self.lock is not None:
             os.close(self.lock)
@@ -258,6 +274,11 @@ class Executor:
             ).fetchone()[0]
         if datetime.fromisoformat(deadline) <= datetime.now(UTC):
             raise EngineError("deadline_exceeded")
+
+    @serialized
+    def prepare_image(self, target, authorization):
+        self.fence()
+        return self.engine.pull(target, authorization)
 
     @serialized
     def create(self, run_id):

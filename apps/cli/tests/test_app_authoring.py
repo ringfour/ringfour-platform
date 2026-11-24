@@ -301,3 +301,13 @@ def test_template_initialization_checks_hash_and_refuses_present_destination(
         app_project.init_project(
             tmp_path / "other", "x", "registry.example.com/team/x", archive
         )
+
+
+def test_canonical_unicode_fixture_matches_api_and_daemon():
+    fixture = json.loads(
+        (CONTRACTS / "fixtures/apps/v1/canonical-unicode.json").read_text()
+    )
+    assert (
+        "sha256:" + fingerprint(validate_manifest(fixture["manifest"]))
+        == fixture["digest"]
+    )

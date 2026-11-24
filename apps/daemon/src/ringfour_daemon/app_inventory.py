@@ -119,6 +119,8 @@ async def run_session(settings, identity, session_id, headers):
     async with httpx.AsyncClient(base_url=identity["platform_url"], headers=headers, timeout=10) as client:
         offer = {"session_id": session_id, "deployment_namespace": identity["deployment_namespace"],
                  "supported_app_protocol_versions": [1]}
+        if settings.apps_enabled:
+            offer["supports_app_installations"] = True
         while True:
             try:
                 response = await client.post("/v1/device/app-protocol/negotiate", json=offer)

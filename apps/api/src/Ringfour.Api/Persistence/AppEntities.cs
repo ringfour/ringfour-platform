@@ -78,6 +78,8 @@ public sealed class AppConfigurationRevision
 
 public sealed class AppOperation
 {
+    public string? Command { get; set; }
+    public DateTimeOffset? DispatchedAt { get; set; }
     public Guid Id { get; set; }
     public Guid OrganizationId { get; set; }
     public Guid RobotId { get; set; }

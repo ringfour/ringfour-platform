@@ -1,10 +1,13 @@
 # Apps API and runtime v1 — new Ringfour design
 
-Status: AP-01 contracts and AP-02 persistence/reset are complete. AP-03 implements
-device negotiation/inventory and scoped status/compatibility previews. AP-05 implements publication, discovery, direct sharing, workspace imports
-and operation-bound registry grants. Installation, execution and runtime routes
-remain contract-only; deployed AP-05 acceptance is pending operator reload and
-hosted registry/Auth0 checks.
+Status: AP-01/02 contracts/persistence, AP-03 inventory, AP-04 local wheel
+packaging and AP-05 catalog/grants are implemented. AP-06 supplies authoring;
+AP-08 supplies the owner-scoped engine and AP-07 implements durable installation,
+configuration, update/rollback, machine revision reads and installation observations.
+AP-07 dispatch is opt-in and requires an installation-capable negotiated Daemon.
+Hosted start/stop and run/runtime observation consumers remain AP-09/AP-10 work.
+AP-05 deployment was confirmed; hosted registry/Auth0 and AP-07 operator deployment
+remain explicit external gates. See [installation design](apps-installation.md).
 [Manifest v1](apps-contract.md) defines release validation; the
 [active plan](milestones/apps-pivot.md) tracks implementation.
 [Device protocol v1](apps-device-contract.md) defines the separate exchange.

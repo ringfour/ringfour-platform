@@ -124,20 +124,35 @@ AP-07 requires AP-08, so the user-authorized installation work lands this prereq
 Evidence: [AP-08](../evidence/AP-08.md). Human checks: [AP-08](../human-testing/AP-08.md).
 No live stack operation was performed; the test engines/stores were isolated.
 
+## AP-07 — durable installation/configuration/idle updates (isolated acceptance complete)
+
+- [x] Complete AP-08 first (`fee97f0`) and document the opt-in server/Daemon deployment gates.
+- [x] Add durable install/configure/update/rollback/read APIs with scoped roles/imports, permanent retries, immutable full configurations and explicit expected generation.
+- [x] Persist immutable command/dispatch evidence, negotiate installation support separately from inventory, and gate dispatch/replay by current session/namespace/credential.
+- [x] Prepare with fresh Agent/engine compatibility and scoped grants, without container/run creation; atomically apply while idle and retain prior installed binding on failure.
+- [x] Persist/replay operation-bound observation streams through API/Daemon replacement; enforce generation, terminal history and legacy start exclusion.
+- [x] Pin canonical UTF-8 across C#/Node/CLI/Daemon with a Unicode fixture; retain schema and configuration byte limits.
+- [x] Pass 148 API, 144 Daemon, 101 CLI, 179 contract and five OpenAPI checks, plus real CLI/Agent/Daemon/engine/registry/API recovery and two-App/update/rollback acceptance.
+- [ ] Operator deploys API migration/feature flag and Daemon socket/GID/network overlay; perform real Auth0/provider and live sensor checks separately.
+
+Evidence: [AP-07](../evidence/AP-07.md). Human checks: [AP-07](../human-testing/AP-07.md).
+Install-family operations produce no run; hosted start/stop remains AP-09.
+
 ## Subsequent work
 
 AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local
 wheel distribution; public Python publication is deferred. AP-05 Store/share/import and registry grants pass isolated acceptance; operator
 deployment is confirmed, while hosted registry/Auth0 checks remain pending. AP-06 authoring and publication CLI workflows pass component/isolated acceptance;
-hosted publication and live sensor checks remain pending. Owner-scoped engine management (AP-08) precedes install
-(AP-07) and mutually exclusive runs (AP-09). Runtime evidence (AP-10), Studio
+hosted publication and live sensor checks remain pending. Owner-scoped engine management (AP-08) and durable installation (AP-07) now pass
+component/isolated acceptance; their operator deployment remains pending. Mutually exclusive
+hosted runs remain AP-09. Runtime evidence (AP-10), Studio
 (AP-11), CLI (AP-12) and virtual topology (AP-08V) converge at AP-13 acceptance.
 Retire managed UI (AP-14) and remaining Runner clients/defaults (AP-15) only
 through their explicit drain and recovery gates. AP-16 is a separate follow-up.
 
-AP-01 defines the contracts and supplies independently tested readers; its acceptance does not claim live App execution. AP-02 persistence/reset is accepted. AP-03 negotiation and inventory routes are accepted, including deployed `virt2` verification; App installation/run dispatch remains disabled.
+AP-01 defines the contracts and supplies independently tested readers; its acceptance does not claim live App execution. AP-02 persistence/reset is accepted. AP-03 negotiation and inventory routes are accepted, including deployed `virt2` verification; AP-07 installation dispatch is operator opt-in; hosted run dispatch remains AP-09.
 
 AP-05 publication/read/import routes are deployed; hosted registry/Auth0 acceptance remains pending.
-App installation/run dispatch is not enabled by these slices. Do not
+AP-07 installation dispatch requires both opt-in consumers; hosted run dispatch is not enabled. Do not
 mark an external registry, Auth0, simulator or physical gate as passing from
 schema fixtures. The operator performs every Platform/virtual stack operation.

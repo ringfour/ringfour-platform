@@ -43,13 +43,13 @@ public static class AppManifest
             { rule["minimum"] ??= -9007199254740991L; rule["maximum"] ??= 9007199254740991L; }
         }
         var defaults = manifest["configuration"]!["defaults"]!;
-        if (Encoding.UTF8.GetByteCount(defaults.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping })) > 16384)
+        if (AppProtocol.Canonical(defaults).Length > 16384)
             throw ApiException.InvalidInput("Configuration exceeds 16384 bytes.");
         Evaluate(effective, defaults);
         return manifest;
     }
 
-    private static void Evaluate(JsonObject schema, JsonNode value)
+    internal static void Evaluate(JsonObject schema, JsonNode value)
     {
         var validator = JsonSchema.FromText(schema.ToJsonString(), new BuildOptions { SchemaRegistry = new SchemaRegistry() });
         using var document = JsonDocument.Parse(value.ToJsonString());

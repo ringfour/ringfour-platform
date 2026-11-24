@@ -84,6 +84,8 @@ public static class OperationEndpoints
         if (request.Kind != "diagnostic.execution.stop")
             await RobotAccess.RequireRobotAccess(httpContext, db, robotId, OrgRole.Developer, cancellationToken);
 
+        await using var appGuard = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM robots WHERE id = {robot.Id} FOR UPDATE", cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].ToString();
         string? fingerprint = null;
@@ -121,6 +123,8 @@ public static class OperationEndpoints
             }
         }
 
+        if (request.Kind == "diagnostic.execution.start" && await db.AppInstallations.AnyAsync(x => x.RobotId == robot.Id, cancellationToken))
+            throw ApiException.Conflict("execution_conflict", "Diagnostic starts are disabled on App-enabled robots.");
         var deadline = now.AddSeconds(configuration.GetValue("Connectivity:OperationDeadlineSeconds", 60));
         var operation = new Operation
         {
@@ -159,6 +163,7 @@ public static class OperationEndpoints
             // The operation is committed before dispatch; a lost push is
             // recovered by sweeper redelivery and reconnect replay.
             await db.SaveChangesAsync(cancellationToken);
+            await appGuard.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (IdentityAccess.IsUniqueViolation(exception))
         {

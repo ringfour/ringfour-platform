@@ -1,0 +1,586 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/errors/v2/app-error.schema.json",
+  "title": "Proposed App error envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "error"
+  ],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "details",
+        "request_id"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_input",
+            "unauthenticated",
+            "forbidden",
+            "not_found",
+            "invalid_config",
+            "revision_conflict",
+            "revision_unavailable",
+            "share_required",
+            "share_expired",
+            "share_revoked",
+            "execution_conflict",
+            "active_run_changed",
+            "daemon_upgrade_required",
+            "stale_installation",
+            "idempotency_conflict",
+            "installation_exists",
+            "inventory_unavailable",
+            "missing_required",
+            "no_matching_image",
+            "native_requirement_unavailable",
+            "pull_failed",
+            "engine_unavailable",
+            "ownership_conflict",
+            "container_lost",
+            "deadline_exceeded",
+            "storage_unavailable",
+            "session_replaced",
+            "stale_observation",
+            "conflicting_report",
+            "invalid_observation"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retryable"
+          ],
+          "properties": {
+            "retryable": {
+              "type": "boolean"
+            },
+            "installation_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "operation_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "expected_run_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "active_run_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "inventory_observed_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missing_required": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/capabilityPredicate"
+              }
+            },
+            "missing_optional": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/capabilityPredicate"
+              }
+            },
+            "missing_native": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "os": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "architecture": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "missing_required"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "missing_required"
+                ],
+                "properties": {
+                  "missing_required": {
+                    "type": "array",
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "native_requirement_unavailable"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "missing_native"
+                ],
+                "properties": {
+                  "missing_native": {
+                    "type": "array",
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "no_matching_image"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "os",
+                  "architecture"
+                ],
+                "properties": {
+                  "os": {
+                    "type": "string"
+                  },
+                  "architecture": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "active_run_changed"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "expected_run_id",
+                  "active_run_id"
+                ],
+                "properties": {
+                  "expected_run_id": {
+                    "type": "string"
+                  },
+                  "active_run_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "inventory_unavailable"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "inventory_observed_at"
+                ],
+                "properties": {
+                  "inventory_observed_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "details"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_input",
+            "unauthenticated",
+            "forbidden",
+            "not_found",
+            "invalid_config",
+            "revision_conflict",
+            "revision_unavailable",
+            "share_required",
+            "share_expired",
+            "share_revoked",
+            "execution_conflict",
+            "active_run_changed",
+            "daemon_upgrade_required",
+            "stale_installation",
+            "idempotency_conflict",
+            "installation_exists",
+            "inventory_unavailable",
+            "missing_required",
+            "no_matching_image",
+            "native_requirement_unavailable",
+            "pull_failed",
+            "engine_unavailable",
+            "ownership_conflict",
+            "container_lost",
+            "deadline_exceeded",
+            "storage_unavailable",
+            "session_replaced",
+            "stale_observation",
+            "conflicting_report",
+            "invalid_observation"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retryable"
+          ],
+          "properties": {
+            "retryable": {
+              "type": "boolean"
+            },
+            "installation_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "operation_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "expected_run_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "active_run_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "inventory_observed_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missing_required": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/capabilityPredicate"
+              }
+            },
+            "missing_optional": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/capabilityPredicate"
+              }
+            },
+            "missing_native": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "os": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "architecture": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "missing_required"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "missing_required"
+                ],
+                "properties": {
+                  "missing_required": {
+                    "type": "array",
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "native_requirement_unavailable"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "missing_native"
+                ],
+                "properties": {
+                  "missing_native": {
+                    "type": "array",
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "no_matching_image"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "os",
+                  "architecture"
+                ],
+                "properties": {
+                  "os": {
+                    "type": "string"
+                  },
+                  "architecture": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "active_run_changed"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "expected_run_id",
+                  "active_run_id"
+                ],
+                "properties": {
+                  "expected_run_id": {
+                    "type": "string"
+                  },
+                  "active_run_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "inventory_unavailable"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "details": {
+                "type": "object",
+                "required": [
+                  "inventory_observed_at"
+                ],
+                "properties": {
+                  "inventory_observed_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

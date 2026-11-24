@@ -162,7 +162,7 @@ paths:
       - device
       - apps
       operationId: reportDeviceAppObservations
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Atomically record bounded App operation, installation and run observations. Derive robot, organization
         and actors from durable authority. Do not promote installed/running from an acknowledgement.
       parameters:
@@ -202,7 +202,7 @@ paths:
       - device
       - apps
       operationId: getDeviceAppRevision
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Resolve a manifest only for an authorized nonterminal operation on the authenticated robot. A known
         revision UUID does not authorize retrieval. App commands contain no expiring URLs or registry tokens.
       parameters:
@@ -316,7 +316,7 @@ paths:
     get:
       tags: [apps]
       operationId: getAppConfigurationRevision
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read an immutable configuration revision only within this installation and its workspace. New Ringfour design.
       parameters:
         - { name: installation_id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -732,7 +732,7 @@ paths:
       tags:
       - apps
       operationId: installApp
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Robot workspace owner/developer installs a revision. If absent, create authorized workspace import
         atomically. No run is created. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -767,7 +767,7 @@ paths:
       tags:
       - apps
       operationId: listRobotAppInstallations
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Workspace member reads available, candidate and independently observed installed values. New Ringfour
         design; see docs/apps-api-contract.md.
       parameters:
@@ -798,7 +798,7 @@ paths:
       tags:
       - apps
       operationId: getAppInstallation
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read one organization-scoped installation. Last observation is not current liveness. New Ringfour
         design; see docs/apps-api-contract.md.
       parameters:
@@ -827,7 +827,7 @@ paths:
       tags:
       - apps
       operationId: configureAppInstallation
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Owner/developer validates a complete replacement config and applies only when idle; preserve prior
         binding on failure. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -863,7 +863,7 @@ paths:
       tags:
       - apps
       operationId: updateAppInstallation
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Owner/developer stages a candidate while retaining the installed binding; apply when idle. No run
         is created. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -899,7 +899,7 @@ paths:
       tags:
       - apps
       operationId: rollbackAppInstallation
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Owner/developer selects a previously installed binding and config for this installation; apply
         when idle without replaying a run. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -1007,7 +1007,7 @@ paths:
       tags:
       - apps
       operationId: getAppOperation
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read durable operation acceptance separately from observed installation or run. New Ringfour design;
         see docs/apps-api-contract.md.
       parameters:

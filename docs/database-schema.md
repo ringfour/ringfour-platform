@@ -241,3 +241,22 @@ bounded durable output; output retention discontinuities set truncation flags
 without erasing a saved prefix. Enrollment, namespace, legacy operations and
 output are retained. A lifetime flock beside the database fences competing App
 writers. No hosted PostgreSQL migration or new run dispatch is introduced here.
+
+### Durable App installation writers (AP-07)
+
+`AppInstallationCommands` adds nullable immutable command JSON and first-dispatch
+time to `app_operations`, plus `installations_supported` (default false) to the
+current negotiated inventory session. A migration-owned trigger prevents command
+or recorded first-dispatch evidence from changing. Existing AP-02 installation,
+configuration, operation, import and permanent idempotency tables are reused.
+No App run or execution row is created by install-family mutations. Robot row
+locks coordinate legacy starts, new installation requests and observed application.
+`app_device_reports` also persists the independent observations route's sequence,
+body digest and original receipt in the same transaction as its projection.
+
+SQLite 0018 journals per-operation preparation/staging/terminal report references.
+Application switches the installed binding, records the terminal device operation
+and appends its retained outbox report atomically. The previous binding survives
+preparation failure. Local-dev/script insert triggers refuse new legacy work while
+an App candidate is staging; apply also checks existing execution slots and local
+dev state. Completed rows/reports/configurations remain retained across replacement.

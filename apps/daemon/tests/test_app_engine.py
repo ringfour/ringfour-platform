@@ -256,7 +256,7 @@ def test_real_http_protocol_platform_and_pull_error_stream(tmp_path):
     engine = app_engine.Engine(settings, httpx.MockTransport(handler))
     try:
         assert engine.platform().architecture == "arm64"
-        with pytest.raises(app_engine.EngineError, match="pull_failed"):
+        with pytest.raises(app_engine.EngineError, match="storage_unavailable"):
             engine.pull(
                 {
                     "image": "example.com/a@sha256:" + "a" * 64,

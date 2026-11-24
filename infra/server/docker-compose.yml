@@ -49,6 +49,7 @@ services:
       Storage__S3__Endpoint: ${STORAGE_S3_ENDPOINT:-}
       Storage__S3__Region: ${STORAGE_S3_REGION:-}
       Storage__S3__Bucket: ${STORAGE_S3_BUCKET:-}
+      Apps__InstallationsEnabled: ${APPS_INSTALLATIONS_ENABLED:-false}
       Apps__Registries__0__Host: ${APPS_REGISTRY_HOST:-}
       Apps__Registries__0__RepositoryPrefix: ${APPS_REGISTRY_REPOSITORY_PREFIX:-}
       Apps__Registries__0__PublisherOrganizationId: ${APPS_REGISTRY_PUBLISHER_ORGANIZATION_ID:-}

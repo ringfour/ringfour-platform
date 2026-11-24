@@ -82,5 +82,9 @@ The optional owner-scoped engine executor is documented in
 [engine policy](../../docs/apps-engine.md) and the
 [AP-08 operator guide](../../docs/human-testing/AP-08.md). It uses Engine REST
 v1.46 over an operator-provided Unix socket and a persistent writer fence;
-App readiness is independent of Runner. Hosted App lifecycle dispatch remains
-AP-07/AP-09 work. Stack rebuild/recreate is always operator-run.
+App readiness is independent of Runner. AP-07 adds opt-in installation dispatch; hosted starts/stops remain AP-09 work. Stack rebuild/recreate is always operator-run.
+
+Install/configure/update/rollback are described in the [AP-07 guide](../../docs/human-testing/AP-07.md)
+and [installation contract](../../docs/apps-installation.md). Installation preparation
+performs fresh Agent checks and a scoped pull without creating a container/run;
+SQLite retains generation, staging, installed binding and unacknowledged reports.

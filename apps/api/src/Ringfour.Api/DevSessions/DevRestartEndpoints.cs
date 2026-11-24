@@ -49,6 +49,7 @@ public static class DevRestartEndpoints
             await tx.CommitAsync(ct);
             return Results.Json(Accepted(session.Id, prior.OperationId, prior.Id), RingfourJson.Options, statusCode: 202);
         }
+        await Ringfour.Api.Apps.AppInstallationEndpoints.RequireNoPendingMutation(db, robot.Id, ct);
         if (previous is not null) db.OperationIdempotencyRecords.Remove(previous);
         if (session.ExpiresAt <= now || session.State is not ("ready" or "running"))
             throw ApiException.Conflict("session_unavailable", "The development session is not ready for restart.");

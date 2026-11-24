@@ -2,6 +2,7 @@ namespace Ringfour.Api.Persistence;
 
 public sealed class RobotAppInventory
 {
+    public bool InstallationsSupported { get; set; }
     public Guid RobotId { get; set; }
     public Guid DeploymentNamespace { get; set; }
     public Guid SessionId { get; set; }

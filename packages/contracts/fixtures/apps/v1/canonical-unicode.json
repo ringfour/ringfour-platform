@@ -1,0 +1,52 @@
+{
+  "manifest": {
+    "schema_version": 1,
+    "app_key": "robot-check",
+    "release": "0.1.0",
+    "display": {
+      "name": "Robot 🚀",
+      "description": "Read IMU then report."
+    },
+    "targets": [
+      {
+        "os": "linux",
+        "architecture": "amd64",
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "native_requirements": []
+      }
+    ],
+    "capabilities": {
+      "required": [
+        {
+          "capability": "imu"
+        }
+      ],
+      "optional": [
+        {
+          "capability": "cameras"
+        }
+      ]
+    },
+    "configuration": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sample_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "sample_count"
+        ]
+      },
+      "defaults": {
+        "sample_count": 1
+      }
+    }
+  },
+  "canonical": "{\"app_key\":\"robot-check\",\"capabilities\":{\"optional\":[{\"capability\":\"cameras\"}],\"required\":[{\"capability\":\"imu\"}]},\"configuration\":{\"defaults\":{\"sample_count\":1},\"schema\":{\"additionalProperties\":false,\"properties\":{\"sample_count\":{\"maximum\":20,\"minimum\":1,\"type\":\"integer\"}},\"required\":[\"sample_count\"],\"type\":\"object\"}},\"display\":{\"description\":\"Read IMU then report.\",\"name\":\"Robot 🚀\"},\"release\":\"0.1.0\",\"schema_version\":1,\"targets\":[{\"architecture\":\"amd64\",\"image\":\"registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"native_requirements\":[],\"os\":\"linux\"}]}",
+  "digest": "sha256:ed3c4c565cd2544f9f9367c223e7bc1d457f4e478893263f4dec9bbe1e90f85c"
+}

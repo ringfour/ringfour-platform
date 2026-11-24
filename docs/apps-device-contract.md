@@ -1,11 +1,17 @@
 # App device protocol v1 — new Ringfour design
 
-Status: AP-03 implements separate session negotiation, Agent inventory reporting,
-durable projections and workspace-scoped status/compatibility reads. AP-07/08/09
-implement installation observations and engine execution; App dispatch remains
-disabled. The original v1 device envelopes and legacy runtime are unchanged.
+Status: AP-03 supplies session negotiation/inventory and AP-08 the owner-scoped
+engine. AP-07 supplies opt-in install-family dispatch, revision reads, preparation/
+application and installation observations. Run dispatch/observations remain AP-09.
+The original v1 envelopes and legacy runtime are unchanged. See
+[installation gates/recovery](apps-installation.md) and [engine policy](apps-engine.md).
 
 ## Separate support negotiation
+
+AP-07 adds optional `supports_app_installations` to the negotiation request only.
+Omission means false. Inventory-only peers remain compatible, but cannot receive
+installation commands or submit installation observations. App mode verifies the
+engine before offering true; the response and legacy hello/welcome stay unchanged.
 
 Keep `/v1/device/connect`, its envelope version 1, hello, welcome, ack,
 heartbeat and legacy command/status shapes unchanged. Do not add App fields to
@@ -42,8 +48,8 @@ devices, and new enrollment creates it in the same SQLite transaction as the
 identity binding. Replacement retaining the Daemon database retains this
 namespace; a different enrollment cannot adopt it silently. Enforce a single
 writer/fence for that enrollment/namespace.
-A session replacement invalidates the old session's authority. These schema
-fields do not implement the durable fence; AP-02/08 must do so before dispatch.
+A session replacement invalidates the old session's authority. AP-08 supplies the lifetime database/namespace writer fence and serialized engine
+mutation journal; AP-07 uses it before enabling installation dispatch.
 
 Canonical workload labels are:
 

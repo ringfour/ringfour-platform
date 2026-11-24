@@ -39,3 +39,12 @@ test("missing optional capabilities explain a compatible result; platform absenc
   assert.throws(() => validateResource(path("compatibility"), {...optional, missing_required: [{capability: "imu"}]}), /invalid_resource/);
   assert.ok(validateResource(path("compatibility"), {...optional, status: "no_matching_image", target: null}));
 });
+
+// Installation execution support is separate from inventory-only protocol support.
+test("installation support is an explicit optional boolean offer", () => {
+  const offer = example("negotiation_offer");
+  assert.ok(validateResource(path("negotiation_request"), {...offer, supports_app_installations: true}));
+  delete offer.supports_app_installations;
+  assert.ok(validateResource(path("negotiation_request"), offer));
+  assert.throws(() => validateResource(path("negotiation_request"), {...offer, supports_app_installations: "true"}), /invalid_resource/);
+});

@@ -16,11 +16,11 @@ public static class AppProtocol
         var options = new BuildOptions { SchemaRegistry = new SchemaRegistry() };
         foreach (var file in new[] { "apps/v1/manifest.schema.json", "errors/v2/app-error.schema.json", "apps/v1/api.schema.json", "apps/v1/requests.schema.json", "device/apps/v1/protocol.schema.json" })
             JsonSchema.FromText(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "contracts/schemas", file)), options);
-        var schemas = new[] { "negotiation_request", "inventory_report", "robot_app_status", "compatibility" }.ToDictionary(
+        var schemas = new[] { "negotiation_request", "inventory_report", "robot_app_status", "compatibility", "observations", "apply_command" }.ToDictionary(
             definition => definition,
             definition => JsonSchema.FromText(JsonSerializer.Serialize(new Dictionary<string, string> {
                 ["$ref"] = "https://contracts.ringfour.dev/device/apps/v1/protocol.schema.json#/$defs/" + definition }), options));
-        foreach (var definition in new[] { "publish", "share", "import", "registry_grant" })
+        foreach (var definition in new[] { "publish", "share", "import", "registry_grant", "install", "configure", "update", "rollback" })
             schemas["request_" + definition] = JsonSchema.FromText("{\"$ref\":\"https://contracts.ringfour.dev/apps/v1/requests.schema.json#/$defs/" + definition + "\"}", options);
         schemas["manifest"] = JsonSchema.FromText("{\"$ref\":\"https://contracts.ringfour.dev/apps/v1/manifest.schema.json\"}", options);
         return schemas;
@@ -94,14 +94,16 @@ public static class AppProtocol
         catch (DecoderFallbackException) { throw ApiException.InvalidInput("Invalid UTF-8."); }
     }
 
-    public static string Digest(JsonNode value)
+    public static string Digest(JsonNode value) => Convert.ToHexStringLower(SHA256.HashData(Canonical(value)));
+
+    public static byte[] Canonical(JsonNode value)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
         {
             Write(writer, value);
         }
-        return Convert.ToHexStringLower(SHA256.HashData(stream.ToArray()));
+        return stream.ToArray();
     }
 
     private static void Write(Utf8JsonWriter writer, JsonNode? node)
@@ -117,6 +119,21 @@ public static class AppProtocol
         { writer.WriteStartArray(); foreach (var item in array) Write(writer, item); writer.WriteEndArray(); }
         else if (node is JsonValue scalar && scalar.GetValueKind() == JsonValueKind.Number)
             writer.WriteNumberValue(Integer(scalar));
+        else if (node is JsonValue text && text.GetValueKind() == JsonValueKind.String)
+        {
+            // Utf8JsonWriter's encoder escapes supplementary Unicode even in
+            // relaxed mode; v1 canonical JSON retains valid UTF-8 scalars.
+            var quoted = new StringBuilder("\"");
+            foreach (var character in text.GetValue<string>())
+                quoted.Append(character switch {
+                    '\"' => "\\\"", '\\' => "\\\\", '\b' => "\\b", '\f' => "\\f",
+                    '\n' => "\\n", '\r' => "\\r", '\t' => "\\t",
+                    < ' ' => "\\u" + ((int)character).ToString("x4", CultureInfo.InvariantCulture),
+                    _ => character.ToString()
+                });
+            quoted.Append('\"');
+            writer.WriteRawValue(quoted.ToString());
+        }
         else if (node is null) writer.WriteNullValue();
         else node.WriteTo(writer);
     }

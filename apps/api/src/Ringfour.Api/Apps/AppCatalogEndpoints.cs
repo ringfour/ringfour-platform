@@ -38,7 +38,7 @@ public static class AppCatalogEndpoints
             db.AppShares.Any(s => s.RevisionId == r.Id && organizations.Contains(s.DestinationOrganizationId) && s.RevokedAt == null && s.ExpiresAt > now));
     }
 
-    private static async Task<IResult> Mutate(HttpContext context, RingfourDbContext db, User actor,
+    internal static async Task<IResult> Mutate(HttpContext context, RingfourDbContext db, User actor,
         Guid organization, string route, string target, JsonObject body, int status, Func<Task<JsonObject>> action, CancellationToken ct)
     {
         var key = context.Request.Headers["Idempotency-Key"].ToString();
@@ -190,30 +190,35 @@ public static class AppCatalogEndpoints
         var body = await AppProtocol.Read(context.Request, "request_import", ct);
         return await Mutate(context, db, user, orgId, "import", orgId.ToString(), body, 201, async () =>
         {
-            var revisionId = Guid.Parse(body["revision_id"]!.GetValue<string>());
-            var existing = await db.AppImports.SingleOrDefaultAsync(x => x.OrganizationId == orgId && x.RevisionId == revisionId, ct);
-            if (existing is not null) return ImportJson(existing);
-            var revision = await db.AppRevisions.SingleOrDefaultAsync(x => x.Id == revisionId, ct) ?? throw ApiException.NotFound("Revision is not accessible.");
-            Guid? shareId = null;
-            if (revision.Visibility != "listed")
-            {
-                if (body["share_id"] is null)
-                {
-                    if (!await Visible(db, user.Id).AnyAsync(x => x.Id == revisionId, ct)) throw ApiException.NotFound("Revision is not accessible.");
-                    throw ApiException.Conflict("share_required", "An explicit destination-bound share is required.");
-                }
-                shareId = Guid.Parse(body["share_id"]!.GetValue<string>());
-                var share = await db.AppShares.FromSqlInterpolated($"SELECT * FROM app_shares WHERE id = {shareId} FOR UPDATE").SingleOrDefaultAsync(ct);
-                if (share is null || share.RevisionId != revision.Id || share.PublisherOrganizationId != revision.PublisherOrganizationId || share.DestinationOrganizationId != orgId)
-                    throw ApiException.NotFound("Share is not accessible.");
-                if (share.RevokedAt is not null) throw ApiException.Conflict("share_revoked", "Share was revoked.");
-                if (share.ExpiresAt <= DateTimeOffset.UtcNow) throw ApiException.Conflict("share_expired", "Share has expired.");
-            }
-            var imported = new AppImport { Id = Guid.NewGuid(), OrganizationId = orgId, AppId = revision.AppId, RevisionId = revision.Id,
-                PublisherOrganizationId = revision.PublisherOrganizationId, SourceKind = shareId is null ? "store" : "direct_share", ShareId = shareId,
-                ImportedByUserId = user.Id, ImportedAt = DateTimeOffset.UtcNow };
-            db.AppImports.Add(imported); return ImportJson(imported);
+            return ImportJson(await EnsureImport(db, user, orgId, body, ct));
         }, ct);
+    }
+
+    internal static async Task<AppImport> EnsureImport(RingfourDbContext db, User user, Guid orgId, JsonObject body, CancellationToken ct)
+    {
+        var revisionId = Guid.Parse(body["revision_id"]!.GetValue<string>());
+        var existing = await db.AppImports.SingleOrDefaultAsync(x => x.OrganizationId == orgId && x.RevisionId == revisionId, ct);
+        if (existing is not null) return existing;
+        var revision = await db.AppRevisions.SingleOrDefaultAsync(x => x.Id == revisionId, ct) ?? throw ApiException.NotFound("Revision is not accessible.");
+        Guid? shareId = null;
+        if (revision.Visibility != "listed")
+        {
+            if (body["share_id"] is null)
+            {
+                if (!await Visible(db, user.Id).AnyAsync(x => x.Id == revisionId, ct)) throw ApiException.NotFound("Revision is not accessible.");
+                throw ApiException.Conflict("share_required", "An explicit destination-bound share is required.");
+            }
+            shareId = Guid.Parse(body["share_id"]!.GetValue<string>());
+            var share = await db.AppShares.FromSqlInterpolated($"SELECT * FROM app_shares WHERE id = {shareId} FOR UPDATE").SingleOrDefaultAsync(ct);
+            if (share is null || share.RevisionId != revision.Id || share.PublisherOrganizationId != revision.PublisherOrganizationId || share.DestinationOrganizationId != orgId)
+                throw ApiException.NotFound("Share is not accessible.");
+            if (share.RevokedAt is not null) throw ApiException.Conflict("share_revoked", "Share was revoked.");
+            if (share.ExpiresAt <= DateTimeOffset.UtcNow) throw ApiException.Conflict("share_expired", "Share has expired.");
+        }
+        var imported = new AppImport { Id = Guid.NewGuid(), OrganizationId = orgId, AppId = revision.AppId, RevisionId = revision.Id,
+            PublisherOrganizationId = revision.PublisherOrganizationId, SourceKind = shareId is null ? "store" : "direct_share", ShareId = shareId,
+            ImportedByUserId = user.Id, ImportedAt = DateTimeOffset.UtcNow };
+        db.AppImports.Add(imported); return imported;
     }
 
     private static async Task<IResult> Imports(Guid orgId, string? cursor, int? limit, HttpContext context, RingfourDbContext db, CancellationToken ct)

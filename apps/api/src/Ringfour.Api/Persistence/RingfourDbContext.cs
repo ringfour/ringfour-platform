@@ -683,6 +683,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     {
         modelBuilder.Entity<RobotAppInventory>(e =>
         {
+            e.Property(x => x.InstallationsSupported).HasColumnName("installations_supported");
             e.ToTable("robot_app_inventory"); e.HasKey(x => x.RobotId);
             e.Property(x => x.RobotId).HasColumnName("robot_id");
             e.Property(x => x.DeploymentNamespace).HasColumnName("deployment_namespace");
@@ -803,6 +804,8 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
         });
         modelBuilder.Entity<AppOperation>(e =>
         {
+            e.Property(x => x.Command).HasColumnName("command").HasColumnType("jsonb");
+            e.Property(x => x.DispatchedAt).HasColumnName("dispatched_at");
             e.ToTable("app_operations"); e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.OrganizationId).HasColumnName("organization_id"); e.Property(x => x.RobotId).HasColumnName("robot_id");
             e.Property(x => x.InstallationId).HasColumnName("installation_id"); e.Property(x => x.RunId).HasColumnName("run_id"); e.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(24);

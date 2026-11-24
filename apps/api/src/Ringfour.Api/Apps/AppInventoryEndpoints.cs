@@ -43,6 +43,7 @@ public static class AppInventoryEndpoints
         var ns = Guid.Parse(body["deployment_namespace"]!.GetValue<string>());
         var offers = body["supported_app_protocol_versions"]!.AsArray().Select(x => AppProtocol.Integer(x!)).Order().ToArray();
         var versions = System.Text.Json.JsonSerializer.Serialize(offers);
+        var installationSupport = body["supports_app_installations"]?.GetValue<bool>() ?? false;
         var fence = manager.AppSessionFence(robot.Id);
         await fence.WaitAsync(ct);
         try
@@ -53,7 +54,7 @@ public static class AppInventoryEndpoints
             var row = await db.RobotAppInventories.SingleOrDefaultAsync(x => x.RobotId == robot.Id, ct);
             if (row is not null && row.DeploymentNamespace != ns)
                 throw ApiException.Conflict("ownership_conflict", "Enrollment is already bound to a deployment namespace.");
-            if (row?.SessionId == sessionId && !JsonNode.DeepEquals(JsonNode.Parse(row.OfferedVersions), JsonNode.Parse(versions)))
+            if (row?.SessionId == sessionId && (!JsonNode.DeepEquals(JsonNode.Parse(row.OfferedVersions), JsonNode.Parse(versions)) || row.InstallationsSupported != installationSupport))
                 throw ApiException.Conflict("ownership_conflict", "Negotiation offers changed within this session.");
             if (row is null)
             {
@@ -63,7 +64,7 @@ public static class AppInventoryEndpoints
             if (row.SessionId != sessionId)
             {
                 row.SessionId = sessionId; row.NegotiatedAt = DateTimeOffset.UtcNow;
-                row.OfferedVersions = versions; row.Supported = offers.Contains(1L);
+                row.OfferedVersions = versions; row.Supported = offers.Contains(1L); row.InstallationsSupported = installationSupport;
             }
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);

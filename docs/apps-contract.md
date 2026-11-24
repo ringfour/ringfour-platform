@@ -95,6 +95,10 @@ provides exact serialized bytes and expected digest. The
 [decoded-object oracle](../packages/contracts/test/support/app-manifest.mjs)
 is test support, not a shared application implementation.
 
+The supplementary Unicode/line-separator fixture is
+[canonical-unicode.json](../packages/contracts/fixtures/apps/v1/canonical-unicode.json);
+API, CLI and Daemon readers use its exact UTF-8 canonical bytes/digest.
+
 [API/runtime contracts](apps-api-contract.md) now define actor and observation
 timestamps, idempotency, grants, staging/application transitions, stop
 preconditions and runtime run attribution. [Device negotiation/inventory](apps-device-contract.md) and cross-language

@@ -221,6 +221,10 @@
             "minimum": 1,
             "maximum": 65535
           }
+        },
+        "supports_app_installations": {
+          "type": "boolean",
+          "description": "AP-07 installation consumer with AP-08 executor; omitted means false."
         }
       }
     },

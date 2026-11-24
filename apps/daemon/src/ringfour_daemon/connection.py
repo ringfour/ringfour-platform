@@ -15,6 +15,7 @@ import websockets
 
 from . import (
     __version__,
+    app_installations,
     app_inventory,
     local_execution,
     local_grants,
@@ -160,6 +161,7 @@ class ConnectionManager:
                 await self._say_hello(outbound, state)
                 heartbeat_seconds = await self._await_welcome(socket, state)
                 self.connected = True
+                self.app_headers = headers | {"x-ringfour-device-session": state.session_id}
                 if self._settings.agent_uri:
                     tasks.append(asyncio.create_task(app_inventory.run_session(
                         self._settings, identity, state.session_id, headers)))
@@ -249,6 +251,18 @@ class ConnectionManager:
         state: _SessionState,
         replayed_ids: set[str],
     ) -> None:
+        if command.get("kind", "").startswith("app."):
+            if command["kind"] not in ("app.install", "app.configure", "app.update", "app.rollback") or not self._settings.apps_enabled or self.app_executor is None:
+                raise ProtocolError("App installation consumer is not enabled")
+            app_installations.app_validation.validate(command["payload"], "device", "apply_command")
+            operation, _ = operations.record_command(self._settings.db_path, state.robot_id, command)
+            replayed_ids.add(operation.operation_id)
+            await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
+            try:
+                await app_installations.process(self._settings, self.app_executor, operation, self.app_headers)
+            except (httpx.HTTPError, app_installations.PreparationError, sqlite3.Error, ValueError):
+                raise ProtocolError("App preparation/report delivery unavailable; reconcile on reconnect") from None
+            return
         replayed_ids.add(command["operation_id"])
         try:
             operation, created = operations.record_command(
@@ -313,6 +327,11 @@ class ConnectionManager:
         operations.apply_status(self._settings.db_path, operation.operation_id, "running")
         logger.info("operation %s started for robot %s", operation.operation_id, state.robot_id)
         try:
+            if operation.kind == "diagnostic.execution.start" and self._settings.apps_enabled:
+                from .db import connect
+                with connect(self._settings.db_path) as guard:
+                    if guard.execute("SELECT 1 FROM app_installations").fetchone():
+                        raise runner.RunnerRejected("execution_conflict", "Diagnostic starts are disabled on App-enabled robots.")
             if operation.kind.startswith("diagnostic.execution."):
                 result = await runner.execute(self._settings, operation)
             elif operation.kind == "script.execution.start":
@@ -394,7 +413,7 @@ class ConnectionManager:
         # replay is terminal-or-gone upstream.
         await self._sleep(self._settings.reconcile_delay_seconds)
         for operation in operations.list_nonterminal(self._settings.db_path):
-            if operation.operation_id in replayed_ids:
+            if operation.kind.startswith("app.") or operation.operation_id in replayed_ids:
                 continue
             logger.info(
                 "operation %s no longer active on the platform; marking superseded",

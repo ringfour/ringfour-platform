@@ -59,6 +59,7 @@ class ProtocolModel(BaseModel):
 
 
 class NegotiationRequest(ProtocolModel):
+    supports_app_installations: bool = False
     session_id: Id
     deployment_namespace: Id
     supported_app_protocol_versions: list[Annotated[int, Field(ge=1, le=65535)]] = (

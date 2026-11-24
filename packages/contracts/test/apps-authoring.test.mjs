@@ -2,7 +2,7 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import Ajv2020 from "ajv/dist/2020.js";
-import {validateManifest} from "./support/app-manifest.mjs";
+import {canonicalJson, validateManifest} from "./support/app-manifest.mjs";
 
 const schema = JSON.parse(await readFile(new URL("../schemas/apps/v1/authoring.schema.json", import.meta.url)));
 const fixture = JSON.parse(await readFile(new URL("../fixtures/apps/v1/authoring.json", import.meta.url)));
@@ -23,4 +23,10 @@ test("authoring rejects unsupported targets and immutable fields in editable rep
     v => v.targets[0].image = "never", v => v.build.files = [], v => v.wheel_bundle.sha256 = "bad"]) {
     const value = structuredClone(fixture); mutation(value); assert.equal(validate(value), false);
   }
+});
+
+test("canonical UTF-8 retains emoji and line separators across consumers", async () => {
+  const fixture=JSON.parse(await readFile(new URL("../fixtures/apps/v1/canonical-unicode.json",import.meta.url)));
+  assert.ok(validateManifest(fixture.manifest));
+  assert.equal(canonicalJson(fixture.manifest),fixture.canonical);
 });

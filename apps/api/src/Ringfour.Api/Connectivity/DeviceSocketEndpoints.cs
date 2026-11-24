@@ -371,6 +371,8 @@ public static class DeviceSocketEndpoints
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        if (Guid.TryParse(payload["operation_id"]?.GetValue<string>(), out var appOperationId) &&
+            await Ringfour.Api.Apps.AppInstallationDevice.Ack(db, manager, session, appOperationId, cancellationToken)) return;
         var operation = await FindOperationAsync(db, session, payload, cancellationToken);
         if (operation is null)
         {

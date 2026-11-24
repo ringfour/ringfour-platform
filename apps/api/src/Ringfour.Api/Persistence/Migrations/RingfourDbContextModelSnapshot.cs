@@ -310,6 +310,10 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("acknowledged_at");
 
+                    b.Property<string>("Command")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("command");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
@@ -317,6 +321,10 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Property<DateTimeOffset>("DeadlineAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deadline_at");
+
+                    b.Property<DateTimeOffset?>("DispatchedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dispatched_at");
 
                     b.Property<string>("Failure")
                         .HasColumnType("jsonb")
@@ -1867,6 +1875,10 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Property<Guid>("DeploymentNamespace")
                         .HasColumnType("uuid")
                         .HasColumnName("deployment_namespace");
+
+                    b.Property<bool>("InstallationsSupported")
+                        .HasColumnType("boolean")
+                        .HasColumnName("installations_supported");
 
                     b.Property<string>("Inventory")
                         .HasColumnType("jsonb")
