@@ -65,9 +65,10 @@ verified email address as the invitation.
 See [`docs/organization-management.md`](../../docs/organization-management.md)
 for the full invitation flow and acceptance steps.
 
-`tests/integration/compose/docker-compose.yml` is the separate local integration stack. It
-also includes a local daemon and Runner to test device flows; do not deploy
-that test topology as the server.
+`tests/integration/compose/docker-compose.yml` is a legacy integration fixture
+for older Daemon/Runner tests, not a deployment or current App acceptance
+stack. Its historical setup notes are in the
+[mission-era archive](../../docs/archive/legacy-mission-workflows/infra/legacy-integration-compose-README.md).
 
 
 ## App image registry (AP-05)

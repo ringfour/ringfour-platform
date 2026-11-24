@@ -1,0 +1,311 @@
+.app-workflow-page {
+  min-width: 0;
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  color: var(--color-foreground, #e9edf1);
+}
+.app-workflow-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 auto 1.5rem;
+  max-width: 76rem;
+}
+.app-workflow-heading h1 {
+  margin: 0.2rem 0 0.45rem;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+}
+.app-workflow-heading p {
+  max-width: 54rem;
+  margin: 0;
+  color: var(--color-muted-foreground, #9ca7b2);
+}
+.app-eyebrow {
+  color: var(--color-accent, #82b4aa);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.app-panel {
+  min-width: 0;
+  padding: 1.1rem;
+  border: 1px solid var(--color-border, #343d44);
+  border-radius: 0.75rem;
+  background: var(--color-surface, #151b1f);
+}
+.app-panel h2 {
+  margin: 0.3rem 0 0.5rem;
+  font-size: 1.15rem;
+}
+.app-store-grid,
+.app-install-grid,
+.app-logbook-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+  max-width: 76rem;
+  margin: auto;
+}
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  max-width: 76rem;
+  margin: auto;
+}
+.home-attention,
+.home-running,
+.home-robots,
+.home-grid > .studio-timeline {
+  min-width: 0;
+}
+.home-robots,
+.home-grid > .studio-timeline {
+  grid-column: 1 / -1;
+}
+.home-section-heading,
+.home-running > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.home-attention-row,
+.home-run-row {
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--color-border, #343d44);
+}
+.home-attention-row h3 {
+  margin: 0.35rem 0;
+  font-size: 1rem;
+}
+.home-attention-row p,
+.home-run-row p {
+  margin: 0.35rem 0;
+}
+.home-run-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.home-run-row small {
+  color: var(--color-muted-foreground, #aab3bb);
+}
+.robot-inventory-controls {
+  display: grid;
+  grid-template-columns: minmax(14rem, 2fr) minmax(12rem, 1fr) auto;
+  align-items: end;
+  gap: 1rem;
+  max-width: 76rem;
+  margin: 0 auto 1rem;
+}
+.robot-inventory-controls .app-field {
+  margin: 0;
+}
+.robot-inventory-controls p {
+  margin: 0 0 0.7rem;
+  color: var(--color-muted-foreground, #aab3bb);
+}
+.robot-inventory-list {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 76rem;
+  margin: auto;
+}
+.robot-inventory-list .studio-machine {
+  margin: 0;
+  border: 1px solid var(--color-border, #343d44);
+  background: var(--color-surface, #151b1f);
+  box-shadow: var(--shadow-elevation-1);
+}
+.robot-list-backlink {
+  max-width: 76rem;
+  margin: 1rem auto;
+}
+.home-page .ops-header {
+  max-width: 76rem;
+  margin: 0 auto 1.5rem;
+}
+@media (max-width: 52rem) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+  .home-robots,
+  .home-grid > .studio-timeline {
+    grid-column: auto;
+  }
+  .robot-inventory-controls {
+    grid-template-columns: 1fr;
+  }
+}
+.app-store-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.app-field {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.85rem 0;
+  color: var(--color-muted-foreground, #aab3bb);
+  font-size: 0.84rem;
+}
+.app-field input,
+.app-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  color: inherit;
+  border: 1px solid var(--color-border, #424b52);
+  border-radius: 0.4rem;
+  background: var(--color-background, #0d1215);
+}
+.app-store-row,
+.app-logbook-row {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  text-align: left;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  background: transparent;
+  cursor: pointer;
+}
+.app-store-row {
+  flex-direction: column;
+}
+.app-store-row:hover,
+.app-store-row[aria-current="true"],
+.app-logbook-row:hover {
+  border-color: var(--color-border, #46515a);
+  background: var(--color-inset, #20282d);
+}
+.app-store-row span,
+.app-store-row small,
+.app-logbook-row small {
+  color: var(--color-muted-foreground, #aab3bb);
+}
+.app-store-row:focus-visible,
+.app-logbook-row:focus-visible,
+.app-workflow-page button:focus-visible {
+  outline: 2px solid var(--color-accent, #82b4aa);
+  outline-offset: 2px;
+}
+.app-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.app-compatibility,
+.app-feedback,
+.app-operation-status {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border-radius: 0.45rem;
+  background: var(--color-inset, #20282d);
+}
+.app-compatibility small {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--color-muted-foreground, #aab3bb);
+}
+.app-compatibility.is-blocked,
+.app-feedback-error {
+  border: 1px solid #8b4b45;
+  color: #f0b6ad;
+}
+.app-feedback[role="status"] {
+  border: 1px solid #417b69;
+}
+.app-capability-list {
+  margin: 0.5rem 0;
+}
+.app-capability-list ul {
+  margin: 0.35rem 0;
+  padding-left: 1.25rem;
+}
+.app-share-import {
+  max-width: 76rem;
+  margin: 1rem auto;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border, #343d44);
+  border-radius: 0.6rem;
+}
+.app-share-import form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+.app-install-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--color-border, #343d44);
+}
+.app-install-row span,
+.app-install-row small,
+.app-panel > small {
+  color: var(--color-muted-foreground, #aab3bb);
+  overflow-wrap: anywhere;
+}
+.app-logbook-row {
+  align-items: center;
+  border-bottom: 1px solid var(--color-border, #343d44);
+  border-radius: 0;
+}
+.app-logbook-row span {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.app-logbook-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.65rem;
+}
+.app-event-list {
+  display: grid;
+  gap: 0.65rem;
+  padding-left: 1.5rem;
+}
+.app-event-list li,
+.app-event-row {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--color-border, #343d44);
+  overflow-wrap: anywhere;
+}
+.app-event-list time,
+.app-event-row time {
+  color: var(--color-muted-foreground, #aab3bb);
+  font-size: 0.8rem;
+}
+.app-output {
+  max-height: 30rem;
+  overflow: auto;
+  padding: 1rem;
+  color: #d5dfd9;
+  background: #090d0f;
+  border-radius: 0.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 38rem) {
+  .app-workflow-page {
+    padding: 1rem;
+  }
+  .app-workflow-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

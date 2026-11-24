@@ -1,79 +1,84 @@
-# Architecture and shared contracts
+# Ringfour Apps architecture
 
-## Apps migration authority
+This document describes the current Apps direction. The earlier mission/source
+upload architecture is preserved in the
+[legacy archive](archive/legacy-mission-workflows/contracts/architecture-legacy.md)
+for migration history and regression obligations.
 
-The [Apps pivot specification](../../app-pivot.md) and [active plan](milestones/apps-pivot.md) supersede the fixed-Runner execution decision for new Apps. Infrastructure owns Daemon and Agent lifecycle. Only the authorized Daemon manages its enrolled robot's App containers through an operator-provided engine socket. Engine administrators are trusted by all containers on that engine; labels scope workload reconciliation and are not a hostile-engine security boundary. Server, App and legacy Runner containers never receive this socket.
+## System boundary
 
-App manifests cannot choose sockets, mounts, privileges, devices, networks, commands or entrypoints. Deployment settings belong to the robot owner. The Agent owns ROS and safety. New Apps use the image's plain entrypoint without Runner, uv preparation or an App-side Runner shim. Legacy execution remains operational until its clients, recovery and durable history are migrated. App and legacy executions must share one transactional robot execution slot before App start is enabled.
+People authenticate with Auth0 and use the Platform API, CLI and (as AP-11
+lands) the Console. The API owns workspaces, App catalog/imports, installation
+and run intent, authorization, hosted history and evidence metadata. An
+enrolled robot Daemon connects outbound to the API using its machine
+credential. The Daemon persists local state in SQLite and coordinates the
+robot's Agent and App containers.
 
-The [manifest contract](apps-contract.md) is specified and fixture-tested first. The [API/runtime contracts](apps-api-contract.md) are also defined. AP-02 adds Apps persistence and the authorized identity-only reset; AP-03 implements the separate [device negotiation/inventory contract](apps-device-contract.md), preserving v1 envelopes. The Daemon reads the real Agent hello, persists and reports observations, and Platform provides scoped status/compatibility previews. App installation/execution remains in later slices. The flows and implementation details below describe the legacy implementation during migration.
+The Agent owns robot identity/profile, ROS access, capability semantics and
+safety. Ringfour does not copy ROS logic or infer physical outcomes from an
+App's output. The SDK and Agent remain separate packages with their own release
+and compatibility boundaries.
 
-## Ownership and flows
+## App release and execution
 
-CLI/Console → hosted API ↔ outbound device connection from the robot daemon → private Runner control API → Python process → existing SDK → existing Agent → ROS/robot.
+An App release is an immutable, schema-validated manifest and image digest.
+Publishing, sharing and import are organization-scoped. Installing an App
+resolves registry authorization, verifies the digest and stores a device
+installation without starting a workload. The API sends durable operations to
+the enrolled Daemon; fresh device inventory and policy remain authoritative.
 
-PostgreSQL owns accounts, organization membership, robots, enrollment, immutable uploaded revisions, requested operations and replicated history. SQLite owns device operation deduplication, execution reconciliation, local events and an upload outbox. Runner persists execution metadata and process output on a dedicated volume. The daemon owns lifecycle coordination; Runner owns environment preparation and OS processes. An API outage does not kill an already running mission, but prevents new hosted requests and human responses until reconnection.
+Starting creates a server-owned run snapshot bound to its installation,
+revision, configuration, image, initiator and robot. Each robot has one shared
+execution slot across App and remaining legacy callers. Only the enrolled
+Daemon manages its robot's App containers. It reconciles the exact run after
+restart and does not relaunch an ambiguous start. Accepted commands are not
+treated as observed running state.
 
-## Platform implementation
+## Engine authority
 
-The [starter database schema](database-schema.md) defines the first PostgreSQL and SQLite tables, their ownership and transaction boundaries.
+The operator provides the Docker Engine Unix socket to the trusted Daemon. That
+socket grants Engine-administrator authority; Engine administrators are trusted
+by every workload they can manage. Owner labels scope reconciliation and
+workload reports, but are not a hostile-Engine security boundary. The API,
+legacy Runner and App containers never receive the socket. App manifests cannot
+choose networks, mounts, privileges, devices, commands or entrypoints.
 
-Use a C# ASP.NET Core modular monolith on a supported .NET LTS, pinned in milestone 00. Keep identity, organization access, enrollment, deployments, mission coordination, Logbook and HITL as modules within the API application. Use ordinary services, built-in dependency injection and Minimal APIs or controllers. Use PostgreSQL through EF Core and Npgsql, with checked-in EF Core migrations. Avoid microservices, CQRS frameworks, MediatR and event sourcing. OpenAPI and JSON Schema remain the language-independent contracts shared by the CLI, Console and daemon.
+The Daemon places each App on the robot owner's private network and supplies
+only its declared Agent/runtime endpoints and run-scoped credentials. App
+containers use a non-root image user, dropped capabilities, no-new-privileges,
+resource limits and exact owner/run labels. The Engine socket and Daemon data
+volume are never mounted into an App.
 
-Use ASP.NET Core hosted services initially for background processing. Persist critical workflow state, including pending work and retry/reconciliation state as introduced by each milestone, in PostgreSQL. Background services process that durable state; process memory is not a durable queue. Test restart recovery for workflows that rely on background processing.
+## Durable evidence and recovery
 
-## HTTP and identifiers
+The Daemon writes local operation, run, output, interaction and artifact state
+before acknowledging or replicating it. AP runtime clients use per-run scoped
+credentials. Artifacts are immutable local snapshots before acknowledgement;
+outputs use independent byte cursors and terminal seals. Human decisions remain
+submitted until the device confirms application. Engine/API outages preserve
+unknown or pending state rather than fabricating success, stop, cancellation or
+approval.
 
-All proposed product endpoints use `/v1`. UUID identifiers, UTC RFC3339 timestamps, explicit schema versions and organization-scoped authorization are required. Errors: `{error:{code,message,request_id,details?}}`; no secrets in messages. Use 400 invalid input, 401 invalid authentication, 403 insufficient membership, 404 inaccessible/missing scoped object, 409 state conflict, 413 size limit, 429 rate limit and 503 unavailable dependency. Never treat request acceptance as execution success.
+Hosted records use PostgreSQL/EF Core. Device records use additive SQLite
+migrations. Preserve both stores and their identity/run bindings through
+replacement. See the [database schema](database-schema.md),
+[engine operations](apps-engine.md), [hosted runs](apps-runs.md), and
+[runtime/evidence contract](apps-runtime.md).
 
-Mutation endpoints accepting retries use `Idempotency-Key`, scoped to principal, route and target; matching payload replays the same result, different payload returns 409. Persist operation IDs and results. Collections use opaque cursor pagination. Validate schemas on both sides; reject unsupported protocol versions explicitly. Freeze concrete numeric limits and retention defaults in configuration/docs when each feature arrives and test their boundaries.
+## Authentication and authorization
 
-## Identity and authorization
+Auth0 authenticates people. Ringfour maps the Auth0 subject to a local user and
+enforces workspace roles in every API route. Device credentials authenticate a
+single enrolled robot and are separate from human tokens. Runtime credentials
+are scoped to a single App run and are not reused for device or human API calls.
+No local-signing-key bypass is allowed in hosted configuration.
 
-Configure these Auth0 resources:
+## Deployment and migration
 
-| Resource | Configuration |
-|---|---|
-| Ringfour API | OAuth resource server; audience `https://api.ringfour.eu`; RS256 |
-| Ringfour CLI | Native application; OAuth Device Authorization Flow; no embedded client secret |
-| Ringfour Web | Single Page Application; Authorization Code + PKCE; used by the internal Console initially and Studio later |
-
-ASP.NET Core JWT Bearer validates access-token signature (RS256), issuer, audience and expiry. Use the Auth0 `sub` claim as external identity, never email as a primary key. Store CLI refresh credentials, when issued, in the OS credential store; redact tokens. Auth0 handles human authentication only. Do not use Auth0 Organizations or model business permissions in Auth0. The daemon and Runner do not use human Auth0 tokens; the Platform API owns robot enrollment and machine credentials, and Runner uses its private daemon authentication.
-
-API owns users, organizations and memberships: owner (membership/device administration), developer (deploy/run/dev), operator (inspect, stop, respond to HITL). Scope every resource lookup by organization. Owners include developer/operator rights; developers include operator rights. Self-service organization creation is allowed for authenticated users; membership mutation is owner-only. Prevent removal of the last owner. Owners can invite an email address by SMTP; accepting requires an Auth0-authenticated account with that same verified email. Invitations are single-use, expire after seven days, and store only a hash of the secret token.
-
-Machine credentials are separate from human tokens, scoped to one enrolled robot; store only hashes where verification permits. Provide revocation, rotation and secret-safe logs. Runner accepts only authenticated private daemon traffic and is never publicly exposed.
-
-## Device protocol
-
-Daemon initiates authenticated TLS WebSocket `/v1/device/connect`; no inbound public device port is required. Envelope: `{version:1,message_id,type,robot_id,sequence,payload}`. Server derives robot authority from credentials rather than trusting the envelope. Commands carry stable `operation_id`, kind, payload and deadline. Persist before acknowledging, replay unacknowledged commands after reconnect, deduplicate by operation ID, and report accepted/running/terminal status. Ordering is per robot; no exactly-once transport claim. Use bounded queues, exponential backoff with jitter, heartbeat interval 15 s and offline threshold 45 s based on server receive time. Resynchronize nonterminal operations after restart.
-
-## Execution and storage
-
-Execution states: queued → preparing → running → succeeded | failed | cancelled; preparation may fail, and cancellation may terminate queued/preparing work. Terminal states cannot reverse. Distinguish desired mission state from observed process state. v0.1 permits one active execution per robot; return conflict for overlap, with no implicit preemption. Run code as a non-root user; bound storage, output and artifact sizes. Stop uses process-group TERM then KILL after configured grace; persist the outcome. On Runner restart, reconcile recorded processes; mark unverifiable lost work failed with reason, never silently replay side effects.
-
-Production revisions contain immutable source, entrypoint, Python constraint, dependency lock and content digest. Verify digest, reject traversal/symlinks escaping the bundle, and prepare a uv environment before activation. Cache downloads across environments; per-revision venv paths are unique. Do not overwrite an active revision. Dev sessions use a mutable workspace and persistent venv; dependency changes explicitly reprovision. Scripts can reuse a compatible cache keyed by lock digest, Python and platform. Retain current/running revisions during garbage collection.
-
-Artifacts use hosted private blob storage behind a small storage interface (filesystem adapter for local tests); metadata and authorization live in PostgreSQL. Upload and download URLs are scoped and short-lived; daemon verifies digests. Set backend, quotas and expiration in milestone 05. No database row may imply bytes exist before upload finalization.
-
-## Durability and observability
-
-Create local durable events from the first execution feature; milestone 08 adds full hosted Logbook queries. Events have event_id, robot_id, local sequence, occurred_at, received_at, actor, correlation/operation/execution IDs, type and schema-versioned payload. Deduplicate replicated events by event_id; use sequence for local ordering, not cross-device wall-clock time. Separate stdout/stderr chunks with offsets from lifecycle events. Bound disk use explicitly; surface backpressure rather than silently losing lifecycle history. Persist intent/outbox atomically with local state.
-
-## Deployment and test environments
-
-The server deployment runs the Platform API and PostgreSQL (plus configured
-hosted storage and ingress). It does not build or run device-side software.
-Each robot runs its own daemon and Runner; the daemon connects outbound to the
-hosted API using the versioned device protocol. The Balena manifest contains
-only robot-side services.
-
-`infra/server/docker-compose.yml` is the independent server stack.
-`../ringfour-virtual` is the local device-side stack: it pins Base101, uses its
-simulated profile, and builds Agent with SDK source plus daemon and Runner from
-their own projects. Its containers join the simulator's ROS network and reach
-the server through the device protocol. The stacks share no source/package
-dependency, Docker network, or database. `tests/integration/compose/docker-compose.yml` is
-retained only for older milestone integration scripts.
-
-Platform tests use xUnit; persistence, migrations and database-backed API tests use real PostgreSQL through Testcontainers. Component tests isolate other external boundaries. Local integration uses real service processes and PostgreSQL/SQLite, migrated from empty volumes; test-only Auth0-compatible fixtures cannot substitute for live Auth0 login acceptance. Balena smoke at 04 verifies container/network assumptions; 10 verifies actual SDK/Agent/ROS. Pin and record external versions. Do not publish the internal Console in production deployment manifests.
+Infrastructure owns Daemon and Agent lifecycle. The local server Compose stack
+contains API, PostgreSQL and development services; the sibling `ringfour-virtual`
+repository owns Base101 and device Compose. The opt-in App topology and
+single-/multi-instance launchers are documented in
+[AP-08V](human-testing/AP-08V.md). Legacy mission and Runner pathways remain
+only for existing callers until their cutover and recovery gates pass. Their
+historical design is archived; AP-14/AP-15 track their final removal.

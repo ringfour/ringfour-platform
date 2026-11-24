@@ -10,7 +10,7 @@ type Clip = {
   id: string;
   robot: Robot;
   app: string;
-  version?: number;
+  version?: string | number;
   state: string;
   created_at: string;
   updated_at?: string;
@@ -19,6 +19,7 @@ type Clip = {
 type Marker = {
   event_id: string;
   robot_id: string;
+  run_id: string | null;
   execution_id: string | null;
   type: string;
   occurred_at: string;
@@ -66,7 +67,8 @@ export function RunTimeline({
   const query = useLocation().searchParams;
   const runStart = focusedRun ? Date.parse(focusedRun.created_at) : NaN;
   const runEnd =
-    focusedRun && !["running", "preparing", "queued"].includes(focusedRun.state)
+    focusedRun &&
+    !["running", "preparing", "queued", "accepted"].includes(focusedRun.state)
       ? Date.parse(focusedRun.updated_at ?? "")
       : Date.now();
   const latestRecorded = Math.max(
@@ -76,7 +78,7 @@ export function RunTimeline({
       .filter(Number.isFinite),
   );
   const hasActive = runs.some((run) =>
-    ["running", "queued", "preparing"].includes(run.state),
+    ["running", "queued", "preparing", "accepted"].includes(run.state),
   );
   const recordedEnd = hasActive
     ? Date.now()
@@ -123,27 +125,22 @@ export function RunTimeline({
   useEffect(() => {
     let current = true;
     setError(false);
-    const range = new URLSearchParams({
-      from: new Date(start).toISOString(),
-      to: new Date(end).toISOString(),
-    });
+    const range = new URLSearchParams();
     if (robotFilter) range.set("robot_id", robotFilter);
-    if (focusedRun) range.set("execution_id", focusedRun.id);
-    apiFetchAll<Marker>(
+    if (focusedRun) range.set("run_id", focusedRun.id);
+    apiFetchAll<Omit<Marker, "execution_id"> & { run_id: string | null }>(
       token,
-      "/v1/organizations/" + encodeURIComponent(workspace) + "/events?" + range,
+      "/v1/organizations/" +
+        encodeURIComponent(workspace) +
+        "/app-logbook?" +
+        range,
     )
       .then((items) => {
         if (current)
           setEvents(
-            items.filter(
-              (e) =>
-                e.event_id &&
-                (/interaction|fail/.test(e.type) ||
-                  (e.type === "mission.logbook.entry" &&
-                    Array.isArray(e.payload?.evidence) &&
-                    e.payload.evidence.length > 0)),
-            ),
+            items
+              .filter((e) => e.event_id)
+              .map((e) => ({ ...e, execution_id: e.run_id })),
           );
       })
       .catch(() => {
@@ -396,10 +393,20 @@ export function RunTimeline({
           .filter((run) => run.robot.id === robot.id)
           .map((run) => {
             const left = Date.parse(run.created_at);
-            const live = ["running", "preparing", "queued"].includes(run.state);
+            const live = [
+              "running",
+              "preparing",
+              "queued",
+              "accepted",
+            ].includes(run.state);
             const knownEnd =
-              ["succeeded", "cancelled", "failed"].includes(run.state) &&
-              !!run.updated_at;
+              [
+                "succeeded",
+                "stopped",
+                "interrupted",
+                "cancelled",
+                "failed",
+              ].includes(run.state) && !!run.updated_at;
             const right = live
               ? now
               : knownEnd
@@ -533,7 +540,7 @@ export function RunTimeline({
                         event.currentTarget,
                         run.id,
                         `${run.app}${run.version ? " v" + run.version : ""}`,
-                        `${run.state} · ${clock(left)} – ${["running", "preparing", "queued"].includes(run.state) ? "Now" : clock(right)}`,
+                        `${run.state} · ${clock(left)} – ${["running", "preparing", "queued", "accepted"].includes(run.state) ? "Now" : clock(right)}`,
                       )
                     }
                     onFocus={(event) =>
@@ -541,7 +548,7 @@ export function RunTimeline({
                         event.currentTarget,
                         run.id,
                         `${run.app}${run.version ? " v" + run.version : ""}`,
-                        `${run.state} · ${clock(left)} – ${["running", "preparing", "queued"].includes(run.state) ? "Now" : clock(right)}`,
+                        `${run.state} · ${clock(left)} – ${["running", "preparing", "queued", "accepted"].includes(run.state) ? "Now" : clock(right)}`,
                       )
                     }
                     onMouseLeave={() => setTooltip(null)}

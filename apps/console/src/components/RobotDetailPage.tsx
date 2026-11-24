@@ -1,169 +1,151 @@
-import { StudioTime } from "./StudioTime";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, apiFetchAll } from "@/lib/api";
-import { resourcePath, setQuery, useLocation } from "@/lib/location";
+import { AppOperationStatus } from "@/components/AppOperationStatus";
+import {
+  type App,
+  type AppLogbookEvent,
+  type AppRun,
+  type Installation,
+  mutateApp,
+  type Robot,
+  readJson,
+  readPage,
+  type Token,
+} from "@/lib/apps";
+import { resourcePath } from "@/lib/location";
+import { StudioTime } from "./StudioTime";
+import "./robots.css";
 
-type Robot = {
-  id: string;
-  organization_id: string;
-  name: string;
-  created_at: string;
-  enrolled_at: string | null;
-  profile_ref: string | null;
-};
 type Status = {
-  online: boolean;
+  connectivity: "online" | "offline";
   last_seen_at: string | null;
-  daemon_version: string | null;
-  protocol_version: number | null;
+  support: string;
+  received_at: string | null;
+  inventory: null | {
+    observed_at: string;
+    source: {
+      kind: string;
+      profile: { name: string; model: string; version: string };
+    };
+    capabilities: string[];
+    instances: Record<string, string[]>;
+  };
 };
-type Deployment = {
-  id: string;
-  robot_id: string;
-  selected_revision_id: string | null;
-  candidate_revision_id: string | null;
-  observed_state: string;
-  desired_state: string;
-  last_error: { code: string; message: string } | null;
-  last_operation_id?: string | null;
-  last_execution_id: string | null;
-  updated_at: string;
-};
-type Execution = {
-  id: string;
-  deployment_id: string | null;
-  mission_revision_id: string | null;
-  state: string;
-  created_at: string;
-  updated_at: string;
-  exit_code: number | null;
-  error: { code: string; message: string } | null;
-};
-type Mission = { id: string; name: string };
-type Revision = { id: string; version: number };
 const describe = (error: unknown) =>
   error instanceof Error ? error.message : "Request failed";
-
 export function RobotDetailPage({
   robotId,
   onBack,
   onManage,
-  role,
+  workspaceRole,
 }: {
   robotId: string;
   onBack: () => void;
-  role?: string;
+  workspaceRole?: string;
   onManage: () => void;
 }) {
-  const tab = useLocation().searchParams.get("tab") ?? "Activity";
   const { getAccessTokenSilently } = useAuth0();
-  const getToken = useCallback(async () => {
-    const token = await getAccessTokenSilently({
+  const token = useCallback<Token>(async () => {
+    const value = await getAccessTokenSilently({
       authorizationParams: { audience: import.meta.env.VITE_AUTH0_AUDIENCE },
     });
-    if (!token) throw new Error("No access token available");
-    return token;
+    if (!value) throw new Error("Sign in required");
+    return value;
   }, [getAccessTokenSilently]);
   const [robot, setRobot] = useState<Robot | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
-  const [deployment, setDeployment] = useState<Deployment | null>(null);
-  const [revisionNames, setRevisionNames] = useState<Record<string, string>>(
-    {},
-  );
-  const [runs, setRuns] = useState<Execution[] | null>(null);
+  const [installations, setInstallations] = useState<Installation[]>([]);
+  const [runs, setRuns] = useState<AppRun[]>([]);
+  const [events, setEvents] = useState<AppLogbookEvent[]>([]);
+  const [apps, setApps] = useState<Record<string, App>>({});
+  const [operationId, setOperationId] = useState("");
   const [error, setError] = useState("");
-
-  const [review, setReview] = useState<"stop" | "restart" | null>(null);
-  const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  // Explicit refresh requests a new snapshot.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh triggers a new snapshot
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh explicitly requests a new snapshot
   useEffect(() => {
-    let cancelled = false;
-    setError("");
-    async function load() {
-      const current = (await apiFetch(getToken, `/v1/robots/${robotId}`).then(
-        (r) => r.json(),
-      )) as Robot;
-      const [presence, history, deployments] = await Promise.all([
-        apiFetch(getToken, `/v1/robots/${robotId}/status`).then((r) =>
-          r.json(),
-        ) as Promise<Status>,
-        apiFetchAll<Execution>(getToken, `/v1/robots/${robotId}/executions`),
-        apiFetchAll<Deployment>(
-          getToken,
-          `/v1/organizations/${current.organization_id}/deployments`,
-        ),
-      ]);
-      void apiFetchAll<Mission>(
-        getToken,
-        `/v1/organizations/${current.organization_id}/missions`,
-      )
-        .then(async (missions) => {
-          const pages = await Promise.all(
-            missions.map(async (mission) => ({
-              mission,
-              revisions: await apiFetchAll<Revision>(
-                getToken,
-                `/v1/missions/${mission.id}/revisions`,
-              ),
-            })),
-          );
-          const names: Record<string, string> = {};
-          for (const page of pages)
-            for (const item of page.revisions)
-              names[item.id] = `${page.mission.name} v${item.version}`;
-          if (!cancelled) setRevisionNames(names);
-        })
-        .catch(() => {
-          /* IDs remain available if names cannot be resolved. */
-        });
-      if (!cancelled) {
-        setRobot(current);
-        setStatus(presence);
-        setRuns(history.reverse());
-        setDeployment(
-          deployments.find((item) => item.robot_id === robotId) ?? null,
+    let live = true;
+    (async () => {
+      try {
+        const current = await readJson<Robot>(token, `/v1/robots/${robotId}`);
+        const [presence, installed, history, logbook] = await Promise.all([
+          readJson<Status>(token, `/v1/robots/${robotId}/app-status`),
+          readPage<Installation>(
+            token,
+            `/v1/robots/${robotId}/app-installations`,
+          ),
+          readPage<AppRun>(
+            token,
+            `/v1/organizations/${current.organization_id}/app-runs?robot_id=${robotId}`,
+          ),
+          readPage<AppLogbookEvent>(
+            token,
+            `/v1/organizations/${current.organization_id}/app-logbook?robot_id=${robotId}`,
+          ),
+        ]);
+        const pairs = await Promise.all(
+          [
+            ...new Set(
+              installed
+                .map((x) => x.app_id)
+                .concat(history.map((x) => x.snapshot.app_id)),
+            ),
+          ].map(
+            async (id) =>
+              [id, await readJson<App>(token, `/v1/apps/${id}`)] as const,
+          ),
         );
+        if (live) {
+          setRobot(current);
+          setStatus(presence);
+          setInstallations(installed);
+          setRuns(history);
+          setEvents(logbook);
+          setApps(Object.fromEntries(pairs));
+          setError("");
+        }
+      } catch (cause) {
+        if (live) setError(describe(cause));
       }
-    }
-    void load().catch((e) => {
-      if (!cancelled) setError(describe(e));
-    });
+    })();
     return () => {
-      cancelled = true;
+      live = false;
     };
-  }, [robotId, getToken, refresh]);
-  const currentRuns = runs?.filter((item) =>
-    ["queued", "preparing", "running"].includes(item.state),
-  );
-  async function action(kind: "restart" | "stop") {
-    if (!deployment || busy) return;
-    setReview(null);
-    setBusy(true);
-    setError("");
-    setNotice("");
+  }, [robotId, token, refresh]);
+  async function action(installation: Installation, kind: "start" | "stop") {
     try {
-      const result = (await apiFetch(
-        getToken,
-        `/v1/deployments/${deployment.id}/${kind}`,
-        { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } },
-      ).then((r) => r.json())) as {
-        operation_id: string;
-        execution_id: string | null;
-      };
-      setNotice(
-        `${kind === "restart" ? "Restart" : "Stop"} accepted. Operation ${result.operation_id}${result.execution_id ? `; execution ${result.execution_id}` : ""}.`,
+      setError("");
+      const activeRun = runs.find(
+        (run) =>
+          run.installation_id === installation.id &&
+          ["accepted", "running"].includes(run.state),
       );
+      const binding = installation.installed;
+      if (!binding) throw new Error("This App has no installed revision.");
+      const body =
+        kind === "start"
+          ? {
+              expected_revision_id: binding.revision_id,
+              expected_configuration_revision_id:
+                binding.configuration_revision_id,
+            }
+          : { expected_run_id: activeRun?.id };
+      if (kind === "stop" && !activeRun)
+        throw new Error("No active App run to stop.");
+      const result = await mutateApp<{ operation_id: string }>(
+        token,
+        `/v1/app-installations/${installation.id}/${kind}`,
+        body,
+      );
+      setOperationId(result.operation_id);
       setRefresh((value) => value + 1);
-    } catch (e) {
-      setError(describe(e));
-    } finally {
-      setBusy(false);
+    } catch (cause) {
+      setError(describe(cause));
     }
   }
+  const canRun =
+    workspaceRole === "owner" ||
+    workspaceRole === "developer" ||
+    workspaceRole === "operator";
   return (
     <main className="dashboard-page robot-detail-page">
       <button type="button" className="text-action" onClick={onBack}>
@@ -174,8 +156,11 @@ export function RobotDetailPage({
           <h1>{robot?.name ?? "Robot"}</h1>
           {status && (
             <p className="robot-header-status">
-              <span className="robot-presence" data-online={status.online}>
-                {status.online ? "Online" : "Offline"}
+              <span
+                className="robot-presence"
+                data-online={status.connectivity === "online"}
+              >
+                {status.connectivity === "online" ? "Online" : "Offline"}
               </span>
               {status.last_seen_at && (
                 <>
@@ -186,318 +171,181 @@ export function RobotDetailPage({
             </p>
           )}
         </div>
-        <div className="robot-actions">
-          <button className="button-primary" type="button" onClick={onManage}>
-            Manage robot
-          </button>
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={() => setRefresh((value) => value + 1)}
-          >
-            Refresh
-          </button>
-        </div>
+        <button
+          className="button-secondary"
+          type="button"
+          onClick={() => setRefresh((x) => x + 1)}
+        >
+          Refresh
+        </button>
       </div>
       {error && (
-        <p role="alert" className="notice-error">
+        <p role="alert" className="text-danger">
           {error}
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
-      {robot && (
-        <>
-          <div className="robot-operational-grid">
-            <section className="dashboard-panel">
-              <h2>
-                {status?.online === false ? "Last known work" : "Current work"}
-              </h2>
-              {currentRuns?.length ? (
-                currentRuns.map((run) => (
-                  <p key={run.id}>
-                    <a
-                      className="text-action"
-                      href={resourcePath("runs", run.id, robot.organization_id)}
-                    >
-                      {revisionNames[run.mission_revision_id ?? ""] ??
-                        (run.mission_revision_id
-                          ? "Unknown app"
-                          : "Direct run")}{" "}
-                      · {run.state} →
-                    </a>
+      {status && (
+        <section className="robot-detail-section">
+          <h2>Device inventory</h2>
+          <p>App protocol: {status.support.replaceAll("_", " ")}</p>
+          {status.inventory ? (
+            <>
+              <p>
+                {status.inventory.source?.profile?.name ??
+                  "Robot profile unavailable"}
+                {status.inventory.source?.profile?.model
+                  ? ` · ${status.inventory.source.profile.model}`
+                  : ""}
+                {status.inventory.source?.profile?.version
+                  ? ` · profile ${status.inventory.source.profile.version}`
+                  : ""}
+              </p>
+              <p>
+                Observed{" "}
+                {status.inventory.observed_at ? (
+                  <StudioTime value={status.inventory.observed_at} />
+                ) : (
+                  "time unavailable"
+                )}
+                {" · received "}
+                {status.received_at ? (
+                  <StudioTime value={status.received_at} />
+                ) : (
+                  "not yet"
+                )}
+              </p>
+              <h3>Capabilities</h3>
+              {status.inventory.capabilities?.length ? (
+                <ul>
+                  {status.inventory.capabilities.map((capability) => (
+                    <li key={capability}>{capability}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No capabilities reported.</p>
+              )}
+              {Object.entries(status.inventory.instances ?? {}).map(
+                ([kind, names]) => (
+                  <p key={kind}>
+                    {kind}: {names.length ? names.join(", ") : "none"}
                   </p>
-                ))
-              ) : (
-                <p>
-                  {runs
-                    ? "No active run reported."
-                    : "Run information unavailable."}
-                </p>
+                ),
               )}
-            </section>
-            <section className="dashboard-panel records-detail">
-              <h2>Deployment</h2>
-              {deployment ? (
-                <>
-                  <dl className="record-fields">
-                    <dt>Observed</dt>
-                    <dd>{deployment.observed_state}</dd>
-                    <dt>Desired</dt>
-                    <dd>{deployment.desired_state}</dd>
-                    <dt>App</dt>
-                    <dd>
-                      {deployment.selected_revision_id
-                        ? (revisionNames[deployment.selected_revision_id] ??
-                          "Unknown")
-                        : "None"}
-                    </dd>
-                  </dl>
-                  <details className="robot-technical">
-                    <summary>Technical deployment details</summary>
-                    <dl className="record-fields">
-                      <dt>ID</dt>
-                      <dd>{deployment.id}</dd> <dt>Selected revision</dt>
-                      <dd>{deployment.selected_revision_id ?? "None"}</dd>
-                      <dt>Candidate revision</dt>
-                      <dd>{deployment.candidate_revision_id ?? "None"}</dd>
-                      <dt>Last execution</dt>
-                      <dd>
-                        {deployment.last_execution_id ? (
-                          <a
-                            className="text-action"
-                            href={resourcePath(
-                              "runs",
-                              deployment.last_execution_id,
-                              robot.organization_id,
-                            )}
-                          >
-                            Inspect last run
-                          </a>
-                        ) : (
-                          "None"
-                        )}
-                      </dd>
-                      <dt>Last operation</dt>
-                      <dd>{deployment.last_operation_id ?? "Unavailable"}</dd>
-                      <dt>Record updated</dt>
-                      <dd>
-                        {deployment.updated_at
-                          ? new Date(deployment.updated_at).toLocaleString()
-                          : "Unavailable"}
-                      </dd>
-                      <dt>Last error</dt>
-                      <dd>
-                        {deployment.last_error
-                          ? `${deployment.last_error.code}: ${deployment.last_error.message}`
-                          : "None"}
-                      </dd>
-                    </dl>
-                  </details>
-                  <div className="robot-actions">
-                    <button
-                      className="button-primary"
-                      type="button"
-                      disabled={
-                        busy ||
-                        role === "operator" ||
-                        !deployment.selected_revision_id ||
-                        !!deployment.candidate_revision_id
-                      }
-                      onClick={() => setReview("restart")}
-                    >
-                      Restart app
-                    </button>
-                    <button
-                      className="button-secondary"
-                      type="button"
-                      disabled={busy || !deployment.selected_revision_id}
-                      onClick={() => setReview("stop")}
-                    >
-                      Stop mission
-                    </button>
-                  </div>
-                  {review && (
-                    <div className="empty-panel">
-                      <p>
-                        {review === "restart"
-                          ? "Stop the current execution and request a new run"
-                          : "Request the current execution to stop"}{" "}
-                        on {robot.name}?
-                      </p>
-                      <button
-                        type="button"
-                        className="button-primary"
-                        onClick={() => void action(review)}
-                      >
-                        Confirm {review}
-                      </button>{" "}
-                      <button type="button" onClick={() => setReview(null)}>
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                  <p>
-                    Restart stops the current execution before starting a new
-                    run.
-                  </p>
-                </>
-              ) : (
-                <p>No app deployed.</p>
-              )}
-            </section>
-            <section className="dashboard-panel robot-resource-card">
-              <h2>Resources</h2>
-              <div className="robot-resource-item">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  aria-hidden="true"
-                >
-                  <rect x="2" y="6" width="18" height="12" rx="2" />
-                  <path d="M22 10v4" />
-                </svg>
-                <div>
-                  <strong>Battery</strong>
-                  <span>Unknown</span>
-                </div>
-              </div>
-              <div className="robot-resource-item">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  aria-hidden="true"
-                >
-                  <rect x="3" y="5" width="18" height="14" rx="2" />
-                  <path d="M3 12h18" />
-                </svg>
-                <div>
-                  <strong>Storage</strong>
-                  <span>Unknown</span>
-                </div>
-              </div>
-              <small>Readings have not been reported</small>
-            </section>
-          </div>
-          <nav className="route-tabs" aria-label="Robot sections">
-            {["Activity", "Configuration"].map((name) => (
-              <button
-                key={name}
-                type="button"
-                aria-current={tab === name ? "page" : undefined}
-                onClick={() => setQuery("tab", name)}
-              >
-                {name}
-              </button>
-            ))}
-          </nav>
-          <div className="robot-detail-grid" hidden={tab !== "Configuration"}>
-            <section
-              hidden={tab !== "Configuration"}
-              className="dashboard-panel records-detail"
-            >
-              <h2>Robot</h2>
-              <dl className="record-fields">
-                <dt>ID</dt>
-                <dd>{robot.id}</dd>
-                <dt>Organization</dt>
-                <dd>{robot.organization_id}</dd>
-                <dt>Created</dt>
-                <dd>{robot.created_at}</dd>
-                <dt>Enrolled</dt>
-                <dd>{robot.enrolled_at ?? "Not enrolled"}</dd>
-                <dt>Profile</dt>
-                <dd>{robot.profile_ref ?? "Not set"}</dd>
-              </dl>
-            </section>
-            <section className="dashboard-panel records-detail">
-              <h2>Daemon</h2>
-              {status ? (
-                <dl className="record-fields">
-                  <dt>Version</dt>
-                  <dd>{status.daemon_version ?? "Unknown"}</dd>
-                  <dt>Protocol</dt>
-                  <dd>{status.protocol_version ?? "Unknown"}</dd>
-                </dl>
-              ) : (
-                <p>Loading status…</p>
-              )}
-            </section>
-          </div>
-          {tab !== "Configuration" && (
-            <a
-              className="text-action robot-timeline-link"
-              href={
-                resourcePath("timeline", "", robot.organization_id) +
-                "&robot=" +
-                encodeURIComponent(robot.id)
-              }
-            >
-              View robot timeline →
-            </a>
+            </>
+          ) : (
+            <p>No Agent inventory has been observed.</p>
           )}
-          <section
-            hidden={tab === "Configuration"}
-            className="dashboard-panel records-detail"
-          >
-            <h2>Runs</h2>
-            {runs === null ? (
-              <p>Loading runs…</p>
-            ) : runs.length === 0 ? (
-              <p>No runs yet.</p>
-            ) : (
-              <div className="table-scroll">
-                <table className="dashboard-table">
-                  <thead>
-                    <tr>
-                      <th>Execution</th>
-                      <th>State</th>
-                      <th>Created</th>
-                      <th>Exit code</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {runs.map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          <a
-                            className="text-action"
-                            href={resourcePath(
-                              "runs",
-                              item.id,
-                              robot.organization_id,
-                            )}
-                          >
-                            {revisionNames[item.mission_revision_id ?? ""] ??
-                              (item.mission_revision_id
-                                ? "Unknown app"
-                                : "Direct run")}
-                          </a>
-                        </td>
-                        <td>
-                          <span
-                            className="logbook2-state"
-                            data-state={item.state}
-                          >
-                            {item.state}
-                          </span>
-                        </td>
-                        <td>
-                          <StudioTime value={item.created_at} />
-                        </td>
-                        <td>{item.exit_code ?? "Unavailable"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </>
+        </section>
       )}
+      {operationId && (
+        <AppOperationStatus operationId={operationId} token={token} />
+      )}
+      <section className="robot-detail-section">
+        <header>
+          <h2>Installed Apps</h2>
+          <button type="button" className="button-secondary" onClick={onManage}>
+            Manage robot
+          </button>
+        </header>
+        {installations.length ? (
+          installations.map((item) => {
+            const app = apps[item.app_id];
+            const active = runs.find(
+              (run) =>
+                run.installation_id === item.id &&
+                ["accepted", "running"].includes(run.state),
+            );
+            return (
+              <article className="robot-register-row" key={item.id}>
+                <div>
+                  <strong>{app?.name ?? item.app_id}</strong>
+                  <small>
+                    {item.installed
+                      ? `Revision ${item.installed.revision_id}`
+                      : "Not installed"}
+                    {item.installed &&
+                      ` · Config ${item.installed.configuration_revision_id}`}
+                  </small>
+                </div>
+                <div>
+                  <strong>{active ? active.state : "Stopped"}</strong>
+                  <small>
+                    {active && (
+                      <a
+                        href={resourcePath(
+                          "runs",
+                          active.id,
+                          robot?.organization_id ?? "",
+                        )}
+                      >
+                        Open run ↗
+                      </a>
+                    )}
+                  </small>
+                </div>
+                {canRun && item.installed && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void action(item, active ? "stop" : "start")}
+                  >
+                    {active ? "Stop" : "Start"}
+                  </button>
+                )}
+              </article>
+            );
+          })
+        ) : (
+          <p>No App installations are associated with this robot.</p>
+        )}
+      </section>
+      <section className="robot-detail-section">
+        <h2>Recent App runs</h2>
+        {runs.length ? (
+          [...runs]
+            .sort((a, b) => b.requested_at.localeCompare(a.requested_at))
+            .slice(0, 10)
+            .map((run) => (
+              <article className="robot-register-row" key={run.id}>
+                <div>
+                  <strong>{apps[run.snapshot.app_id]?.name ?? "App"}</strong>
+                  <small>
+                    <StudioTime value={run.requested_at} /> · {run.id}
+                  </small>
+                </div>
+                <span>
+                  {run.state}
+                  {run.failure ? ` · ${run.failure.message}` : ""}
+                </span>
+                <a
+                  href={resourcePath(
+                    "runs",
+                    run.id,
+                    robot?.organization_id ?? "",
+                  )}
+                >
+                  Details ↗
+                </a>
+              </article>
+            ))
+        ) : (
+          <p>No App runs yet.</p>
+        )}
+      </section>
+      <section className="robot-detail-section">
+        <h2>Activity</h2>
+        {events.slice(0, 30).map((event) => (
+          <article className="robot-register-row" key={event.event_id}>
+            <div>
+              <strong>{event.type}</strong>
+              <small>
+                <StudioTime value={event.occurred_at} /> ·{" "}
+                {(event.payload.message as string) ?? "App event"}
+              </small>
+            </div>
+          </article>
+        ))}
+      </section>
     </main>
   );
 }

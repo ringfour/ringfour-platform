@@ -1,291 +1,83 @@
-# Ringfour v0.1 starter database schema
+# Database schema — Apps pivot
 
-Apps reset decision: initialize a fresh schema and restore only users, organizations, memberships/roles, Auth0 subject mappings and their IDs. The user explicitly waived full application backups and authorized deleting historical application records and object storage; see [reset boundary](../../app-pivot.md#data-reset-boundary). On 23 November 2026 the stopped Platform database was replaced with a fresh 35-migration cluster preserving 3 users, 2 organizations and 4 memberships, with all 37 application tables empty. Object storage was cleared. Preserve App-era execution IDs and evidence created after this reset. See [active plan](milestones/apps-pivot.md).
+This guide describes the persistence boundaries for the current Apps product
+and the identity records retained across the AP-02 reset. It is an orientation
+for contributors, not a replacement for EF migrations, model configuration, or
+the API contracts. The original mission-era schema guide is preserved at
+[database-schema-pre-apps.md](archive/legacy-mission-workflows/contracts/database-schema-pre-apps.md).
 
-This is the persistence contract for milestones 00–03. Each milestone ships its own migrations. Milestone 00 proves both databases can migrate and report readiness. Add business tables when their milestone introduces the feature.
+## Stores and ownership
 
-PostgreSQL holds platform records through EF Core and Npgsql. SQLite holds daemon records. Runner process metadata remains Runner-owned and is specified in milestone 04.
+- **Platform PostgreSQL** stores users, organizations, memberships, enrolled
+  robots, App catalog and deployment state, and hosted evidence. The API owns
+  its schema through EF Core migrations. A fresh database is initialized from
+the checked-in migration chain.
+- **Daemon SQLite** stores one robot's durable enrollment, deployment namespace,
+  App operations and runs, private runtime credentials by hash, and ordered
+  observations/evidence outbox. The Daemon owns additive SQLite migrations.
+- **Object storage** is used for hosted App artifacts where configured. The
+  API's relational records bind those objects to their organization, robot,
+  installation, run, and immutable metadata.
 
-## Conventions
+The platform database still contains legacy mission/Runner tables while their
+compatibility callers are being retired. Their presence does not make them a
+prerequisite for the Apps workflow; new App persistence belongs to the AP
+contracts and migrations below.
 
-- Columns are required unless marked optional. Use UUIDs for public identifiers, PostgreSQL `timestamptz` for UTC instants, and one consistent UTC encoding in SQLite. Enable SQLite foreign keys on every connection.
-- Enforce relationships with foreign keys and use restrictive deletion for the starter tables. Define deletion and retention when the corresponding workflow is introduced.
-- A robot belongs to one organization. Treat that binding as immutable for v0.1. Derive organization ownership through the robot relationship and enforce it when querying. Machine requests derive robot identity from the verified credential.
-- Use typed columns for ownership, lifecycle and fields used to filter or enforce invariants. Versioned command and audit payloads can use JSONB in PostgreSQL and validated JSON text in SQLite.
-- Store hashes of cryptographically random enrollment tokens and machine credentials. The daemon stores its usable machine credential separately in protected local storage. Keep raw secrets out of audit, idempotency records and logs.
+## Identity and organization records
 
-## 00 — Foundation
+AP-02 preserves the existing `users`, `organizations`, and `memberships`
+records, including their IDs and Auth0 subject mapping. Membership role is the
+source of organization authority. Device and App records are scoped through
+organization ownership and robot enrollment; an App manifest cannot assert its
+publisher or grant access.
 
-Check in the EF Core migration baseline and SQLite migration mechanism. Verify migrations against empty stores, repeat them safely, and ensure readiness depends on the expected schema being available. No application table is required at this stage.
+## Apps persistence families
 
-## 01 — Identity and membership in PostgreSQL
+The EF model currently groups records into these related families. Exact
+columns, constraints, indexes, and transitions are defined by migrations and
+contracts; update those together when changing behavior.
 
-| Table | Minimum columns | Keys and constraints |
-|---|---|---|
-| `users` | `id`, `auth0_sub`, `created_at` | PK `id`. Unique `auth0_sub` within the configured single Auth0 issuer. |
-| `organizations` | `id`, `name`, `created_at` | PK `id`. Name is nonblank. Display names can repeat. |
-| `memberships` | `organization_id`, `user_id`, `role`, `created_at` | Composite PK `(organization_id, user_id)`. FKs to organization and user. Role is `owner`, `developer` or `operator`. Index `(user_id, organization_id)` for organization listing. |
+- **Robot inventory:** `robot_app_inventory` is the current projection;
+  `app_device_reports` records report identity and sequence for deduplication.
+- **Catalog and distribution:** `apps`, `app_revisions`, `app_shares`, and
+  `app_imports` record publisher-owned Apps, immutable releases, destination-
+  bound sharing, and consumer imports.
+- **Installation and configuration:** `app_installations`,
+  `app_configuration_revisions`, and `app_operations` record the desired/current
+  binding, full immutable configuration snapshots, and idempotent operations.
+- **Execution:** `app_runs` and the shared per-robot `robot_execution_slots`
+  bind execution to immutable installation/revision/configuration/image state
+  and prevent concurrent legacy or App execution for one robot.
+- **Runtime evidence:** `app_run_outputs`, `app_artifacts`, and
+  `app_idempotency_records` with their associated cursors/seals record durable,
+  scoped runtime output, artifact delivery, and retry identity.
 
-`GET /v1/me` resolves or creates one user per Auth0 subject, including on concurrent first requests. Create an organization and its initial owner in one transaction. Serialize membership changes per organization, for example by locking the organization row before checking owner counts. Concurrent removals and demotions must leave at least one owner.
+See [catalog and sharing](apps-api-contract.md),
+[installation](apps-installation.md), [runs](apps-runs.md),
+[runtime evidence](apps-runtime.md), and [engine authority](apps-engine.md) for
+API semantics and authorization boundaries.
 
-## 02 — Robot enrollment
+## Change and recovery rules
 
-| PostgreSQL table | Minimum columns | Keys and constraints |
-|---|---|---|
-| `robots` | `id`, `organization_id`, `name`, `created_at`, optional `enrolled_at` and `profile_ref` | PK `id`. Organization FK and index `(organization_id, id)`. Profile reference identifies an external profile and may include a version. |
-| `enrollment_tokens` | `id`, `robot_id`, `token_hash`, `issued_by_user_id`, `created_at`, `expires_at`, optional `consumed_at` | PK `id`. Unique token hash. Robot and issuer FKs. Expiry follows creation. Index robot ID for scoped lookup and cleanup. |
-| `robot_credentials` | `id`, `robot_id`, `secret_hash`, `created_at`, optional `expires_at` and `revoked_at` | PK `id`. Unique secret hash. Robot FK and robot index. Credentials are usable only before expiry and while unrevoked. |
-| `robot_audit_events` | `id`, `robot_id`, `occurred_at`, `type`, optional `actor_user_id` | PK `id`. Robot FK and optional user FK. Index `(robot_id, occurred_at, id)`. Capture token issuance, enrollment, rotation and revocation. Device-originated events are attributed to the robot. |
+1. Specify persistence with the public contract before implementation.
+2. Add PostgreSQL changes through EF Core migrations and keep the model
+   snapshot current. Do not edit an already-applied migration to change its
+   meaning.
+3. Add Daemon SQLite changes as safe, repeatable migrations. Preserve enrollment,
+   deployment namespace, pending operation boundaries, and unacknowledged
+   observations through replacement.
+4. Keep the PostgreSQL execution slot as the shared legacy/App exclusion point.
+   Do not introduce a second independent concurrency lock.
+5. Bind evidence and retries to stable owner, robot, operation, installation,
+   and run identities. Acknowledgement must follow durable local or hosted
+   persistence as required by the relevant contract.
+6. Add or update isolated PostgreSQL/SQLite migration and recovery checks with
+   the milestone that changes the schema. Do not claim live deployment or
+   acceptance from model-level checks alone.
 
-Consume a valid token, create the credential, set `enrolled_at` on first enrollment and write the audit record in one transaction. Use a conditional update or a row lock to prevent double consumption. Rotation creates a new credential and bounds any overlap via the old credential's expiry. Revocation persists before disconnect handling. If the one-time enrollment response is lost, recover through an authorized owner issuing a fresh token and revoking the stranded credential. A consumed token cannot retrieve the original secret.
-
-Daemon SQLite adds singleton `device_identity` with PK `singleton_id` constrained to 1, plus `robot_id`, `organization_id`, `platform_url` and `credential_id`. Commit the binding only after the corresponding secret is available in protected storage. On boot, detect and report a missing or mismatched credential rather than connecting as a different robot.
-
-## 03 — Connectivity and durable operations
-
-| Store and table | Minimum columns | Keys and constraints |
-|---|---|---|
-| PostgreSQL `robot_presence` | `robot_id`, `session_id`, `last_seen_at`, `daemon_version`, `protocol_version` | Robot ID is PK and FK. An accepted connection replaces the session ID. Only that session may update presence. |
-| PostgreSQL `operations` | `id`, `robot_id`, `kind`, `payload_version`, `payload`, `state`, `created_at`, `updated_at`, `deadline_at`, optional `requested_by_user_id`, `acknowledged_at`, `result` | PK `id`. Robot FK and optional user FK. Index `(robot_id, state, created_at, id)` for dispatch and reconciliation. State is `queued`, `accepted`, `running`, `succeeded`, `failed` or `cancelled`. |
-| SQLite `device_operations` | `operation_id`, `robot_id`, `kind`, `payload_version`, `payload`, `state`, `deadline_at`, `updated_at`, optional `result` | PK `operation_id`. Robot ID must match the enrolled identity. Index state for startup reconciliation. Same state vocabulary as the hosted operation, with the local record starting at `accepted`. |
-
-Derive online status from an active authenticated connection and the server-side freshness window. Persist last seen for display after restart. Fence heartbeat and status writes from replaced connections. Commit an operation on the platform before dispatch. Commit its local record before acknowledging. Duplicates with identical command content replay existing status. Conflicting reuse of an operation ID is a protocol error. Terminal states are immutable. Use the stored deadline to prevent starting expired work and persist a failure reason when applicable. Retain deduplication records for at least the supported replay window.
-
-Physical names as implemented in 03: `operations` uses the state vocabulary above with a check constraint; idempotency records live in `operation_idempotency_records` keyed uniquely on (principal user, route template, target, key) with a SHA-256 request fingerprint, an operation outcome reference and an expiry — raw one-time credential responses are never stored. The device WebSocket is `/v1/device/connect` with the credential presented in `x-ringfour-credential-id` / `x-ringfour-credential-secret` headers (query strings would leak into access logs); application close statuses are 4401 (credential rejected or revoked), 4402 (unsupported protocol version) and 4409 (protocol violation, including replaced sessions).
-
-For endpoints introduced through these milestones that accept `Idempotency-Key`, persist the principal, route, target, key, request fingerprint, outcome reference and expiry with a unique constraint on principal/route/target/key. Commit the record with the mutation. Handle endpoints that return one-time credentials with their documented recovery path. Never persist a raw credential to replay a response.
-
-## Changes as implementation proceeds
-
-The table names and fields above are a baseline. The agent may adjust physical names, index strategy, internal columns and representations where an implementation detail warrants it. Preserve uniqueness, ownership, concurrency, restart behavior and externally visible contracts. Record the reason and update this document, migrations and affected tests in the same milestone. Changes to a business invariant or a public contract need an explicit decision before implementation.
-
-| Milestones | Persistence to specify before implementation |
-|---|---|
-| 04–05 | Runner execution and output metadata, daemon reconciliation, hosted script revisions, executions and artifact metadata |
-| 06–07 | Mission revisions, deployment selection and desired state, dev session generations and expiry |
-| 08–09 | Durable event outbox and Logbook ingestion checkpoints, interaction requests and terminal outcomes |
-| 10 | Add storage only if a verified SDK/Agent integration requirement warrants it. Keep the robot profile externally owned. |
-
-Milestone 04's Runner-owned execution, output and local event persistence is
-specified in [runner-contract.md](runner-contract.md). It adds no hosted
-PostgreSQL tables and retains the daemon's existing durable operation records.
-
-Test migrations from empty stores and from the previous milestone. Exercise PostgreSQL constraints against real PostgreSQL, including concurrent first login, last-owner protection, single-use enrollment and operation replay as those features land. Test SQLite with a reopened file-backed database to verify restart behavior.
-
-## Device-initiated pairing follow-up
-
-`device_pairing_requests` stores a unique request ID, hashes of the pairing
-code and daemon-generated credential, creation/expiry timestamps, and optional
-claim timestamp plus restrictive robot/credential foreign keys. An owner claim
-creates or binds the robot and its credential atomically; the original enrollment
-flow remains available. Unclaimed requests expire after ten minutes and are
-cleaned after an additional 24-hour retention period. Claimed requests are kept
-for recovery from lost responses. The daemon stores pending proof in a mode-0600
-file; it continues using the existing SQLite identity table. See
-[pairing-contract.md](pairing-contract.md).
-
-## 05 — Script revisions and executions
-
-PostgreSQL `script_revisions` holds the organization and creator foreign keys,
-declared archive size/digest, canonical bundle digest, Python requirement,
-entrypoint and lock digest; `uploading`/`ready` state and timestamps; and the
-principal-scoped idempotency key, request fingerprint and upload-cleanup marker. The creator,
-organization and key form a unique index. Check constraints enforce state /
-finalization consistency and 64-bit exact JSON byte lengths. Object keys are derived
-from the revision UUID; bytes live in the configured private object store, not
-PostgreSQL. Organization-row locking serializes create replay;
-revision-row locking serializes upload and finalization. `script_executions`
-stores the robot, revision, actor, state, exit/error, timestamps and bounded
-stdout/stderr; a partial unique index enforces one active run per robot.
-`script_executions` separately stores artifact delivery status and its error;
-historical rows migrate to `unknown`. `script_artifacts` stores verified artifact metadata; its bytes live in private
-object storage. `script_execution_events` records actor-attributed observed state
-changes. Device SQLite `script_sync` records durable output offsets and whether
-Runner accepted the start, so reconnects replay offsets and reconcile stable
-IDs. The complete persistence and retention contract is in `scripts-contract.md`.
-
-### Apps pivot persistence (AP-02)
-
-`AppsPersistence` adds `apps`, immutable `app_revisions`, `app_shares`,
-workspace-scoped `app_imports`, per-robot `app_installations`, append-only
-`app_configuration_revisions`, durable `app_operations`, attributed `app_runs`,
-and permanent `app_idempotency_records`. Release manifests, installation
-bindings/candidates, configurations, run snapshots and structured failures use
-JSONB; identity, workspace, robot and lifecycle fields remain typed and
-constrained. Composite foreign keys ensure revisions retain publisher identity,
-imports retain revision/share provenance, installations match the imported App
-and robot workspace, and operations/runs match their installation's robot and
-workspace.
-The filtered unique operation index permits only one queued, accepted or
-running mutation per installation.
-
-`robot_execution_slots` is the single active slot per robot. Migration triggers
-claim and release it from both legacy `script_executions` and App `app_runs`,
-with active legacy rows backfilled during migration. PostgreSQL therefore
-rejects concurrent active App/legacy rows even if callers race. This only
-provides the persistence invariant; no App write or dispatch path is enabled by
-this migration. The fresh-schema reset restores identities only, as described
-at the top of this document. Daemon SQLite migration 0015 adds a durable
-deployment namespace, local App installation/run/output state, hashed run
-credentials and sequenced observation outbox. It leaves enrolled identity,
-existing device operations, script output, Logbook and pending interaction data
-untouched. `device_execution_slots` and triggers make active `script_sync` work
-mutually exclusive with App runs on that Daemon. Existing noncompleted script
-sync rows are backfilled. The migrations were rehearsed on disposable stores;
-the authorized identity-only Platform reset is complete. Real Auth0 identity/owner checks passed after operator startup.
-
-### Milestone 06 mission persistence
-
-### App capability inventory (AP-03)
-
-Migration `AppInventory` adds `robot_app_inventory`, one row per enrolled robot,
-and `app_device_reports`. The first binds a stable deployment namespace to the
-current negotiated session/versions and holds the last inventory, engine target,
-sequence and server receipt time. The second retains each report ID, canonical
-body hash and original acknowledgement; unique robot/namespace/route/sequence
-keys prevent gaps from being accepted as new observations. A robot row lock
-serializes persisted changes and the live session fence serializes them against
-WebSocket replacement. Read-time connectivity comes from the active connection
-and presence freshness; cached rows never imply current liveness.
-
-Daemon SQLite migration 0016 adds the full last-successful Agent observation to
-the existing local inventory row. Projection and report outbox insertion are
-atomic; a pending report is resent unchanged before a new observation is queued.
-Acknowledgements retain the original receipt and report IDs across reconnects.
-
-The initial schema leaves 06 mission tables to the milestone. The implementation
-adds `missions`, immutable `mission_revisions`, one `mission_deployments` row per
-robot, and durable `deployment_actions`. Lifecycle actions use existing
-`operations`; actual process history continues to use `script_executions` and
-`script_execution_events`. The latter have nullable deployment and mission
-revision references, constrained to be either both null (ad hoc scripts) or
-both present (mission runs). A per-robot active execution index remains shared
-by both kinds. Candidate and selected revisions remain separate so failed
-preparation cannot change selection. These are 06 additions, not robot-profile
-ownership or a new scheduler.
-
-## 07 — proposed development-session persistence
-
-The `dev_sessions` and
-`dev_session_generations` tables, robot-level locking, operation references,
-Runner-owned workspaces, cleanup and retention rules are specified in
-[dev-sessions-contract.md](dev-sessions-contract.md). The milestone 07 migration adds these persistence tables and database checks;
-session lifecycle endpoints and a recovery worker manage these records. A partial unique index
-allows only one pending or committed row for a given session/generation while
-retaining failed attempts. Authorization, generation reports and execution conflicts are enforced by the workflow.
-
-The subsequent `LocalDevSourceMetadata` migration removes the initial 07
-manifest and hosted object-key columns: source content and filenames now stay
-on the LAN. It preserves session and generation digest metadata. The discarded
-fields belonged to the undeployed hosted-transfer prototype.
-
-`DevLocalGrants` adds robot-credential-bound local endpoint fingerprints and
-operation-linked grant metadata. It stores the CLI-provided token hash in the
-existing durable operation payload, never the raw local bearer token. Grant
-retention and cleanup remain to be implemented.
-
-`DevSessionRuns` adds bounded metadata for development executions, linked to
-the session, robot, actor and durable operation; code and output are not stored
-in PostgreSQL. A robot row lock serializes production and development starts,
-while the Runner independently enforces one active process. Each session retains
-at most 100 development run records.
-
-## 08 — Logbook ingestion
-
-The additive `LogbookIngestion` migration introduces `logbook_events` and
-`logbook_checkpoints` as specified in [logbook-contract.md](logbook-contract.md).
-The API commits a batch and its checkpoint in one transaction under a per-robot
-lock. Organization-scoped history is queryable; retention and backfill are
-still open.
-The daemon subsequently adds SQLite `logbook_outbox_state` and `logbook_outbox`
-in migration 0009. Migration 0010 preserves queued events, increases the event
-size bound and adds `logbook_entry_replays` for bounded author-entry idempotency.
-The state retains the robot binding, allocated sequence and acknowledged
-checkpoint after queued events are removed. Mission-author entries write to the
-queue; no automatic operation lifecycle currently does. The Platform's
-`LogbookAuthorEntries` migration adds execution and JSON payload fields while
-preserving prototype event rows. See the Logbook contract for the remaining
-safe-admission policy.
-
-`AgentMotionLogbook` makes the Platform operation reference nullable for
-`agent.motion.event` rows only. Such events preserve opaque Agent attribution
-in JSON, and do not assert a Platform execution or human actor. The existing
-robot-local sequence and organization isolation remain unchanged. The daemon's
-0011 inbox and checkpoint persist the Agent stream independently; moving an
-inbox event to the outbox and deleting it are one SQLite transaction. The
-downgrade cannot succeed while motion rows have null operation IDs; it must
-not discard those history records.
-
-
-### AP-05 catalog writers
-
-AP-05 uses the existing `apps`, `app_revisions`, `app_shares`, `app_imports` and
-`app_idempotency_records` tables; there is no new migration. Publication verifies
-all remote targets before inserting metadata, then commits the revision and
-idempotency outcome atomically. Workspace row locks serialize natural keys and
-fresh mutation authority; share row locks serialize import against revoke.
-Existing imports retain immutable publisher/source/actor after share expiry or
-revocation. Permanent idempotency outcomes retain `{status, body}` and a canonical
-request fingerprint scoped to principal/route/target/key. No TTL is added.
-Registry credentials and grant responses are ephemeral and are never persisted.
-Machine grants read existing operation/candidate/import authority; AP-07 owns
-creating the installation operations used by those checks.
-
-### App engine intent journal (AP-08)
-
-SQLite migration 0017 adds `app_engine_intents`, keyed by durable App run, with
-immutable ownership/image/network/name intent and create/start/observation/
-terminal/removal boundaries. `stop_requested` distinguishes an intentional stop
-from natural process exit. Existing App run/output rows retain their identity and
-bounded durable output; output retention discontinuities set truncation flags
-without erasing a saved prefix. Enrollment, namespace, legacy operations and
-output are retained. A lifetime flock beside the database fences competing App
-writers. No hosted PostgreSQL migration or new run dispatch is introduced here.
-
-### Durable App installation writers (AP-07)
-
-`AppInstallationCommands` adds nullable immutable command JSON and first-dispatch
-time to `app_operations`, plus `installations_supported` (default false) to the
-current negotiated inventory session. A migration-owned trigger prevents command
-or recorded first-dispatch evidence from changing. Existing AP-02 installation,
-configuration, operation, import and permanent idempotency tables are reused.
-No App run or execution row is created by install-family mutations. Robot row
-locks coordinate legacy starts, new installation requests and observed application.
-`app_device_reports` also persists the independent observations route's sequence,
-body digest and original receipt in the same transaction as its projection.
-
-SQLite 0018 journals per-operation preparation/staging/terminal report references.
-Application switches the installed binding, records the terminal device operation
-and appends its retained outbox report atomically. The previous binding survives
-preparation failure. Local-dev/script insert triggers refuse new legacy work while
-an App candidate is staging; apply also checks existing execution slots and local
-dev state. Completed rows/reports/configurations remain retained across replacement.
-
-### Hosted App runs and evidence (AP-09/AP-10)
-
-`AppRunDispatch` adds `robot_app_inventory.runs_supported`, negotiated separately
-from installation support. The unique pending-operation index applies only when
-`run_id IS NULL`, permitting exact-run Stop alongside pending Start. AP-09's
-robot row lock and AP-02 shared execution slot serialize App/legacy starts; local
-development and diagnostics are also guarded. Run snapshots remain immutable.
-
-`AppRuntimeEvidence` adds `app_run_outputs` (one row per run, independent stdout/
-stderr prefixes capped at 65536 bytes with monotonic seals/truncation) and
-`app_artifacts` (run-owned, globally unique artifact ID and unique run/path, size,
-SHA-256 and MIME metadata). Bytes live in object storage under run-scoped keys.
-Device uploads accept late evidence after terminal state and exact retries.
-
-`logbook_events` gains nullable `app_operation_id` and `app_installation_id`
-foreign keys alongside the existing legacy operation relationship. Extended
-constraints retain old entries and allow App lifecycle events. Authored entries
-and HITL preserve their existing ingestion format, with App attribution resolved
-against the exact run/start operation and robot. The App history projection maps
-these to schema v3 and filters by run/App/installation without losing event IDs.
-Legacy history readers keep their previous response format.
-
-Daemon SQLite 0019 retains run/operation report fingerprints and supports
-prelaunch stop. SQLite 0020 adds immutable artifact spool metadata and output
-delivery offsets/seal/truncation acknowledgements. Existing run-credential rows
-store hashes, expiry and revocation; the derivation key stays in a private file
-next to SQLite. Output and queued artifact bytes remain durable across Daemon
-replacement and API outages. Hosted confirmation precedes local byte cleanup.
+The current EF history includes the Apps persistence, inventory, installation,
+run dispatch, and runtime-evidence migrations through
+`20261124085103_AppRuntimeEvidence`. AP-08V changes deployment topology only and
+adds no schema migration. AP-specific evidence records the exact migration and
+runtime acceptance state.

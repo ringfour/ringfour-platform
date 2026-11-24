@@ -1,0 +1,76 @@
+# Ringfour v0.1 — implementation specification
+
+Build a hosted robotics application platform in small, sequential vertical slices. This package specifies new Ringfour contracts; it does not claim those endpoints or SDK methods already exist. The source is the referenced “Read Product Definition Link” conversation and the accompanying delivery request.
+
+## Fixed decisions
+
+| Boundary | Decision |
+|---|---|
+| Account | Mandatory Auth0 account; no anonymous product use or local password system |
+| Platform | Hosted-first C# / ASP.NET Core on a supported .NET LTS; modular monolith |
+| Platform persistence | PostgreSQL + EF Core / Npgsql; EF Core migrations |
+| Platform authentication | Auth0 access tokens validated by ASP.NET Core JWT Bearer |
+| Platform background work | ASP.NET Core hosted services backed by durable PostgreSQL workflow state |
+| Platform tests | xUnit + Testcontainers with real PostgreSQL |
+| Shared contracts | OpenAPI + JSON Schema |
+| Device coordinator | Python FastAPI daemon, durable SQLite state |
+| Execution | Apps: digest-pinned containers managed by the enrolled Daemon through an operator-provided engine socket. Legacy: fixed Runner and uv until migration acceptance. |
+| Developer tool | Python Typer + Rich CLI |
+| Console | Internal development-only React + TypeScript + Vite + shadcn/ui; authenticated, deliberate privileges |
+| Repository | Monorepo now; independent application dependencies, packaging and release boundaries for later extraction |
+| Robotics | Existing SDK and Agent stay separate projects; Agent owns ROS, capabilities and safety |
+| Robot profile | Owned by Agent/robot repository; Ringfour references its identity/version, never becomes its authoring authority |
+
+Deployment infrastructure owns Daemon and Agent containers; only the enrolled Daemon manages its robot’s App workloads. The engine socket grants engine authority and is never passed to Apps or the server. Robot deployments remain operator-owned. The Agent owns ROS and safety. Legacy source execution remains in the fixed Runner during migration; uv environments isolate dependencies, not hostile code.
+
+The active implementation plan is [Apps pivot](../../../milestones/apps-pivot.md), governed by [the pivot specification](../../../../../app-pivot.md) and [backlog](../../../../../apps-pivot-backlog.md). AP-01–04 establish contracts, persistence, inventory and independent `uv`/local wheels. AP-05 supplies verified Store/share/import and registry grants; AP-06 provides [Robot Check authoring/publication](../../../apps-authoring.md), accepted with the local registry and live IMU. AP-07/08/09/10 now implement installation, owner-scoped execution, hosted start/stop, durable runtime evidence and human decisions, with automated component and actual-protocol acceptance. The next step is the [combined AP-08/09/10 operator/human pass](../../../human-testing/AP-08-10.md), followed by virtual topology, Studio and operator CLI work. Existing source/Runner contracts remain legacy regression references until the later cutover.
+
+## Repository
+
+```text
+apps/api/                            # .NET solution, API project and xUnit tests
+  src/Ringfour.Api/                  # business modules and EF Core migrations
+  tests/Ringfour.Api.Tests/          # unit and Testcontainers coverage
+apps/{daemon,runner,cli,console}/     # independently packaged applications
+packages/contracts/                  # OpenAPI + JSON Schema and fixtures
+infra/server/                            # API, PostgreSQL, Console
+tests/integration/compose/               # legacy full-stack E2E fixture
+tests/e2e/
+docs/architecture.md
+docs/milestones/
+AGENTS.md
+```
+
+Applications communicate through versioned contracts, never imports of another application's implementation. The Ringfour SDK and Agent are independent open-source projects, pinned for integration and not copied into this tree. `../ringfour-virtual` owns the local Base101 simulator/device stack and builds those projects from source. The CLI and internal Console use the same documented Platform API; its implementation language does not affect their contracts. Platform contains no robot or Balena deployment manifests.
+
+## Reading and execution order
+
+Use the [starter database schema](../../../database-schema.md) for milestones 00–03 and its change rules for later persistence work.
+
+Read [AGENTS.md](../../../../AGENTS.md), then [architecture](../contracts/architecture-legacy.md) and the active [Apps pivot plan](../../../milestones/apps-pivot.md). The following earlier milestones describe the legacy implementation and its regression obligations:
+
+- [00-foundation.md](../milestones/00-foundation.md)
+- [01-identity.md](../milestones/01-identity.md)
+- [02-enrollment.md](../milestones/02-enrollment.md)
+- [03-connectivity.md](../milestones/03-connectivity.md)
+- [04-runner.md](../milestones/04-runner.md)
+- [05-scripts.md](../milestones/05-scripts.md)
+- [06-missions.md](../milestones/06-missions.md)
+- [07-dev-sessions.md](../milestones/07-dev-sessions.md)
+- [08-logbook.md](../milestones/08-logbook.md)
+- [09-hitl.md](../milestones/09-hitl.md)
+- [10-robotics-e2e.md](../milestones/10-robotics-e2e.md)
+
+## Delivery gate
+
+For every milestone: contract → implementation → independent component tests → real-process integrated acceptance → review → commit. Stop on failures. Each milestone records exact reproducible commands and results in its implementation evidence; command names are established in 00, not assumed to exist today. Local integration must use real PostgreSQL, API, daemon, Runner and CLI where applicable. Auth0 and physical-device checks are separate explicit external acceptance gates, never silently replaced by mocks.
+
+The architecture document defines cross-cutting behavior; milestone contracts add only the current slice. Any implementation-driven change must update schemas, consumers and tests together.
+
+## Business context
+
+The original business-definition attachment is not present in this checkout.
+The current product direction is recorded in the
+[Apps pivot specification](../../../../../app-pivot.md).
+
+The local server Compose includes a [Docker registry and Joxit browser](../../../human-testing/local-registry.md) for App publication/acceptance. The browser proxies registry requests on its own origin; image storage persists in a named volume.

@@ -1,26 +1,19 @@
-# Ringfour applications
+# Platform applications
 
-This directory contains independently packaged parts of the platform:
-
-| Application | Responsibility |
+| Application | Current responsibility |
 | --- | --- |
-| [API](api/README.md) | Hosted identity, organization access, robot state, mission coordination and storage metadata |
-| [CLI](cli/README.md) | Developer commands for publishing and operating missions and inspecting output |
-| [Console](console/README.md) | Internal development UI for the API |
-| [Daemon](daemon/README.md) | Robot identity, outbound connection and local coordination |
-| [Runner](runner/README.md) | Private, fixed execution service that prepares and runs mission code |
+| [API](api/README.md) | Authenticated workspaces, App catalog, installations, hosted runs and history |
+| [CLI](cli/README.md) | Auth0 login, organization/device inspection and App authoring/publication |
+| [Console](console/README.md) | Authenticated internal web interface; App workflows are in AP-11 |
+| [Daemon](daemon/README.md) | Enrolled-device identity, operations, App engine and runtime evidence |
+| [Runner](runner/README.md) | Legacy execution compatibility until AP-15 retirement |
 
-The CLI and Console authenticate people through Auth0. The daemon authenticates
-as its robot over an outbound connection. It communicates with the Runner over
-a separate private authenticated API; the Runner is not exposed to the Platform.
-The applications do not import each other's private implementations. Protocols
-and schemas live in [`packages/contracts`](../packages/contracts/).
+Applications communicate through versioned contracts in
+[`packages/contracts`](../packages/contracts). They do not import another
+application's private implementation. The human API and Console use Auth0;
+robot Daemons use their enrolled machine credentials.
 
-Start with the [repository overview](../README.md), [architecture](../docs/architecture.md),
-and [development setup](../docs/development.md). The server stack is in
-[`infra/server`](../infra/server/); the legacy E2E Compose fixture is in
-[`tests/integration/compose`](../tests/integration/compose/). Base101 simulation,
-Agent, daemon, and Runner orchestration live in the sibling
-[`ringfour-virtual`](../../ringfour-virtual/README.md) project. Human
-verification guides and evidence live in
-[`docs/human-testing`](../docs/human-testing/) and [`docs/evidence`](../docs/evidence/).
+See the [repository overview](../README.md),
+[architecture](../docs/architecture.md), and
+[development setup](../docs/development.md). Historical mission-era user
+workflows are in the [archive](../docs/archive/legacy-mission-workflows/README.md).

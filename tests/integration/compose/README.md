@@ -1,12 +1,8 @@
-# Legacy full-stack E2E fixture
+# Legacy integration fixture
 
-This Compose file exists for older automated acceptance scripts that test the
-Platform API, PostgreSQL, daemon, Runner, and Console together. It is not a
-deployment manifest or the recommended local development setup.
+This Compose file exists only for older API/Daemon/Runner integration tests. It
+is not the current development or deployment path. Its former setup notes are
+in the [mission-era archive](../../../docs/archive/legacy-mission-workflows/infra/legacy-integration-compose-README.md).
 
-For everyday local work, start the server with `platform/./up.sh` and use the
-sibling `ringfour-virtual` project for Base101, Agent, daemon, and Runner. That
-keeps the API stack and device stack independently startable.
-
-The `.env` symlink in this directory is local and ignored; it points to the
-Platform root `.auth.env` for this fixture's Compose interpolation.
+For current local services, use the [Platform development guide](../../../docs/development.md)
+and the sibling `ringfour-virtual` Apps topology guide.

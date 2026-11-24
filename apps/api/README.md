@@ -1,45 +1,28 @@
 # Platform API
 
-The API is the hosted Ringfour control plane: a .NET 10 ASP.NET Core modular
-monolith backed by PostgreSQL. It verifies Auth0 access tokens, enforces local
-organization roles, stores robot and mission metadata, coordinates durable
-operations and mediates access to private source and artifact storage. Device
-credentials are separate from human tokens. Its public contract is maintained in
-[`packages/contracts`](../../packages/contracts/), independently of this app.
+ASP.NET Core API for Auth0-authenticated users, workspaces, App publication,
+installations, hosted runs, durable runtime evidence and robot coordination.
+PostgreSQL/EF Core owns hosted records; each robot Daemon owns its local SQLite
+state and connects using its enrolled machine credential.
 
-## Get started
+Read the [architecture](../../docs/architecture.md),
+[Apps API contract](../../docs/apps-api-contract.md), and
+[database schema](../../docs/database-schema.md) before changing endpoints or
+persistence. The active AP plan records rollout order and gates.
 
-Use the [local stack instructions](../../docs/development.md) to configure Auth0
-and start the independent server stack from the repository root:
+## Local development
 
-```sh
-./up.sh
-curl http://localhost:8080/health/ready
-```
+Use [Platform development setup](../../docs/development.md) for Auth0, local
+PostgreSQL and server Compose configuration. Authentication remains enabled in
+local development.
 
-The API Dockerfile builds with the .NET 10 SDK. Server Compose supplies PostgreSQL and
-uses a persistent filesystem artifact store for local development; hosted
-storage configuration is documented in [script testing](../../docs/human-testing/05.md).
-Do not disable authentication to work locally.
-
-## Develop
-
-`src/Ringfour.Api/` is organized by feature (`Identity`, `Robots`,
-`Connectivity`, `Storage`, `Missions`) with EF Core entities and migrations in
-`Persistence`. Start with [architecture](../../docs/architecture.md),
-[database schema](../../docs/database-schema.md) and the relevant milestone
-before changing a contract or persistence. The SDK helper builds without a host
-.NET install:
+Build and run the API tests from the repository root:
 
 ```sh
-bash scripts/dotnet.sh build
+dotnet build apps/api/src/Ringfour.Api/Ringfour.Api.csproj
+dotnet test apps/api/tests/Ringfour.Api.Tests/Ringfour.Api.Tests.csproj
 ```
 
-Run API tests with .NET 10 and Docker available for PostgreSQL Testcontainers:
-
-```sh
-dotnet test apps/api
-```
-
-See [development setup](../../docs/development.md) for migrations and the
-milestone evidence files for exact integrated test setups.
+The integration suite uses PostgreSQL Testcontainers. Legacy mission endpoints
+remain only for migration callers; their historical contract is in the
+[archive](../../docs/archive/legacy-mission-workflows/README.md).

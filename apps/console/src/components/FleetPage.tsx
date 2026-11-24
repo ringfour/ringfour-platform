@@ -3,12 +3,11 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useCallback, useEffect, useState } from "react";
 import { RobotDetailPage } from "@/components/RobotDetailPage";
 import { RobotsPage } from "@/components/RobotsPage";
-import { loadOverview, type OverviewData } from "./overview-data";
-import { StudioTime } from "./StudioTime";
-import { RobotResources } from "./RobotResources";
-import { resourcePath } from "@/lib/location";
 import { apiFetchAll } from "@/lib/api";
-import { setQuery, useLocation } from "@/lib/location";
+import { resourcePath, setQuery, useLocation } from "@/lib/location";
+import { loadOverview, type OverviewData } from "./overview-data";
+import { RobotResources } from "./RobotResources";
+import { StudioTime } from "./StudioTime";
 
 type Organization = { id: string; name: string; role?: string };
 type Robot = OverviewData["machines"][number];
@@ -226,10 +225,10 @@ export function FleetPage({
                             </a>
                             {active.activity && ` · ${active.activity}`}
                           </>
-                        ) : machine.deployment ? (
-                          `Deployment · ${machine.deployment.observed_state}`
+                        ) : machine.installation ? (
+                          `Installed · ${machine.configured?.app ?? "App"}`
                         ) : (
-                          "No deployment reported"
+                          "No App installation reported"
                         )}
                       </small>
                     </div>
@@ -290,7 +289,7 @@ export function FleetPage({
           <RobotDetailPage
             key={robotId}
             robotId={robotId}
-            role={orgs?.find((org) => org.id === orgId)?.role}
+            workspaceRole={orgs?.find((org) => org.id === orgId)?.role}
             onBack={() => onSelectRobot(undefined)}
             onManage={() => setManage(true)}
           />

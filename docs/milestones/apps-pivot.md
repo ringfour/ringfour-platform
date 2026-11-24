@@ -7,11 +7,13 @@ The earlier 00–10 milestones describe legacy behavior and regression evidence.
 ## Current execution agreement · 24 November 2026
 
 The user authorized completing AP-08, AP-09 and AP-10 before one combined human
-acceptance pass. Continue sequential implementation after passing automated
-component and real-protocol tests; pending operator confidence checks do not
-block the next authorized milestone. Record them as pending, never passed.
-Stack reloads/rebuilds remain operator-controlled. Resume the remaining
-virtual/product/cutover milestones after the combined human pass.
+acceptance pass. On 24 November, after setting up the second Unix account, the
+user directed AP-08V to be the next implementation milestone. After the user
+restarted the virtual stack, they explicitly directed AP-11 to proceed before
+the combined AP-08/09/10/08V operator confidence pass. Keep that live pass
+pending and complete it before AP-13; it does not block AP-11 implementation.
+Record unperformed checks as pending. Stack reloads/rebuilds remain
+operator-controlled.
 
 ## AP-01 — contracts and authority (contract acceptance complete)
 
@@ -184,6 +186,25 @@ Evidence: [AP-09](../evidence/AP-09.md). Human guide: [AP-09](../human-testing/A
 
 Evidence: [AP-10](../evidence/AP-10.md). Human guide: [AP-10](../human-testing/AP-10.md).
 
+## AP-08V — opt-in App-capable virtual topology (implementation in progress)
+
+- [x] Add a separate Runner-free `compose.apps.yaml`; retain legacy
+  `compose.yaml` as the default migration path.
+- [x] Add singleton and numbered launcher modes with external network names,
+  Agent/Daemon aliases, host socket/GID wiring, engine platform reporting, and
+  no Runner wheel staging or Platform-tree writes in App mode.
+- [x] Add guarded down flow using the persisted Daemon owner identity and exact
+  run-container labels; preserve `/data` and App evidence volumes by default.
+- [x] Document topology and operator steps in the virtual README and
+  [AP-08V guide](../human-testing/AP-08V.md).
+- [x] Render the singleton and all 40 numbered Compose configurations; verify
+  unique numbered ports, networks, aliases and Daemon volumes. Pass 10 mocked
+  launcher/down safety checks.
+- [ ] Run operator smoke for socket access, readiness, Daemon replacement,
+  per-instance network/DNS isolation and state-preserving shutdown.
+
+Implementation notes and unperformed checks: [AP-08V evidence](../evidence/AP-08V.md).
+
 ## Subsequent work
 
 AP-01 through AP-04 are accepted under the agreed local-wheel distribution.
@@ -195,9 +216,54 @@ acceptance are complete. Their combined live deployment/human pass is next,
 as explicitly requested; pending human confidence checks did not block this
 implementation sequence. No live stack operation was performed by the agent.
 
-After that pass, resume virtual topology (AP-08V), Studio (AP-11) and operator CLI
-(AP-12), converging at full two-user/two-robot AP-13 acceptance. Retire managed UI
-(AP-14) and remaining Runner clients/defaults (AP-15) through their explicit drain
-and recovery gates. AP-16 is a separate second-platform follow-up. Never record
-unperformed real Auth0/provider/simulator/physical checks as passed. Operator
-controls every Platform and virtual stack reload/rebuild.
+AP-08V is in progress. Complete its implementation checks, then run the combined
+AP-08/09/10/08V operator confidence pass before AP-13. The user explicitly
+authorized AP-11 before that combined pass; they have accepted the current
+browser smoke (views render and App import works). AP-12 follows before the
+combined confidence pass. Those milestones converge at full
+two-user/two-robot AP-13 acceptance. Retire managed UI (AP-14) and remaining
+Runner clients/defaults (AP-15) through their explicit drain and recovery gates.
+AP-16 is a separate second-platform follow-up. Never record unperformed real
+Auth0/provider/simulator/physical checks as passed. Operator controls every
+Platform and virtual stack reload/rebuild.
+
+## AP-11 — authenticated Console Apps experience (implementation complete; smoke accepted)
+
+- [x] Replace primary navigation with Home, Robots, Apps, App Store and Logbook.
+- [x] Add a fresh Home view backed by workspace App runs, robot presence and
+  inventory, operation history and pending HITL. Preserve exact run and robot
+  links and the global timeline.
+- [x] Replace robot detail's mission/deployment reads and controls with App
+  status, inventory, installations and App runs.
+- [x] Add listed Store discovery, release/capability detail, robot compatibility
+  preview, direct-share lookup/import and install operation tracking.
+- [x] Add workspace imported-App view with typed schema-driven configuration,
+  revision update, start/stop, and per-App Logbook link.
+- [x] Add App Logbook run/event filters, stdout/stderr, artifact download and
+  robot links. Keep submitted HITL responses visible until device confirmation.
+- [x] User browser smoke: primary views render and an App can be imported. The
+  user accepted functional coverage at this stage and deferred visual polish.
+- [ ] Full component coverage for stale/missing inventory, per-role controls,
+  changed inventory, two-workspace cache isolation and operation refusal/failure.
+- [ ] AP-13 multi-user/two-workspace browser acceptance. Keyboard/design-token
+  polish is deferred and is not an AP-11 implementation blocker.
+
+Implementation notes and the manual review checklist: [AP-11 guide](../human-testing/AP-11.md).
+
+## AP-12 — App CLI operations (implementation underway)
+
+- [x] Add Store search/show/import and robot-targeted install with optional
+  direct-share ID and JSON configuration.
+- [x] Add typed configure/update, explicit installation start and exact-run
+  stop, with idempotency keys and operation tracking.
+- [x] Add run/output/artifact and scoped App Logbook/HITL inspection, plus
+  observed robot capabilities and optional compatibility assessment.
+- [x] Add focused CLI tests for workspace-scoped install, App-to-installation
+  resolution, ambiguity refusal and exact-run stop; all 3 pass.
+- [x] Verify nested command help, Python compilation, Ruff and documented CLI
+  command names.
+- [ ] Complete clean CLI-to-API/Daemon real-protocol acceptance.
+- [ ] Live Auth0/role-denial and multi-user acceptance remains part of AP-13.
+
+Operator steps: [AP-12 guide](../human-testing/AP-12.md).
+Automated evidence: [AP-12](../evidence/AP-12.md).

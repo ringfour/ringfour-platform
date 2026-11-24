@@ -1,167 +1,280 @@
-import { apiFetch, apiFetchAll } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import {
+  type App,
+  type AppImport,
+  type AppLogbookEvent,
+  type AppRun,
+  type Installation,
+  type Revision,
+  type Robot,
+  readPage,
+  type Token,
+} from "@/lib/apps";
 
-type Token = () => Promise<string>;
-type Named = { id: string; name: string };
-type Run = {
-  id: string;
-  state: string;
-  mission_revision_id: string | null;
-  actor_user_id: string | null;
-  created_at: string;
-  updated_at: string;
-  error?: { message: string } | null;
+type Member = { user_id: string; name: string | null };
+type Presence = {
+  connectivity: "online" | "offline";
+  last_seen_at: string | null;
+  support: string;
+  received_at: string | null;
+  inventory?: {
+    observed_at: string;
+    source: {
+      kind: string;
+      profile: { name: string; model: string; version: string };
+    };
+    capabilities: string[];
+    instances: Record<string, string[]>;
+  } | null;
 };
-type Deployment = {
-  id: string;
-  robot_id: string;
-  updated_at?: string;
-  desired_state: string;
-  observed_state: string;
-  selected_revision_id: string | null;
-  last_execution_id: string | null;
-  last_error: { message: string } | null;
-};
-type Revision = { id: string; version: number };
-type Entry = {
-  occurred_at: string;
-  type: string;
-  payload: { message?: unknown };
-};
-type Row = Run & {
-  robot: Named;
+type Row = AppRun & {
+  robot: Robot;
   app: string;
-  version?: number;
+  appId: string;
+  version?: string;
   person?: string;
-  appId?: string;
   activity?: string;
   evidence?: number;
+  created_at: string;
+  updated_at: string;
+  error: { message: string } | null;
 };
-export type OverviewData = Awaited<ReturnType<typeof loadOverview>>;
+type Machine = Robot & {
+  status?: {
+    online: boolean;
+    last_seen_at: string | null;
+    support: string;
+    received_at: string | null;
+    inventory?: Presence["inventory"];
+  };
+  runs?: Row[];
+  installation?: Installation;
+  installedApps: {
+    appId: string;
+    name: string;
+    version?: string;
+    lastObservedAt: string | null;
+  }[];
+  configured?: { app: string; version: string };
+};
+type Issue = {
+  id: string;
+  robot_id: string;
+  robot: string;
+  last_execution_id: string;
+  run: Row;
+  app: string;
+  version?: string;
+  desired_state: "running";
+  observed_state: string;
+  updated_at: string;
+  last_error: { message: string } | null;
+};
 
-async function optional<T>(request: Promise<T>) {
+export type OverviewData = {
+  machines: Machine[];
+  robots: Robot[];
+  runs: Row[];
+  recent: Row[];
+  active: Row[];
+  issues: Issue[];
+  updated: Date;
+};
+
+async function limited<T, R>(items: T[], read: (item: T) => Promise<R>) {
+  const values: R[] = [];
+  for (let index = 0; index < items.length; index += 6)
+    values.push(
+      ...(await Promise.all(items.slice(index, index + 6).map(read))),
+    );
+  return values;
+}
+
+async function optional<T>(read: Promise<T>) {
   try {
-    return await request;
+    return await read;
   } catch {
     return undefined;
   }
 }
-async function mapLimited<T, R>(items: T[], read: (item: T) => Promise<R>) {
-  const result: R[] = [];
-  for (let i = 0; i < items.length; i += 6)
-    result.push(...(await Promise.all(items.slice(i, i + 6).map(read))));
-  return result;
-}
-export async function loadOverview(org: string, token: Token) {
-  const base = "/v1/organizations/" + encodeURIComponent(org);
-  const json = async <T>(path: string): Promise<T> =>
-    (await apiFetch(token, path)).json();
-  const [robots, apps, deployments, members, me] = await Promise.all([
-    apiFetchAll<Named>(token, base + "/robots"),
-    optional(apiFetchAll<Named>(token, base + "/missions")),
-    optional(apiFetchAll<Deployment>(token, base + "/deployments")),
+
+export async function loadOverview(organizationId: string, token: Token) {
+  const organization = `/v1/organizations/${encodeURIComponent(organizationId)}`;
+  const [robots, runs, imports, members, me] = await Promise.all([
+    readPage<Robot>(token, `${organization}/robots`),
+    readPage<AppRun>(token, `${organization}/app-runs`),
+    readPage<AppImport>(token, `${organization}/app-imports`),
+    optional(readPage<Member>(token, `${organization}/members`)),
     optional(
-      apiFetchAll<{ user_id: string; name: string | null }>(
-        token,
-        base + "/members",
+      apiFetch(token, "/v1/me").then(
+        (response) => response.json() as Promise<{ user: { id: string } }>,
       ),
     ),
-    optional(json<{ user: { id: string } }>("/v1/me")),
   ]);
-  const versions = new Map<
-    string,
-    { app: string; appId: string; version: number }
-  >();
-  await mapLimited(apps ?? [], async (app) => {
-    for (const v of (await optional(
-      apiFetchAll<Revision>(token, "/v1/missions/" + app.id + "/revisions"),
-    )) ?? [])
-      versions.set(v.id, { app: app.name, appId: app.id, version: v.version });
-  });
-  const machines = await mapLimited(robots, async (robot) => {
-    const [status, history] = await Promise.all([
+  const appIds = [
+    ...new Set([
+      ...imports.map((item) => item.app_id),
+      ...runs.map((run) => run.snapshot.app_id),
+    ]),
+  ];
+  const apps = new Map<string, App>();
+  const revisions = new Map<string, Revision>();
+  await limited(appIds, async (appId) => {
+    const [app, appRevisions] = await Promise.all([
       optional(
-        json<{ online: boolean; last_seen_at: string | null }>(
-          "/v1/robots/" + robot.id + "/status",
+        apiFetch(token, `/v1/apps/${appId}`).then(
+          (response) => response.json() as Promise<App>,
         ),
       ),
-      optional(
-        apiFetchAll<Run>(token, "/v1/robots/" + robot.id + "/executions"),
-      ),
+      optional(readPage<Revision>(token, `/v1/apps/${appId}/revisions`)),
     ]);
-    const deployment = deployments?.find((item) => item.robot_id === robot.id);
-    const runs: Row[] | undefined = history?.map((run) => ({
-      ...run,
-      robot,
-      app: run.mission_revision_id ? "Unknown app" : "Direct run",
-      ...versions.get(run.mission_revision_id ?? ""),
-      person:
-        run.actor_user_id === me?.user?.id
-          ? "You"
-          : (members?.find((m) => m.user_id === run.actor_user_id)?.name ??
-            undefined),
-    }));
+    if (app) apps.set(appId, app);
+    for (const revision of appRevisions ?? [])
+      revisions.set(revision.id, revision);
+  });
+
+  const [statuses, installations, events] = await Promise.all([
+    limited(robots, (robot) =>
+      optional(
+        apiFetch(token, `/v1/robots/${robot.id}/app-status`).then(
+          (response) => response.json() as Promise<Presence>,
+        ),
+      ),
+    ),
+    limited(robots, (robot) =>
+      optional(
+        readPage<Installation>(
+          token,
+          `/v1/robots/${robot.id}/app-installations`,
+        ),
+      ),
+    ),
+    optional(readPage<AppLogbookEvent>(token, `${organization}/app-logbook`)),
+  ]);
+  const history = new Map<string, AppLogbookEvent[]>();
+  for (const event of events ?? []) {
+    if (!event.run_id) continue;
+    const entries = history.get(event.run_id) ?? [];
+    entries.push(event);
+    history.set(event.run_id, entries);
+  }
+
+  const machines: Machine[] = robots.map((robot, index) => {
+    const presence = statuses[index];
+    const robotInstallations = installations[index] ?? [];
+    const installed =
+      robotInstallations.find((item) => item.installed) ??
+      robotInstallations[0];
+    const configuredRevision = installed?.installed?.revision_id
+      ? revisions.get(installed.installed.revision_id)
+      : undefined;
+    const configuredApp = installed ? apps.get(installed.app_id) : undefined;
     return {
       ...robot,
-      status,
-      runs,
-      deployment,
-      configured: versions.get(deployment?.selected_revision_id ?? ""),
+      status: presence
+        ? {
+            online: presence.connectivity === "online",
+            last_seen_at: presence.last_seen_at,
+            support: presence.support,
+            received_at: presence.received_at,
+            inventory: presence.inventory,
+          }
+        : undefined,
+      runs: runs
+        .filter((run) => run.robot_id === robot.id)
+        .map((run) => {
+          const app = apps.get(run.snapshot.app_id);
+          const revision = revisions.get(run.snapshot.revision_id);
+          const runEvents = history.get(run.id) ?? [];
+          const latest = [...runEvents]
+            .filter((event) => typeof event.payload.message === "string")
+            .sort((a, b) => b.received_at.localeCompare(a.received_at))[0];
+          const member = members?.find(
+            (item) => item.user_id === run.requested_by,
+          );
+          return {
+            ...run,
+            robot,
+            app: app?.name ?? "App unavailable",
+            appId: run.snapshot.app_id,
+            version: revision?.manifest.release,
+            person:
+              run.requested_by === me?.user.id
+                ? "You"
+                : (member?.name ?? undefined),
+            activity:
+              typeof latest?.payload.message === "string"
+                ? latest.payload.message
+                : undefined,
+            created_at: run.requested_at,
+            updated_at:
+              run.completed_at ??
+              run.observed_at ??
+              run.started_at ??
+              run.requested_at,
+            error: run.failure ? { message: run.failure.message } : null,
+          };
+        }),
+      installation: installed,
+      installedApps: robotInstallations.flatMap((item) => {
+        if (!item.installed) return [];
+        const app = apps.get(item.app_id);
+        const revision = revisions.get(item.installed.revision_id);
+        return [
+          {
+            appId: item.app_id,
+            name: app?.name ?? "App",
+            version: revision?.manifest.release,
+            lastObservedAt: item.last_observed_at,
+          },
+        ];
+      }),
+      configured:
+        configuredApp && configuredRevision
+          ? {
+              app: configuredApp.name,
+              version: configuredRevision.manifest.release,
+            }
+          : undefined,
     };
   });
-  const runs = machines.flatMap((machine) => machine.runs ?? []);
-  const active = runs.filter((row) =>
-    ["running", "preparing", "queued"].includes(row.state),
+  const rows = machines.flatMap((machine) => machine.runs ?? []);
+  const active = rows.filter((run) =>
+    ["accepted", "running"].includes(run.state),
   );
-  const recent = runs
-    .filter((row) => ["succeeded", "failed", "cancelled"].includes(row.state))
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-    .slice(0, 3);
-  await mapLimited([...active, ...recent], async (row) => {
-    const ended = recent.includes(row);
-    const [events, files] = await Promise.all([
-      optional(
-        apiFetchAll<Entry>(
-          token,
-          base + "/events?execution_id=" + encodeURIComponent(row.id),
-        ),
-      ),
-      ended
-        ? optional(
-            json<{ artifacts: unknown[] }>(
-              "/v1/executions/" + row.id + "/artifacts",
-            ),
-          )
-        : undefined,
-    ]);
-    const last = events
-      ?.filter(
-        (e) =>
-          e.type === "mission.logbook.entry" &&
-          typeof e.payload?.message === "string",
-      )
-      .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
-    if (last) row.activity = String(last.payload.message);
-    row.evidence = files?.artifacts?.length;
-  });
-  const issues = deployments
-    ?.filter(
-      (d) =>
-        d.observed_state === "failed" ||
-        !!d.last_error ||
-        (d.desired_state === "running" &&
-          ["ready", "cancelled"].includes(d.observed_state)) ||
-        (d.desired_state === "stopped" && d.observed_state === "running"),
+  const recent = rows
+    .filter((run) =>
+      ["succeeded", "failed", "stopped", "interrupted"].includes(run.state),
     )
-    .map((d) => ({
-      ...d,
-      run: runs.find((run) => run.id === d.last_execution_id),
-      robot: robots.find((r) => r.id === d.robot_id)?.name ?? "Unknown robot",
-      ...versions.get(d.selected_revision_id ?? ""),
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .slice(0, 5);
+  await limited(recent, async (run) => {
+    const files = await optional(
+      apiFetch(token, `/v1/app-runs/${run.id}/artifacts`).then(
+        (response) => response.json() as Promise<{ items: unknown[] }>,
+      ),
+    );
+    if (files) run.evidence = files.items.length;
+  });
+  const issues: Issue[] = rows
+    .filter((run) => run.state === "failed" || run.state === "interrupted")
+    .map((run) => ({
+      id: run.id,
+      robot_id: run.robot_id,
+      robot: run.robot.name,
+      last_execution_id: run.id,
+      run,
+      app: run.app,
+      version: run.version,
+      desired_state: "running",
+      observed_state: run.state,
+      updated_at: run.updated_at,
+      last_error: run.error,
     }));
   return {
     machines,
     robots,
-    runs,
+    runs: rows,
     recent,
     active,
     issues,

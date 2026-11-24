@@ -1,8 +1,10 @@
 # Early acceptance — AP-05, AP-06, AP-08 and AP-07
 
 **Current sequence:** AP-08/09/10 implementation and automated protocol checks
-are complete. Use the [combined AP-08/09/10 human pass](AP-08-10.md) next, as
-agreed with the user. The early publication/install checks below remain useful.
+are complete. AP-08V is the next implementation slice by user direction. Then
+run the [combined AP-08/09/10/AP-08V human pass](AP-08-10.md), including the
+[virtual topology checks](AP-08V.md). These early publication/install checks
+remain useful.
 
 Run one flow in dependency order: configure/deploy → publish → discover/import →
 install → configure → update/rollback → standalone live IMU. AP-01 through AP-04

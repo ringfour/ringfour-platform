@@ -15,7 +15,7 @@ export function RobotWorkRow({
   onOpen?: () => void;
 }) {
   const active = machine.runs?.filter((run) =>
-    ["queued", "preparing", "running"].includes(run.state),
+    ["queued", "accepted", "preparing", "running"].includes(run.state),
   );
   const online = machine.status?.online;
   return (
@@ -51,6 +51,45 @@ export function RobotWorkRow({
           <small>
             Last seen <StudioTime value={machine.status.last_seen_at} />
           </small>
+        )}
+        {machine.status?.inventory && (
+          <small>
+            {machine.status.inventory.source?.profile?.name ??
+              "Robot profile unavailable"}{" "}
+            · {machine.status.inventory.capabilities?.length ?? 0} capabilities
+            · inventory received{" "}
+            {machine.status.received_at ? (
+              <StudioTime value={machine.status.received_at} />
+            ) : (
+              "time unavailable"
+            )}
+          </small>
+        )}
+        {machine.status?.support && (
+          <small>
+            App support: {machine.status.support.replaceAll("_", " ")}
+          </small>
+        )}
+        {machine.installedApps.length > 0 && (
+          <div className="studio-installed-list">
+            <small>Installed Apps</small>
+            {machine.installedApps.map((app) => (
+              <small key={app.appId}>
+                <a href={resourcePath("apps", app.appId, workspace)}>
+                  {app.name}
+                  {app.version ? ` v${app.version}` : ""}
+                </a>
+                {app.lastObservedAt ? (
+                  <>
+                    {" "}
+                    · observed <StudioTime value={app.lastObservedAt} />
+                  </>
+                ) : (
+                  " · not observed"
+                )}
+              </small>
+            ))}
+          </div>
         )}
         <RobotResources />
       </div>
@@ -100,15 +139,6 @@ export function RobotWorkRow({
                   ? "No active run last reported"
                   : "No app running"}
             </h3>
-            {machine.deployment && (
-              <small>
-                {machine.configured
-                  ? machine.configured.app + " v" + machine.configured.version
-                  : "Deployment"}{" "}
-                · Requested {machine.deployment.desired_state} · Observed{" "}
-                {machine.deployment.observed_state}
-              </small>
-            )}
           </>
         )}
       </div>

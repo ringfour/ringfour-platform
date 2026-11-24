@@ -1,15 +1,15 @@
 import { useAuth0 } from "@auth0/auth0-react";
 import { useEffect, useRef, useState } from "react";
-
-import { DashboardPage } from "@/components/DashboardPage";
-import { FleetPage } from "@/components/FleetPage";
+import { AppLogbookPage } from "@/components/AppLogbookPage";
+import { AppTimelinePage } from "@/components/AppTimelinePage";
+import { AppsPage, StoreRoute } from "@/components/AppsPage";
+import { HomePage } from "@/components/HomePage";
+import { RobotsWorkspacePage } from "@/components/RobotsWorkspacePage";
 import { HealthPage } from "@/components/HealthPage";
 import { IdentityPage } from "@/components/IdentityPage";
 import { InvitationAcceptancePage } from "@/components/InvitationAcceptancePage";
-import { LogbookPage } from "@/components/LogbookPage";
 import { LoginPage } from "@/components/LoginPage";
 import { ProfilePage } from "@/components/ProfilePage";
-import { RecordsPage } from "@/components/RecordsPage";
 import { AUTH_SESSION_EXPIRED_EVENT, apiFetchAll } from "@/lib/api";
 
 import { resourcePath, useLocation, visit } from "@/lib/location";
@@ -20,6 +20,7 @@ const routes = {
   logbook: "runs",
   timeline: "timeline",
   missions: "apps",
+  store: "app-store",
   deployments: "deployments",
   identity: "settings/workspace",
   health: "settings/health",
@@ -29,6 +30,7 @@ type View =
   | "overview"
   | "robots"
   | "missions"
+  | "store"
   | "deployments"
   | "identity"
   | "health"
@@ -37,11 +39,11 @@ type View =
   | "timeline";
 
 const NAV: { id: View; label: string; icon: string }[] = [
-  { id: "overview", label: "Overview", icon: "overview" },
-  { id: "logbook", label: "Runs", icon: "logbook" },
-  { id: "timeline", label: "Timeline", icon: "logbook" },
+  { id: "overview", label: "Home", icon: "overview" },
   { id: "robots", label: "Robots", icon: "fleet" },
   { id: "missions", label: "Apps", icon: "missions" },
+  { id: "store", label: "App Store", icon: "missions" },
+  { id: "logbook", label: "Logbook", icon: "logbook" },
   { id: "identity", label: "Organizations", icon: "workspace" },
   { id: "health", label: "System health", icon: "health" },
 ];
@@ -148,13 +150,17 @@ function DevConsole() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [workspace, setOrganizationId] = useState("");
   const organizationId = location.searchParams.get("workspace") ?? workspace;
-  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>(
-    [],
-  );
+  const [workspaces, setWorkspaces] = useState<
+    { id: string; name: string; role?: string }[]
+  >([]);
+  const activeOrganizationId = organizationId || workspaces[0]?.id || "";
+  const activeRole = workspaces.find(
+    (item) => item.id === activeOrganizationId,
+  )?.role;
   useEffect(() => {
     if (!isAuthenticated) return;
     let current = true;
-    void apiFetchAll<{ id: string; name: string }>(async () => {
+    void apiFetchAll<{ id: string; name: string; role?: string }>(async () => {
       const token = await getAccessTokenSilently({
         authorizationParams: { audience: import.meta.env.VITE_AUTH0_AUDIENCE },
       });
@@ -376,7 +382,10 @@ function DevConsole() {
               {NAV.find((item) => item.id === view)?.label ?? "My profile"}
             </strong>
           </div>
-          <div className="topbar-right"><a href="/studio/index.html">Studio prototype ↗</a><span className="console-environment">Development</span></div>
+          <div className="topbar-right">
+            <a href="/studio/index.html">Studio prototype ↗</a>
+            <span className="console-environment">Development</span>
+          </div>
         </header>
         {view === "timeline" && (
           <div
@@ -385,43 +394,68 @@ function DevConsole() {
             aria-label="Timeline controls"
           />
         )}
-        {view === "overview" && (
-          <DashboardPage
-            key={organizationId}
-            onNavigate={navigate}
-            preferredOrganizationId={organizationId}
-            onOrganizationChange={setOrganizationId}
+        {!activeOrganizationId &&
+          !["identity", "health", "profile"].includes(view) && (
+            <main className="app-workflow-page">
+              <section className="app-panel">
+                <h1>Choose a workspace</h1>
+                <p>Create or join a workspace to view its robots and Apps.</p>
+                <button
+                  className="button-primary"
+                  type="button"
+                  onClick={() => navigate("identity")}
+                >
+                  Open workspace settings
+                </button>
+              </section>
+            </main>
+          )}
+        {activeOrganizationId && view === "overview" && (
+          <HomePage
+            key={activeOrganizationId}
+            organizationId={activeOrganizationId}
+            workspaceRole={activeRole}
           />
         )}
-        {(view === "missions" || view === "deployments") && (
-          <RecordsPage
-            key={view + organizationId}
-            kind={view}
-            routeId={id}
-            selectRecord={(value, org) => navigate(view, value, org)}
-            preferredOrganizationId={organizationId}
-            onOrganizationChange={setOrganizationId}
+        {activeOrganizationId &&
+          (view === "missions" || view === "deployments") && (
+            <AppsPage
+              key={activeOrganizationId}
+              organizationId={activeOrganizationId}
+              workspaceRole={activeRole}
+              focusAppId={id || undefined}
+            />
+          )}
+        {activeOrganizationId && view === "store" && (
+          <StoreRoute
+            key={activeOrganizationId}
+            organizationId={activeOrganizationId}
+            workspaceRole={activeRole}
           />
         )}
-        {(view === "logbook" || view === "timeline") && (
-          <LogbookPage
-            key={organizationId}
-            routeId={id}
-            timelineOnly={view === "timeline"}
-            selectRecord={(value, org) => navigate("logbook", value, org)}
-            preferredOrganizationId={organizationId}
-            onOrganizationChange={setOrganizationId}
+        {activeOrganizationId && view === "logbook" && (
+          <AppLogbookPage
+            key={activeOrganizationId + id}
+            organizationId={activeOrganizationId}
+            runId={id || undefined}
+            selectRun={(value) => navigate("logbook", value)}
+          />
+        )}
+        {activeOrganizationId && view === "timeline" && (
+          <AppTimelinePage
+            key={activeOrganizationId}
+            organizationId={activeOrganizationId}
           />
         )}
         {view === "identity" && <IdentityPage />}
         {view === "profile" && <ProfilePage />}
-        {view === "robots" && (
-          <FleetPage
-            key={organizationId}
+        {activeOrganizationId && view === "robots" && (
+          <RobotsWorkspacePage
+            key={activeOrganizationId}
             robotId={id}
             onSelectRobot={(value, org) => navigate("robots", value, org)}
-            preferredOrganizationId={organizationId}
-            onOrganizationChange={setOrganizationId}
+            organizationId={activeOrganizationId}
+            workspaceRole={activeRole}
           />
         )}
         {view === "health" && <HealthPage />}

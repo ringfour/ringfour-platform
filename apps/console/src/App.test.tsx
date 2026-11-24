@@ -182,38 +182,60 @@ test("creates an organization and inspects membership", async () => {
   ).toBeTruthy();
 });
 
-test("opens a historical run from a deep link and follows its robot link", async () => {
+test("opens an App run from a deep link and follows its robot link", async () => {
   window.history.replaceState(null, "", "/runs/run-1?workspace=org&tab=Output");
   authState = { isAuthenticated: true, isLoading: false };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input), "http://localhost");
+      const run = {
+        id: "run-1",
+        organization_id: "org",
+        robot_id: "robot",
+        installation_id: "installation",
+        start_operation_id: "operation",
+        snapshot: {
+          app_id: "app",
+          revision_id: "revision",
+          publisher_organization_id: "publisher",
+          configuration_revision_id: "configuration",
+          configuration: {},
+          image: "registry/app@sha256:abc",
+        },
+        state: "succeeded",
+        requested_by: "operator",
+        requested_at: "2026-11-20T08:00:00Z",
+        started_at: "2026-11-20T08:00:01Z",
+        ended_at: "2026-11-20T08:00:02Z",
+        completed_at: "2026-11-20T08:00:02Z",
+        failure: null,
+      };
       const items: Record<string, unknown[]> = {
         "/api/v1/organizations": [
           { id: "org", name: "Workshop", role: "owner" },
         ],
         "/api/v1/organizations/org/robots": [
-          { id: "robot", name: "Inspection arm" },
+          { id: "robot", organization_id: "org", name: "Inspection arm" },
         ],
-        "/api/v1/robots/robot/executions": [
-          {
-            id: "run-1",
-            created_at: "2026-11-20T08:00:00Z",
-            state: "cancelled",
-            actor_user_id: null,
-            mission_revision_id: null,
-          },
-        ],
+        "/api/v1/organizations/org/app-runs": [run],
+        "/api/v1/organizations/org/app-logbook": [],
       };
       if (url.pathname.endsWith("/me"))
         return jsonResponse({ user: { id: "operator" } });
+      if (url.pathname === "/api/v1/apps/app")
+        return jsonResponse({
+          id: "app",
+          name: "Robot Check",
+          description: "IMU",
+        });
+      if (url.pathname === "/api/v1/app-runs/run-1") return jsonResponse(run);
       if (url.pathname.endsWith("/artifacts"))
-        return jsonResponse({ artifacts: [] });
+        return jsonResponse({ items: [] });
       if (url.pathname.endsWith("/output"))
         return jsonResponse({
-          data_base64: "",
-          next_offset: 0,
+          data_base64: btoa("sample output"),
+          next_offset: 13,
           truncated: false,
         });
       return jsonResponse({
@@ -224,12 +246,12 @@ test("opens a historical run from a deep link and follows its robot link", async
   );
   render(<App />);
   expect(
-    await screen.findByRole("heading", { name: "Execution output" }),
+    await screen.findByRole("heading", { name: "Run details" }),
   ).toBeTruthy();
   expect(
-    screen.getByRole("link", { name: "Inspection arm" }).getAttribute("href"),
+    screen
+      .getByRole("link", { name: /Open Inspection arm/ })
+      .getAttribute("href"),
   ).toBe("/robots/robot?workspace=org");
-  await userEvent.click(screen.getByRole("button", { name: "App UI" }));
-  expect(window.location.search).toContain("tab=App+UI");
-  expect(screen.getByText("This run has ended.")).toBeTruthy();
+  expect(await screen.findByText(/sample output/)).toBeTruthy();
 });

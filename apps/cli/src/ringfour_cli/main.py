@@ -66,7 +66,7 @@ app = typer.Typer(
 )
 org_app = typer.Typer(help="Manage organizations.", no_args_is_help=True)
 app.add_typer(org_app, name="org")
-robot_app = typer.Typer(help="Manage robots and their credentials.", no_args_is_help=True)
+robot_app = typer.Typer(help="Manage robots, credentials and observed App capabilities.", no_args_is_help=True)
 app.add_typer(robot_app, name="robot")
 daemon_app = typer.Typer(help="Drive the local device daemon.", no_args_is_help=True)
 app.add_typer(daemon_app, name="daemon")
@@ -80,9 +80,7 @@ dev_artifact_app = typer.Typer(help="List and download local development artifac
 dev_app.add_typer(dev_artifact_app, name="artifact")
 mission_app = typer.Typer(help="Publish and operate missions.", no_args_is_help=True)
 app.add_typer(mission_app, name="mission")
-apps_app = typer.Typer(
-    help="Initialize, validate, build and publish container Apps.", no_args_is_help=True
-)
+apps_app = typer.Typer(help="Discover, import, install and operate immutable Apps.", no_args_is_help=True)
 app.add_typer(apps_app, name="app")
 hitl_app = typer.Typer(help="Inspect and answer human interactions.", no_args_is_help=True)
 app.add_typer(hitl_app, name="hitl")
@@ -365,6 +363,346 @@ def app_validate(
         }
 
     _app_result(action, json_output)
+
+
+def _app_config(path: Path | None, defaults: dict | None = None) -> dict:
+    if path is None:
+        return dict(defaults or {})
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise typer.BadParameter(f"Cannot read JSON configuration: {error}") from error
+    if not isinstance(value, dict):
+        raise typer.BadParameter("Configuration JSON must be an object.")
+    return value
+
+
+def _app_id(value: str) -> str:
+    try:
+        return str(uuid.UUID(value))
+    except ValueError as error:
+        raise typer.BadParameter("Use the App or release UUID shown by `app search`.") from error
+
+
+def _app_target_robot(value: str, organization: str, settings, store) -> str:
+    """Resolve a robot only from the selected workspace's visible inventory."""
+    robots = list(_pages(f"/v1/organizations/{organization}/robots", settings, store))
+    matches = [item for item in robots if value in (item.get("id"), item.get("name"))]
+    if len(matches) != 1:
+        raise typer.BadParameter("Robot is not visible or is ambiguous in this workspace; use its workspace-scoped ID.")
+    return matches[0]["id"]
+
+
+@apps_app.command("search")
+def app_search(query: str | None = typer.Argument(None), org: str | None = typer.Option(None, "--org"), json_output: bool = typer.Option(False, "--json")):
+    """Search listed Apps visible to the selected workspace."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    path = "/v1/store/apps?" + urlencode({"organization_id": organization, **({"q": query} if query else {})})
+    items = list(_pages(path, settings, store))
+    if json_output:
+        console.print_json(data={"items": items})
+        return
+    table = Table(title="App Store")
+    for heading in ("App ID", "Name", "Key", "Publisher"):
+        table.add_column(heading)
+    for item in items:
+        table.add_row(item["id"], item["name"], item["app_key"], item["publisher_organization_id"])
+    console.print(table)
+
+
+@apps_app.command("show")
+def app_show(app_id: str):
+    """Show an App and every visible immutable release."""
+    settings, store = _settings(), auth.TokenStore()
+    identifier = _app_id(app_id)
+    app_record = _api_request("GET", f"/v1/apps/{identifier}", settings, store).json()
+    revisions = list(_pages(f"/v1/apps/{identifier}/revisions", settings, store))
+    console.print_json(data={"app": app_record, "revisions": revisions})
+
+
+@apps_app.command("import")
+def app_import(revision_id: str, org: str | None = typer.Option(None, "--org"), share_id: str | None = typer.Option(None, "--share-id"), idempotency_key: str | None = typer.Option(None, "--idempotency-key"), json_output: bool = typer.Option(False, "--json")):
+    """Import a listed release or a destination-bound direct share."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    body = {"revision_id": _app_id(revision_id)}
+    if share_id:
+        body["share_id"] = _app_id(share_id)
+    result = _api_request("POST", f"/v1/organizations/{organization}/app-imports", settings, store,
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json=body, _error_json=json_output).json()
+    console.print_json(data=result)
+
+
+@apps_app.command("imports")
+def app_imports(org: str | None = typer.Option(None, "--org")):
+    """List releases imported into a workspace."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    console.print_json(data={"items": list(_pages(f"/v1/organizations/{organization}/app-imports", settings, store))})
+
+
+@apps_app.command("install")
+def app_install(revision_id: str, robot: str = typer.Option(..., "--robot", help="Target robot name or ID."), org: str | None = typer.Option(None, "--org"), share_id: str | None = typer.Option(None, "--share-id"), config_file: Path | None = typer.Option(None, "--config", help="JSON configuration object."), idempotency_key: str | None = typer.Option(None, "--idempotency-key"), json_output: bool = typer.Option(False, "--json")):  # noqa: B008
+    """Install an immutable release on one explicitly selected robot."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    release_id = _app_id(revision_id)
+    revision = _api_request("GET", f"/v1/app-revisions/{release_id}", settings, store).json()
+    robot_id = _app_target_robot(robot, organization, settings, store)
+    body = {"revision_id": release_id, "configuration": _app_config(config_file, revision["manifest"]["configuration"]["defaults"])}
+    if share_id:
+        body["share_id"] = _app_id(share_id)
+    result = _api_request("POST", f"/v1/robots/{robot_id}/app-installations", settings, store,
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json=body, _error_json=json_output).json()
+    console.print_json(data=result)
+
+
+def _app_installation(installation_id: str, settings, store) -> dict:
+    return _api_request("GET", f"/v1/app-installations/{_app_id(installation_id)}", settings, store).json()
+
+
+@apps_app.command("installations")
+def app_installations(robot: str = typer.Option(..., "--robot"), org: str | None = typer.Option(None, "--org")):
+    """List installed or pending Apps on one robot."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    robot_id = _app_target_robot(robot, organization, settings, store)
+    items = list(_pages(f"/v1/robots/{robot_id}/app-installations", settings, store))
+    console.print_json(data={"items": items})
+
+
+@apps_app.command("configure")
+def app_configure(installation_id: str, config_file: Path = typer.Option(..., "--config"), idempotency_key: str | None = typer.Option(None, "--idempotency-key"), json_output: bool = typer.Option(False, "--json")):  # noqa: B008
+    """Apply a new typed configuration to an installed release."""
+    settings, store = _settings(), auth.TokenStore()
+    installation = _api_request("GET", f"/v1/app-installations/{_app_id(installation_id)}", settings, store, _error_json=json_output).json()
+    binding = installation.get("installed")
+    if not binding:
+        raise typer.BadParameter("This installation has no confirmed installed release.")
+    body = {"expected_configuration_revision_id": binding["configuration_revision_id"], "configuration": _app_config(config_file)}
+    result = _api_request("POST", f"/v1/app-installations/{installation['id']}/configure", settings, store,
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json=body, _error_json=json_output).json()
+    console.print_json(data=result)
+
+
+@apps_app.command("update")
+def app_update(installation_id: str, revision_id: str, config_file: Path | None = typer.Option(None, "--config"), share_id: str | None = typer.Option(None, "--share-id"), idempotency_key: str | None = typer.Option(None, "--idempotency-key"), json_output: bool = typer.Option(False, "--json")):  # noqa: B008
+    """Stage a different immutable release for an installation."""
+    settings, store = _settings(), auth.TokenStore()
+    installation = _api_request("GET", f"/v1/app-installations/{_app_id(installation_id)}", settings, store, _error_json=json_output).json()
+    binding = installation.get("installed")
+    if not binding:
+        raise typer.BadParameter("This installation has no confirmed installed release.")
+    release_id = _app_id(revision_id)
+    revision = _api_request("GET", f"/v1/app-revisions/{release_id}", settings, store).json()
+    body = {"expected_revision_id": binding["revision_id"], "expected_configuration_revision_id": binding["configuration_revision_id"],
+        "revision_id": release_id, "configuration": _app_config(config_file, revision["manifest"]["configuration"]["defaults"])}
+    if share_id:
+        body["share_id"] = _app_id(share_id)
+    result = _api_request("POST", f"/v1/app-installations/{installation['id']}/update", settings, store,
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json=body, _error_json=json_output).json()
+    console.print_json(data=result)
+
+
+@apps_app.command("rollback")
+def app_rollback(
+    installation_id: str,
+    revision_id: str = typer.Option(..., "--revision", help="Previously applied release ID."),
+    configuration_revision_id: str = typer.Option(..., "--configuration-revision", help="Previously applied configuration revision ID."),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Restore a previously applied release/configuration binding without starting a run."""
+    settings, store = _settings(), auth.TokenStore()
+    installation = _api_request(
+        "GET", f"/v1/app-installations/{_app_id(installation_id)}", settings, store, _error_json=json_output
+    ).json()
+    current = installation.get("installed")
+    if not current:
+        raise typer.BadParameter("This installation has no confirmed installed release.")
+    body = {
+        "expected_revision_id": current["revision_id"],
+        "expected_configuration_revision_id": current["configuration_revision_id"],
+        "revision_id": _app_id(revision_id),
+        "configuration_revision_id": _app_id(configuration_revision_id),
+    }
+    result = _api_request(
+        "POST",
+        f"/v1/app-installations/{installation['id']}/rollback",
+        settings,
+        store,
+        headers={"Idempotency-Key": _mission_key(idempotency_key)},
+        json=body,
+        _error_json=json_output,
+    ).json()
+    console.print_json(data=result)
+
+
+@apps_app.command("start")
+def app_start(target: str, robot: str | None = typer.Option(None, "--robot", help="Resolve an App ID on this robot; required when targeting an App."), org: str | None = typer.Option(None, "--org"), idempotency_key: str | None = typer.Option(None, "--idempotency-key"), json_output: bool = typer.Option(False, "--json")):
+    """Start by installation ID, or resolve an App ID on an explicitly selected robot."""
+    settings, store = _settings(), auth.TokenStore()
+    if robot:
+        organization = _resolve_org(settings, org)
+        robot_id = _app_target_robot(robot, organization, settings, store)
+        candidates = list(_pages(f"/v1/robots/{robot_id}/app-installations", settings, store))
+        try:
+            requested = str(uuid.UUID(target))
+        except ValueError as error:
+            raise typer.BadParameter("Target must be an App ID or installation ID.") from error
+        matches = [item for item in candidates if requested in (item.get("id"), item.get("app_id"))]
+        if len(matches) != 1:
+            raise typer.BadParameter("No unique installation for this App and robot; use an installation ID.")
+        installation = matches[0]
+    else:
+        installation = _app_installation(target, settings, store)
+    binding = installation.get("installed")
+    if not binding:
+        raise typer.BadParameter("This installation has no confirmed installed release.")
+    body = {"expected_revision_id": binding["revision_id"], "expected_configuration_revision_id": binding["configuration_revision_id"]}
+    result = _api_request("POST", f"/v1/app-installations/{installation['id']}/start", settings, store,
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json=body, _error_json=json_output).json()
+    console.print_json(data=result)
+
+
+@apps_app.command("stop")
+def app_stop(installation_id: str, run_id: str = typer.Option(..., "--run", help="Exact run ID to stop."), idempotency_key: str | None = typer.Option(None, "--idempotency-key"), json_output: bool = typer.Option(False, "--json")):
+    """Stop one exact run; an older stop can never select a newer run."""
+    settings, store = _settings(), auth.TokenStore()
+    installation = _app_installation(installation_id, settings, store)
+    result = _api_request("POST", f"/v1/app-installations/{installation['id']}/stop", settings, store,
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json={"expected_run_id": _app_id(run_id)}, _error_json=json_output).json()
+    console.print_json(data=result)
+
+
+@apps_app.command("operation")
+def app_operation(operation_id: str, wait: bool = typer.Option(False, "--wait"), timeout: int = typer.Option(600, "--timeout", min=1, max=3600)):
+    """Inspect an App operation, optionally following it to a terminal state."""
+    settings, store = _settings(), auth.TokenStore()
+    path = f"/v1/app-operations/{_app_id(operation_id)}"
+    deadline = time.monotonic() + timeout
+    while True:
+        body = _api_request("GET", path, settings, store).json()
+        if not wait or body.get("state") in ("succeeded", "failed", "cancelled"):
+            console.print_json(data=body)
+            if body.get("state") in ("failed", "cancelled"):
+                raise typer.Exit(1)
+            return
+        if time.monotonic() >= deadline:
+            typer.echo(f"Timed out waiting for App operation {operation_id}.", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"App operation {operation_id}: {body.get('state', 'unknown')} / {body.get('phase', 'unknown')}", err=True)
+        time.sleep(1)
+
+
+@apps_app.command("run")
+def app_run(run_id: str):
+    """Show one App run's durable state and immutable snapshot."""
+    body = _api_request("GET", f"/v1/app-runs/{_app_id(run_id)}", _settings(), auth.TokenStore()).json()
+    console.print_json(data=body)
+
+
+@apps_app.command("logs")
+def app_logs(run_id: str, follow: bool = typer.Option(False, "--follow", "-f")):
+    """Read durable App stdout and stderr, optionally following the run."""
+    settings, store = _settings(), auth.TokenStore()
+    identifier = _app_id(run_id)
+    offsets = {"stdout": 0, "stderr": 0}
+    decoders = {name: codecs.getincrementaldecoder("utf-8")("replace") for name in offsets}
+    while True:
+        run = _api_request("GET", f"/v1/app-runs/{identifier}", settings, store).json()
+        sealed = {}
+        for stream in ("stdout", "stderr"):
+            while True:
+                offset = offsets[stream]
+                output = _api_request("GET", f"/v1/app-runs/{identifier}/output", settings, store, params={"stream": stream, "offset": offset}).json()
+                chunk = base64.b64decode(output["data_base64"], validate=True)
+                if output["offset"] != offset or output["next_offset"] != offset + len(chunk):
+                    raise typer.Exit(1)
+                offsets[stream] = output["next_offset"]
+                sealed[stream] = output["sealed"]
+                text = decoders[stream].decode(chunk, final=output["sealed"] and not chunk)
+                if text:
+                    typer.echo(text, nl=False, err=stream == "stderr")
+                if not chunk or output["sealed"]:
+                    if output.get("truncated"):
+                        typer.echo(f"[{stream} output truncated by the runtime limit]", err=True)
+                    break
+        terminal = run["state"] in ("succeeded", "failed", "cancelled", "interrupted")
+        if not follow or terminal:
+            if follow and terminal and not all(sealed.values()):
+                typer.echo("[App run ended before all output streams reported a seal]", err=True)
+            return
+        time.sleep(1)
+
+
+@apps_app.command("artifacts")
+def app_artifacts(run_id: str):
+    """List durable artifacts produced by an App run."""
+    body = _api_request("GET", f"/v1/app-runs/{_app_id(run_id)}/artifacts", _settings(), auth.TokenStore()).json()
+    console.print_json(data=body)
+
+
+@apps_app.command("artifact")
+def app_artifact(run_id: str, artifact_id: str, output: Path = typer.Option(..., "--output", "-o")):  # noqa: B008
+    """Download one App artifact and verify its declared size and SHA-256."""
+    settings, store = _settings(), auth.TokenStore()
+    run, artifact = _app_id(run_id), _app_id(artifact_id)
+    item = _api_request("GET", f"/v1/app-runs/{run}/artifacts/{artifact}", settings, store).json()
+    try:
+        if output.exists():
+            raise FileExistsError(f"{output} already exists")
+        if type(item.get("size")) is not int or item["size"] < 0:
+            raise ValueError("API returned an invalid artifact size")
+        response = _api_request("GET", f"/v1/app-runs/{run}/artifacts/{artifact}/content", settings, store,
+            _timeout=httpx.Timeout(None, connect=15.0, read=300.0))
+        data = response.content
+        if len(data) != item["size"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+            raise ValueError("Downloaded artifact failed size or SHA-256 verification")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="wb", dir=output.parent, prefix=".ringfour-app-artifact-", delete=False) as target:
+            temporary = Path(target.name)
+            target.write(data)
+            target.flush()
+            os.fsync(target.fileno())
+        try:
+            os.link(temporary, output)
+        finally:
+            temporary.unlink(missing_ok=True)
+    except (OSError, ValueError, httpx.HTTPError) as error:
+        console.print(f"[red]Cannot download App artifact: {error}[/red]")
+        raise typer.Exit(1) from error
+    console.print(f"Saved verified artifact {output}")
+
+
+@apps_app.command("interaction")
+def app_interaction(run_id: str, request_id: str):
+    """Show an App-run human interaction and its device-confirmed state."""
+    run, request = _app_id(run_id), _app_id(request_id)
+    body = _api_request("GET", f"/v1/app-runs/{run}/interactions/{request}", _settings(), auth.TokenStore()).json()
+    console.print_json(data=body)
+
+
+@apps_app.command("respond")
+def app_respond(run_id: str, request_id: str, choice: str, idempotency_key: str | None = typer.Option(None, "--idempotency-key")):
+    """Submit an App interaction choice; device application remains authoritative."""
+    run, request = _app_id(run_id), _app_id(request_id)
+    body = _api_request("POST", f"/v1/app-runs/{run}/interactions/{request}/responses", _settings(), auth.TokenStore(),
+        headers={"Idempotency-Key": _mission_key(idempotency_key)}, json={"chosen_value": choice}).json()
+    console.print_json(data=body)
+    console.print("[yellow]Response submitted; the device must confirm it before it is applied.[/yellow]")
+
+
+@apps_app.command("logbook")
+def app_logbook(org: str | None = typer.Option(None, "--org"), app_id: str | None = typer.Option(None, "--app"), installation_id: str | None = typer.Option(None, "--installation"), robot: str | None = typer.Option(None, "--robot"), run_id: str | None = typer.Option(None, "--run")):
+    """List App and robot events with optional App, installation, robot or run filters."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    filters = {"app_id": app_id, "installation_id": installation_id, "robot_id": robot, "run_id": run_id}
+    params = {key: _app_id(value) for key, value in filters.items() if value}
+    items = list(_pages(f"/v1/organizations/{organization}/app-logbook?" + urlencode(params), settings, store))
+    console.print_json(data={"items": items})
 
 
 @apps_app.command("build")
@@ -1249,6 +1587,23 @@ def robot_status(robot_id: str) -> None:
     console.print(f"  Last seen:        {body['last_seen_at'] or 'never'}")
     console.print(f"  Daemon version:   {body['daemon_version'] or '-'}")
     console.print(f"  Protocol version: {body['protocol_version'] or '-'}")
+
+
+@robot_app.command("capabilities")
+def robot_capabilities(
+    robot: str,
+    org: str | None = typer.Option(None, "--org"),
+    revision_id: str | None = typer.Option(None, "--revision", help="Also evaluate compatibility with this release."),
+) -> None:
+    """Show the robot's observed App protocol, target and capabilities."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    robot_id = _app_target_robot(robot, organization, settings, store)
+    body = _api_request("GET", f"/v1/robots/{robot_id}/app-status", settings, store).json()
+    if revision_id:
+        body["compatibility"] = _api_request("GET", f"/v1/robots/{robot_id}/app-compatibility", settings, store,
+            params={"revision_id": _app_id(revision_id)}).json()
+    console.print_json(data=body)
 
 
 def _fixture_operation(robot_id: str, kind: str, payload: dict) -> None:
