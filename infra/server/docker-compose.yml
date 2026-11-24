@@ -27,11 +27,47 @@ services:
     ports:
       - "127.0.0.1:${ADMINER_PORT:-8083}:8080"
 
+  app-registry:
+    image: registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+    environment:
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+      REGISTRY_HTTP_RELATIVEURLS: "true"
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+      REGISTRY_STORAGE_DELETE_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${LOCAL_REGISTRY_PORT:-5000}:5000"
+    volumes:
+      - app-registry-data:/var/lib/registry
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5000/v2/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  registry-ui:
+    image: joxit/docker-registry-ui:2.6.0@sha256:bb5956a6b378706f1c3a92c947d0a0c606e280460cd9e37c0198caf46399c839
+    environment:
+      SINGLE_REGISTRY: "true"
+      REGISTRY_TITLE: Ringfour local App images
+      NGINX_PROXY_PASS_URL: http://app-registry:5000
+      NGINX_RESOLVER: 127.0.0.11
+      PULL_URL: "127.0.0.1:${LOCAL_REGISTRY_PORT:-5000}"
+      SHOW_CONTENT_DIGEST: "true"
+      DELETE_IMAGES: "false"
+    ports:
+      - "127.0.0.1:${REGISTRY_UI_PORT:-5080}:80"
+    depends_on:
+      app-registry:
+        condition: service_healthy
+    restart: unless-stopped
+
   api:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
     environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=ringfour;Username=ringfour;Password=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD}
       Auth0__Domain: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN}
       Auth0__Audience: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
@@ -50,6 +86,8 @@ services:
       Storage__S3__Region: ${STORAGE_S3_REGION:-}
       Storage__S3__Bucket: ${STORAGE_S3_BUCKET:-}
       Apps__InstallationsEnabled: ${APPS_INSTALLATIONS_ENABLED:-false}
+      Apps__Registries__0__AllowHttp: ${APPS_REGISTRY_ALLOW_HTTP:-false}
+      Apps__Registries__0__ApiEndpoint: ${APPS_REGISTRY_API_ENDPOINT:-}
       Apps__Registries__0__Host: ${APPS_REGISTRY_HOST:-}
       Apps__Registries__0__RepositoryPrefix: ${APPS_REGISTRY_REPOSITORY_PREFIX:-}
       Apps__Registries__0__PublisherOrganizationId: ${APPS_REGISTRY_PUBLISHER_ORGANIZATION_ID:-}
@@ -82,3 +120,4 @@ services:
 volumes:
   pgdata:
   api-storage:
+  app-registry-data:

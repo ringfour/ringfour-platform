@@ -138,6 +138,17 @@ No live stack operation was performed; the test engines/stores were isolated.
 Evidence: [AP-07](../evidence/AP-07.md). Human checks: [AP-07](../human-testing/AP-07.md).
 Install-family operations produce no run; hosted start/stop remains AP-09.
 
+## Local registry/UI acceptance follow-up (implementation/isolated acceptance complete)
+
+- [x] Record the user's selection of official Distribution plus Joxit UI in local Compose, replacing the tentative Docker Hub path.
+- [x] Pin images, bind registry/UI to loopback, persist storage and use Joxit's same-origin proxy with Docker DNS resolution.
+- [x] Add development-only internal API endpoint mapping without changing immutable image authority or production HTTPS/Auth0 policy.
+- [x] Pass 157 API tests and real push/pull, Chromium catalog/tag/CORS, persistence and containerized API verification.
+- [ ] Operator starts/reloads `app-registry`, `registry-ui` and `api`; continue real-user acceptance.
+
+[Evidence](../evidence/local-registry.md), [operator guide](../human-testing/local-registry.md).
+No live stack operation was performed.
+
 ## Subsequent work
 
 AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local

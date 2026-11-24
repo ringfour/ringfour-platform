@@ -14,7 +14,7 @@ public sealed class AppRegistry(HttpClient client, IConfiguration configuration,
 {
     private const string OciManifest = "application/vnd.oci.image.manifest.v1+json";
     private const string DockerManifest = "application/vnd.docker.distribution.manifest.v2+json";
-    private sealed record Policy(string Host, string Prefix, string Scheme, bool Anonymous, string? Endpoint, string? Service, string? Username, string? Password);
+    private sealed record Policy(string Host, string Prefix, string Scheme, string ApiEndpoint, bool Anonymous, string? Endpoint, string? Service, string? Username, string? Password);
 
     private static ApiException Unavailable(bool retryable = true) => new(503, "revision_unavailable", "The configured registry could not verify this image.") { Retryable = retryable };
     private static bool DigestValid(string? value) => value is not null && Regex.IsMatch(value, "^sha256:[0-9a-f]{64}$", RegexOptions.CultureInvariant);
@@ -34,7 +34,18 @@ public sealed class AppRegistry(HttpClient client, IConfiguration configuration,
                 Guid.TryParse(x["PublisherOrganizationId"], out var owner) && owner == publisher));
         if (entry is null) throw Unavailable(false);
         var scheme = entry.GetValue("AllowHttp", false) && environment.IsDevelopment() ? "http" : "https";
-        return new Policy(host, entry["RepositoryPrefix"]!, scheme, entry.GetValue("AnonymousPull", false),
+        var apiEndpoint = $"{scheme}://{host}";
+        if (!string.IsNullOrEmpty(entry["ApiEndpoint"]))
+        {
+            // Local Docker clients use loopback; the containerized API uses Compose DNS.
+            if (!environment.IsDevelopment() || !entry.GetValue("AllowHttp", false) ||
+                !Uri.TryCreate("http://" + host, UriKind.Absolute, out var authority) || !authority.IsLoopback ||
+                !Uri.TryCreate(entry["ApiEndpoint"], UriKind.Absolute, out var endpoint) || endpoint.Scheme != "http" ||
+                endpoint.UserInfo.Length > 0 || endpoint.Query.Length > 0 || endpoint.Fragment.Length > 0 || endpoint.AbsolutePath != "/")
+                throw Unavailable(false);
+            apiEndpoint = endpoint.GetLeftPart(UriPartial.Authority);
+        }
+        return new Policy(host, entry["RepositoryPrefix"]!, scheme, apiEndpoint, entry.GetValue("AnonymousPull", false),
             entry["TokenEndpoint"], entry["Service"], entry["Username"], entry["Password"]);
     }
 
@@ -46,7 +57,7 @@ public sealed class AppRegistry(HttpClient client, IConfiguration configuration,
         try
         {
             var policy = Resolve(target["image"]!.GetValue<string>(), publisher, out var repository, out var digest);
-            var path = $"{policy.Scheme}://{policy.Host}/v2/{repository}/";
+            var path = $"{policy.ApiEndpoint}/v2/{repository}/";
             RegistryAuthorization? authorization = null;
             using var first = await Send(path + "manifests/" + digest, null, ct);
             HttpResponseMessage? authenticated = null;

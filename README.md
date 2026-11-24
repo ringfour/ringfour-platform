@@ -70,3 +70,5 @@ The architecture document defines cross-cutting behavior; milestone contracts ad
 ## Business context
 
 Read the appended [business overview and source reconciliation](../Product%20Definition.md#business-overview--current-direction-8-november-2026) for customer responsibilities, interactions and the distinction between v0.1 and the broader Studio vision. The original product definition contains superseded decisions; its reconciliation table makes those differences explicit.
+
+The local server Compose includes a [Docker registry and Joxit browser](docs/human-testing/local-registry.md) for App publication/acceptance. The browser proxies registry requests on its own origin; image storage persists in a named volume.

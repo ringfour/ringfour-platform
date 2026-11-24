@@ -12,21 +12,20 @@ defaults. The opt-in settings below are needed for deployed App acceptance.
 
 ## 1. Configure registry policy, then deploy both consumers
 
-Choose an actual HTTPS OCI registry/repository reachable by the API, your build
-machine and the robot engine. For a public repository, set these in Platform's
-local `.env`, using your own authority/prefix:
+The user selected the local official registry plus Joxit UI. The existing ignored
+Platform `.env` is prepared for it. Start with the
+[local registry guide](local-registry.md):
 
-```dotenv
-APPS_REGISTRY_HOST=YOUR_REGISTRY_AUTHORITY
-APPS_REGISTRY_REPOSITORY_PREFIX=YOUR_REPOSITORY_PREFIX
-APPS_REGISTRY_ANONYMOUS_PULL=true
-APPS_INSTALLATIONS_ENABLED=true
+```sh
+cd /home/cdr/ringfour/ringfour-platform
+./up.sh -d app-registry registry-ui api
 ```
 
-The authority has no `https://` prefix. The App repository must fall under the
-configured prefix. A private repository instead needs the publisher-bound token
-policy in [AP-05 §1](AP-05.md#1-configure-the-registry-and-reload-the-api);
-public-pull success does not accept a private token provider's policy.
+The registry is `127.0.0.1:5000`; browse it at http://localhost:5080.
+Publish under `127.0.0.1:5000/ringfour/...`. Joxit uses its same-origin proxy,
+and the API uses the development-only internal endpoint mapping. The local
+registry has anonymous local pulls; this does not accept a private hosted
+provider's token policy. Hosted policies still require HTTPS.
 
 Run the Daemon overlay/socket-GID commands and API launch in
 [AP-07 §1](AP-07.md#1-deploy-both-consumers-operator-only), preserving the existing
@@ -61,10 +60,9 @@ Developer/Owner publishing workspace, and initialize a new project destination:
 ```sh
 uv run --project apps/cli ringfour-cli org select PUBLISHER_ORGANIZATION_UUID
 uv run --project apps/cli ringfour-cli app init /tmp/robot-check-acceptance \
-  --app-key robot-check-acceptance --repository YOUR_REGISTRY_AUTHORITY/YOUR_REPOSITORY
+  --app-key robot-check-acceptance --repository 127.0.0.1:5000/ringfour/robot-check
 uv run --project apps/cli ringfour-cli app validate /tmp/robot-check-acceptance --json
 uv run --project apps/cli ringfour-cli app build /tmp/robot-check-acceptance --json
-docker login YOUR_REGISTRY_AUTHORITY
 uv run --project apps/cli ringfour-cli app publish /tmp/robot-check-acceptance --json
 ```
 
