@@ -58,3 +58,29 @@ docker start --attach ringfour-imu-demo-9462c100
 Expect twenty timestamped `robot_check.imu` records with advancing Agent stamps,
 then `robot_check.complete` and exit 0. Hosted start/stop/runtime evidence remain
 AP-09/AP-10 work.
+
+## Successful live IMU acceptance
+
+After the operator started the simulator, the user reran the same published
+image/container and supplied the complete 20-sample output. Read-only container
+inspection independently confirms exit 0 and the latest interval
+`2026-11-24T08:22:51.758452707Z` to `2026-11-24T08:22:54.779397723Z`.
+The retained final 21 log records were parsed and checked: samples numbered
+1–20, finite acceleration values, strictly advancing Agent timestamps from
+`208.081000001` to `210.001000001`, frame `imu_link`, and final
+`robot_check.complete` with `samples: 20`. Successful logs are retained at
+`/tmp/ringfour-imu-demo-success.log`.
+
+This closes **AP-06 live standalone Robot Check acceptance for the selected
+local-registry preview**. Earlier timeout evidence above is historical and its
+missing-publisher prerequisite is resolved. Publication through real Auth0/local
+registry plus all four user-reported isolated harness passes are recorded above.
+This is a standalone run, not a hosted App lifecycle claim.
+
+Remaining deployment checks were inspected separately: live API
+`Apps__InstallationsEnabled=false`, Daemon `RINGFOUR_APPS_ENABLED` absent, and
+Daemon readiness still checks SQLite/Runner. Therefore real virt2 install/
+configure/update/rollback and AP-08 socket/GID deployment acceptance remain
+pending. Separate real Auth0-principal isolation is also pending; owning two
+workspaces with one identity does not establish it. Hosted start/stop/runtime
+remain AP-09/AP-10 and multi-robot topology remains AP-08V.

@@ -94,7 +94,7 @@ The process harness uses an isolated restricted Bearer gateway with real
 Distribution, not a hosted provider or real Auth0 credentials. The user explicitly
 authorized AP-06 component work before testing these external gates.
 
-## AP-06 — standalone Robot Check and publisher CLI (component/isolated acceptance complete)
+## AP-06 — standalone Robot Check and publisher CLI (local preview acceptance complete)
 
 - [x] Record explicit user authorization to continue before deployed AP-05 acceptance; keep hosted registry/Auth0 checks pending.
 - [x] Create the independent `../robot-check` repository, plain entrypoint, typed `sample_count` configuration, pinned Docker/wheel dependencies and operator/author guide.
@@ -103,7 +103,7 @@ authorized AP-06 component work before testing these external gates.
 - [x] Implement `app init|validate|build|publish`, clean explicit build inputs, source/image identity checks, frozen releases, deterministic API retries and prepared-manifest support; preserve legacy CLI workflows.
 - [x] Pass 100 CLI tests, 5 example tests, 177 contracts and 5 OpenAPI checks, focused lint, template reproduction and standalone CLI wheel installation.
 - [x] Run actual CLI/Buildx/Docker/Distribution/Kestrel/PostgreSQL publication acceptance: API failure after push, fresh image-store pull, unchanged v1 after distinct v2 and registry-down replay. Only disposable fixture engines/containers are operated.
-- [ ] Verify hosted publication through real Auth0/registry policy and positive live simulator IMU output. Deployed Agent was reachable but sampling timed out with no running Base101 simulator; no live success is claimed.
+- [x] Verify publication through real Auth0 and the user-selected local registry, followed by 20 live IMU samples with strictly advancing Agent stamps, completion and inspected exit 0 on 24 November. See [user evidence](../evidence/apps-user-acceptance.md). Separate real-principal/private-provider checks remain AP-05; managed runs remain AP-09.
 
 Evidence: [AP-06](../evidence/AP-06.md). Human checks:
 [AP-06](../human-testing/AP-06.md). Packaging contract:
@@ -144,7 +144,7 @@ Install-family operations produce no run; hosted start/stop remains AP-09.
 - [x] Pin images, bind registry/UI to loopback, persist storage and use Joxit's same-origin proxy with Docker DNS resolution.
 - [x] Add development-only internal API endpoint mapping without changing immutable image authority or production HTTPS/Auth0 policy.
 - [x] Pass 157 API tests and real push/pull, Chromium catalog/tag/CORS, persistence and containerized API verification.
-- [ ] Operator starts/reloads `app-registry`, `registry-ui` and `api`; continue real-user acceptance.
+- [x] Operator starts/reloads local registry/UI/API and publishes a real Auth0 release; live IMU follows successfully. See [user evidence](../evidence/apps-user-acceptance.md).
 
 [Evidence](../evidence/local-registry.md), [operator guide](../human-testing/local-registry.md).
 No live stack operation was performed.
@@ -154,7 +154,7 @@ No live stack operation was performed.
 AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local
 wheel distribution; public Python publication is deferred. AP-05 Store/share/import and registry grants pass isolated acceptance; operator
 deployment is confirmed, while hosted registry/Auth0 checks remain pending. AP-06 authoring and publication CLI workflows pass component/isolated acceptance;
-hosted publication and live sensor checks remain pending. Owner-scoped engine management (AP-08) and durable installation (AP-07) now pass
+AP-06 publication and standalone live IMU acceptance are now complete for the selected local registry. Owner-scoped engine management (AP-08) and durable installation (AP-07) now pass
 component/isolated acceptance; their operator deployment remains pending. Mutually exclusive
 hosted runs remain AP-09. Runtime evidence (AP-10), Studio
 (AP-11), CLI (AP-12) and virtual topology (AP-08V) converge at AP-13 acceptance.
