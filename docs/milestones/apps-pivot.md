@@ -158,6 +158,19 @@ Install-family operations produce no run; hosted start/stop remains AP-09.
 [Evidence](../evidence/local-registry.md), [operator guide](../human-testing/local-registry.md).
 No live stack operation was performed.
 
+## AP-09 — hosted App runs (automated acceptance complete)
+
+- [x] Implement Operator-authorized start/stop, immutable snapshots and permanent idempotency.
+- [x] Serialize shared App/legacy/development exclusion; retain the slot during uncertain delivery.
+- [x] Allow exact-run stop while start is pending; old stop never selects a newer run.
+- [x] Negotiate run support separately from installation-only Daemons.
+- [x] Recheck fresh Agent/engine and installed generation before create; preserve recovery/no relaunch.
+- [x] Persist ordered run/operation observations and expose scoped run reads/lists.
+- [x] Pass actual API/Postgres/Agent/Daemon/Engine start/replacement/stop acceptance.
+- [ ] Combined human acceptance after AP-10 (additional confidence; not a development blocker).
+
+Evidence: [AP-09](../evidence/AP-09.md). Human guide: [AP-09](../human-testing/AP-09.md).
+
 ## Subsequent work
 
 AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local

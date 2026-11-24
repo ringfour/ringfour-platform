@@ -16,11 +16,11 @@ public static class AppProtocol
         var options = new BuildOptions { SchemaRegistry = new SchemaRegistry() };
         foreach (var file in new[] { "apps/v1/manifest.schema.json", "errors/v2/app-error.schema.json", "apps/v1/api.schema.json", "apps/v1/requests.schema.json", "device/apps/v1/protocol.schema.json" })
             JsonSchema.FromText(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "contracts/schemas", file)), options);
-        var schemas = new[] { "negotiation_request", "inventory_report", "robot_app_status", "compatibility", "observations", "apply_command" }.ToDictionary(
+        var schemas = new[] { "negotiation_request", "inventory_report", "robot_app_status", "compatibility", "observations", "apply_command", "start_command", "stop_command" }.ToDictionary(
             definition => definition,
             definition => JsonSchema.FromText(JsonSerializer.Serialize(new Dictionary<string, string> {
                 ["$ref"] = "https://contracts.ringfour.dev/device/apps/v1/protocol.schema.json#/$defs/" + definition }), options));
-        foreach (var definition in new[] { "publish", "share", "import", "registry_grant", "install", "configure", "update", "rollback" })
+        foreach (var definition in new[] { "publish", "share", "import", "registry_grant", "install", "configure", "update", "rollback", "start", "stop" })
             schemas["request_" + definition] = JsonSchema.FromText("{\"$ref\":\"https://contracts.ringfour.dev/apps/v1/requests.schema.json#/$defs/" + definition + "\"}", options);
         schemas["manifest"] = JsonSchema.FromText("{\"$ref\":\"https://contracts.ringfour.dev/apps/v1/manifest.schema.json\"}", options);
         return schemas;

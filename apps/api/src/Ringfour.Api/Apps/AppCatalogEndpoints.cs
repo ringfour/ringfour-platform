@@ -39,7 +39,7 @@ public static class AppCatalogEndpoints
     }
 
     internal static async Task<IResult> Mutate(HttpContext context, RingfourDbContext db, User actor,
-        Guid organization, string route, string target, JsonObject body, int status, Func<Task<JsonObject>> action, CancellationToken ct)
+        Guid organization, string route, string target, JsonObject body, int status, Func<Task<JsonObject>> action, CancellationToken ct, OrgRole minimumRole = OrgRole.Developer)
     {
         var key = context.Request.Headers["Idempotency-Key"].ToString();
         if (context.Request.Headers["Idempotency-Key"].Count != 1 || key.Length is < 1 or > 200 || key.Any(char.IsControl))
@@ -50,7 +50,7 @@ public static class AppCatalogEndpoints
         await db.Organizations.FromSqlInterpolated($"SELECT * FROM organizations WHERE id = {organization} FOR NO KEY UPDATE").SingleAsync(ct);
         var membership = await db.Memberships.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == organization && x.UserId == actor.Id, ct);
         if (membership is null) throw ApiException.NotFound("Workspace is not accessible.");
-        if (membership.Role < OrgRole.Developer) throw ApiException.Forbidden("This action requires Developer authority.");
+        if (membership.Role < minimumRole) throw ApiException.Forbidden($"This action requires {minimumRole} authority.");
         var previous = await db.AppIdempotencyRecords.AsNoTracking().SingleOrDefaultAsync(x =>
             x.PrincipalUserId == actor.Id && x.Route == route && x.Target == target && x.Key == key, ct);
         if (previous is not null)

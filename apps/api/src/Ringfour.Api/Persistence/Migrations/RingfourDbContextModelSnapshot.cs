@@ -383,7 +383,7 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.HasIndex("InstallationId")
                         .IsUnique()
-                        .HasFilter("state IN ('queued','accepted','running')");
+                        .HasFilter("state IN ('queued','accepted','running') AND run_id IS NULL");
 
                     b.HasIndex("RequestedByUserId");
 
@@ -1904,6 +1904,10 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Property<long>("ReportSequence")
                         .HasColumnType("bigint")
                         .HasColumnName("report_sequence");
+
+                    b.Property<bool>("RunsSupported")
+                        .HasColumnType("boolean")
+                        .HasColumnName("runs_supported");
 
                     b.Property<Guid>("SessionId")
                         .HasColumnType("uuid")

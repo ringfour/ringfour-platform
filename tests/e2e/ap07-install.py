@@ -28,7 +28,7 @@ def load(name, path):
     return module
 
 
-def main():
+def main(run_acceptance=None):
     support = load("ap03_support", "ap03-inventory.py")
     catalog = load("ap05_support", "ap05-catalog.py")
     publisher = load("ap06_support", "ap06-publish.py")
@@ -590,6 +590,8 @@ asyncio.run(main())
                     ),
                     flush=True,
                 )
+                if run_acceptance is not None:
+                    run_acceptance(locals())
         except BaseException:
             for log in logs:
                 log.flush()

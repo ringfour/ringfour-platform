@@ -36,7 +36,7 @@ public static class AppInstallationDevice
             await AppInventoryEndpoints.Authenticate(c, db, ct);
             await Session(c, db, manager, robot.Id, ct);
             var operation = await db.AppOperations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == operationId && x.RobotId == robot.Id && AppInstallationEndpoints.Pending.Contains(x.State), ct);
-            if (operation?.Command is null || JsonNode.Parse(operation.Command)!["release"]!["revision_id"]!.GetValue<string>() != revisionId.ToString())
+            if (operation?.Command is null || (JsonNode.Parse(operation.Command)!["release"] ?? JsonNode.Parse(operation.Command)!["snapshot"])!["revision_id"]!.GetValue<string>() != revisionId.ToString())
                 throw ApiException.NotFound("No authorized preparation operation.");
             if (operation.DeadlineAt <= DateTimeOffset.UtcNow) throw ApiException.Conflict("deadline_exceeded", "Operation expired.");
             var revision = await db.AppRevisions.AsNoTracking().SingleAsync(x => x.Id == revisionId, ct);
@@ -87,10 +87,12 @@ public static class AppInstallationDevice
             var last = await db.AppDeviceReports.Where(x => x.RobotId == robot.Id && x.Route == "observations").Select(x => (long?)x.Sequence).MaxAsync(ct) ?? 0;
             if (sequence != last + 1) throw ApiException.Conflict("stale_observation", "Observation sequence must advance by exactly one.");
             var ops = body["operations"]!.AsArray(); var installations = body["installations"]!.AsArray();
-            if (body["runs"]!.AsArray().Count != 0 || ops.Count != installations.Count ||
+            if ((body["runs"]!.AsArray().Count == 0 && ops.Count != installations.Count) ||
                 ops.Select(x => x!["operation_id"]!.ToString()).Distinct().Count() != ops.Count || installations.Select(x => x!["installation_id"]!.ToString()).Distinct().Count() != installations.Count) throw Invalid();
             var now = DateTimeOffset.UtcNow;
-            foreach (var item in ops)
+            if (body["runs"]!.AsArray().Count > 0 && !session.RunsSupported) throw ApiException.Conflict("daemon_upgrade_required", "Negotiate run support first.");
+            await AppRunDevice.Observe(db, robot.Id, body, now, ct);
+            foreach (var item in ops.Where(x => x!["kind"]!.GetValue<string>() is not ("start" or "stop")))
             {
                 var operationId = Guid.Parse(item!["operation_id"]!.GetValue<string>());
                 var o = await db.AppOperations.SingleOrDefaultAsync(x => x.Id == operationId && x.RobotId == robot.Id, ct) ?? throw Invalid();
@@ -180,14 +182,30 @@ public sealed class AppInstallationWorker(IServiceScopeFactory scopes, DeviceCon
                 o.State = "failed"; o.Phase = "failed"; o.CompletedAt = DateTimeOffset.UtcNow;
                 o.Failure = new JsonObject { ["code"] = "deadline_exceeded", ["message"] = "Operation expired before dispatch.", ["details"] = new JsonObject { ["retryable"] = true } }.ToJsonString();
                 var installation = await db.AppInstallations.SingleAsync(x => x.Id == o.InstallationId, ct);
-                installation.Candidate = null;
+                if (o.RunId is null) installation.Candidate = null;
+                else if (o.Kind == "start")
+                {
+                    var run = await db.AppRuns.SingleAsync(x => x.Id == o.RunId, ct);
+                    run.State = "failed"; run.Failure = o.Failure; run.CompletedAt = o.CompletedAt;
+                }
                 // No device observation is invented for an undispatched failure.
                 await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return;
+            }
+            if (o.Kind == "stop" && o.RunId is not null)
+            {
+                var run = await db.AppRuns.SingleAsync(x => x.Id == o.RunId, ct);
+                if (!AppRunEndpoints.Active.Contains(run.State))
+                {
+                    o.State = "succeeded"; o.Phase = "stopped"; o.CompletedAt = DateTimeOffset.UtcNow;
+                    o.ObservedAt = run.ObservedAt; o.ReceivedAt = run.ReceivedAt;
+                    await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return;
+                }
             }
             var session = manager.Get(robot);
             if (session is null || session.Socket.State != System.Net.WebSockets.WebSocketState.Open ||
                 !await db.RobotCredentials.AnyAsync(x => x.Id == session.CredentialId && x.RevokedAt == null && (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct) ||
                 !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.Supported && x.InstallationsSupported,ct)) return;
+            if (o.RunId is not null && !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.RunsSupported, ct)) return;
             var ns = await db.RobotAppInventories.Where(x => x.RobotId == robot).Select(x => x.DeploymentNamespace).SingleAsync(ct);
             if (JsonNode.Parse(o.Command)!["deployment_namespace"]!.GetValue<string>() != ns.ToString()) return;
             o.DispatchedAt ??= DateTimeOffset.UtcNow; await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);

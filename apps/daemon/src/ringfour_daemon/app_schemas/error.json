@@ -49,7 +49,8 @@
             "session_replaced",
             "stale_observation",
             "conflicting_report",
-            "invalid_observation"
+            "invalid_observation",
+            "execution_failed"
           ]
         },
         "message": {
@@ -339,7 +340,8 @@
             "session_replaced",
             "stale_observation",
             "conflicting_report",
-            "invalid_observation"
+            "invalid_observation",
+            "execution_failed"
           ]
         },
         "message": {

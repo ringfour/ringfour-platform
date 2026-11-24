@@ -121,6 +121,7 @@ async def run_session(settings, identity, session_id, headers):
                  "supported_app_protocol_versions": [1]}
         if settings.apps_enabled:
             offer["supports_app_installations"] = True
+            offer["supports_app_runs"] = True
         while True:
             try:
                 response = await client.post("/v1/device/app-protocol/negotiate", json=offer)

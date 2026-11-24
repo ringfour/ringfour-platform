@@ -683,6 +683,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     {
         modelBuilder.Entity<RobotAppInventory>(e =>
         {
+            e.Property(x => x.RunsSupported).HasColumnName("runs_supported");
             e.Property(x => x.InstallationsSupported).HasColumnName("installations_supported");
             e.ToTable("robot_app_inventory"); e.HasKey(x => x.RobotId);
             e.Property(x => x.RobotId).HasColumnName("robot_id");
@@ -812,7 +813,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.Property(x => x.State).HasColumnName("state").HasMaxLength(16); e.Property(x => x.Phase).HasColumnName("phase").HasMaxLength(32); e.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id");
             e.Property(x => x.RequestedAt).HasColumnName("requested_at"); e.Property(x => x.DeadlineAt).HasColumnName("deadline_at"); e.Property(x => x.AcknowledgedAt).HasColumnName("acknowledged_at");
             e.Property(x => x.ObservedAt).HasColumnName("observed_at"); e.Property(x => x.ReceivedAt).HasColumnName("received_at"); e.Property(x => x.CompletedAt).HasColumnName("completed_at"); e.Property(x => x.Failure).HasColumnName("failure").HasColumnType("jsonb");
-            e.HasIndex(x => new { x.RobotId, x.RequestedAt, x.Id }); e.HasIndex(x => x.InstallationId).IsUnique().HasFilter("state IN ('queued','accepted','running')");
+            e.HasIndex(x => new { x.RobotId, x.RequestedAt, x.Id }); e.HasIndex(x => x.InstallationId).IsUnique().HasFilter("state IN ('queued','accepted','running') AND run_id IS NULL");
             e.HasOne<Robot>().WithMany().HasForeignKey(x => new { x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<AppInstallation>().WithMany().HasForeignKey(x => new { x.InstallationId, x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.RobotId, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);

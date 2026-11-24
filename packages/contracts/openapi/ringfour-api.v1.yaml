@@ -935,7 +935,7 @@ paths:
       tags:
       - apps
       operationId: startAppInstallation
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Operator/developer/owner starts the exact installed revision and configuration. Allocate one shared
         execution slot and run ID transactionally. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -971,7 +971,7 @@ paths:
       tags:
       - apps
       operationId: stopAppInstallation
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Operator/developer/owner stops only expected_run_id bound to this installation. A delayed request
         cannot resolve to a later run. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -1036,7 +1036,7 @@ paths:
       tags:
       - apps
       operationId: listAppRuns
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: List App runs with immutable attribution. General and App-scoped views identify the same run records.
         New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -1085,7 +1085,7 @@ paths:
       tags:
       - apps
       operationId: getAppRun
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read the exact revision, image, configuration, publisher and initiating actor retained after updates/uninstall.
         New Ringfour design; see docs/apps-api-contract.md.
       parameters:

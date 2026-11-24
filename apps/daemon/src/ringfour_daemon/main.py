@@ -47,6 +47,8 @@ async def lifespan(app: FastAPI):
     app.state.connection_manager = connection
     task = asyncio.create_task(connection.run())
     app_engine_task = asyncio.create_task(run_reconciliation(settings, connection))
+    from .app_runs import run as run_apps
+    app_run_task = asyncio.create_task(run_apps(settings, connection))
     ui_connection = MissionUiConnectionManager(settings)
     app.state.mission_ui_connection_manager = ui_connection
     ui_task = asyncio.create_task(ui_connection.run())
@@ -67,6 +69,7 @@ async def lifespan(app: FastAPI):
         ui_connection.stop()
         task.cancel()
         app_engine_task.cancel()
+        app_run_task.cancel()
         ui_task.cancel()
         pairing_task.cancel()
         sync_task.cancel()
@@ -78,7 +81,7 @@ async def lifespan(app: FastAPI):
         agent_motion_task.cancel()
         interaction_task.cancel()
         interaction_delivery_task.cancel()
-        await asyncio.gather(app_engine_task, pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, artifact_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
+        await asyncio.gather(app_run_task, app_engine_task, pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, artifact_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
         try:
             await task
         except asyncio.CancelledError:

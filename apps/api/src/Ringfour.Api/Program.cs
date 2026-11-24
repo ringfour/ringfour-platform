@@ -109,6 +109,7 @@ app.MapAppInventoryEndpoints();
 app.MapAppCatalogEndpoints();
 app.MapAppRegistryEndpoints();
 app.MapAppInstallationEndpoints();
+app.MapAppRunEndpoints();
 app.MapAppInstallationDevice();
 app.MapPairingEndpoints();
 app.MapOperationEndpoints();

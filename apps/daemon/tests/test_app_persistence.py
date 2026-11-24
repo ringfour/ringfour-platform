@@ -34,7 +34,7 @@ def test_apps_upgrade_retains_identity_active_script_and_namespace_on_reopen(tmp
         identity(conn)
         operation(conn, "legacy")
         conn.execute("INSERT INTO script_sync(execution_id, started) VALUES ('legacy', 1)")
-    assert migrate(db) == [15, 16, 17, 18]
+    assert migrate(db) == [15, 16, 17, 18, 19]
     with connect(db) as conn:
         namespace = conn.execute("SELECT deployment_namespace FROM device_deployment_namespace").fetchone()[0]
         assert str(uuid.UUID(namespace)) == namespace

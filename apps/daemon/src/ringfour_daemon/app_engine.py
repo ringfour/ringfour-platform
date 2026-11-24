@@ -342,6 +342,7 @@ class Executor:
                 return row
             if intent["phase"] != "create":
                 return self.interrupt(run_id)
+            self.deadline(row)
             body = {
                 "Image": intent["image_id"],
                 "Labels": self.labels(row),
@@ -391,6 +392,7 @@ class Executor:
             return self.interrupt(run_id)
         if row["state"] not in ACTIVE:
             return row
+        started = datetime.fromisoformat(started).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         now = utc_now()
         stdout, stderr = self.engine.output(container["Id"])
         # Keep the durable prefix if engine retention has rotated earlier bytes.
@@ -441,7 +443,7 @@ class Executor:
                 )
                 conn.execute(
                     "UPDATE app_runs SET state=?,ended_at=?,exit_code=?,failure_json=? WHERE run_id=?",
-                    (result, state["FinishedAt"], state["ExitCode"], failure, run_id),
+                    (result, datetime.fromisoformat(state["FinishedAt"]).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"), state["ExitCode"], failure, run_id),
                 )
             conn.execute(
                 "UPDATE app_engine_intents SET phase=?,updated_at=? WHERE run_id=?",

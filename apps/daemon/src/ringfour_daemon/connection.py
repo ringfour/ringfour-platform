@@ -251,6 +251,15 @@ class ConnectionManager:
         state: _SessionState,
         replayed_ids: set[str],
     ) -> None:
+        if command.get("kind") in ("app.start", "app.stop"):
+            if not self._settings.apps_enabled or self.app_executor is None:
+                raise ProtocolError("App run consumer is not enabled")
+            definition = "start_command" if command["kind"] == "app.start" else "stop_command"
+            app_installations.app_validation.validate(command["payload"], "device", definition)
+            operation, _ = operations.record_command(self._settings.db_path, state.robot_id, command)
+            replayed_ids.add(operation.operation_id)
+            await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
+            return
         if command.get("kind", "").startswith("app."):
             if command["kind"] not in ("app.install", "app.configure", "app.update", "app.rollback") or not self._settings.apps_enabled or self.app_executor is None:
                 raise ProtocolError("App installation consumer is not enabled")

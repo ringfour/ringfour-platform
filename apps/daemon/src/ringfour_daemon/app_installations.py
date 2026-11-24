@@ -289,7 +289,15 @@ def finish(settings, executor, operation, failure=None):
         return report
 
 
+_delivery_lock = asyncio.Lock()
+
+
 async def deliver(settings, client):
+    async with _delivery_lock:
+        await _deliver(settings, client)
+
+
+async def _deliver(settings, client):
     while True:
         with closing(connect(settings.db_path)) as conn:
             value = conn.execute(

@@ -41,7 +41,8 @@ public static class AppInstallationEndpoints
 
     internal static async Task RequireNoPendingMutation(RingfourDbContext db, Guid robot, CancellationToken ct)
     {
-        if (await db.AppOperations.AnyAsync(x => x.RobotId == robot && Pending.Contains(x.State) && x.RunId == null, ct))
+        if (await db.RobotExecutionSlots.AnyAsync(x => x.RobotId == robot, ct) ||
+            await db.AppOperations.AnyAsync(x => x.RobotId == robot && Pending.Contains(x.State) && x.RunId == null, ct))
             throw ApiException.Conflict("execution_conflict", "An App installation change is pending.");
     }
 

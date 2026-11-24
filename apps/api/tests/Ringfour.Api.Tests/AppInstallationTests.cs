@@ -34,7 +34,7 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
         var(_,token)=await RobotTests.IssueToken(owner,robot);var(credential,secret)=await DeviceEnrollmentTests.Enroll(factory,token);
         var socket=await DeviceSocket.ConnectAsync(factory,robot,credential,secret);using var welcome=await DeviceSocket.ReceiveAsync(socket);var session=welcome.Payload().GetProperty("session_id").GetGuid();
         var machine=factory.CreateClient();machine.DefaultRequestHeaders.Add("x-ringfour-credential-id",credential.ToString());machine.DefaultRequestHeaders.Add("x-ringfour-credential-secret",secret);machine.DefaultRequestHeaders.Add("x-ringfour-device-session",session.ToString());var ns=Guid.NewGuid();
-        await Json(await machine.PostAsJsonAsync("/v1/device/app-protocol/negotiate",new {session_id=session,deployment_namespace=ns,supported_app_protocol_versions=new[]{1},supports_app_installations=supported}));
+        await Json(await machine.PostAsJsonAsync("/v1/device/app-protocol/negotiate",new {session_id=session,deployment_namespace=ns,supported_app_protocol_versions=new[]{1},supports_app_installations=supported,supports_app_runs=supported}));
         var report=Fixture("base101_inventory");report["deployment_namespace"]=ns.ToString();report["report_id"]=Guid.NewGuid().ToString();await Json(await machine.PutAsJsonAsync("/v1/device/app-inventory",report));
         var manifest=JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"contracts/fixtures/apps/v1/manifest.json")))!.AsObject();manifest["app_key"]="check-"+Guid.NewGuid().ToString("N");manifest["targets"]![0]!["image"]=registry.Image;
         var revision=await Json(await Post(owner,$"/v1/organizations/{org}/app-revisions",new JsonObject{["manifest"]=manifest,["visibility"]="listed"}));
@@ -127,4 +127,55 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
         var operation=await Json(await s.Owner.GetAsync($"/v1/app-operations/{accepted["operation_id"]}"));Assert.Equal("failed",operation["state"]!.ToString());Assert.Null(operation["observed_at"]);
         var retried=await Json(await Post(s.Owner,path,s.Input));Assert.Equal(accepted["installation_id"]!.ToString(),retried["installation_id"]!.ToString());Assert.NotEqual(accepted["operation_id"]!.ToString(),retried["operation_id"]!.ToString());
     }
+    private static JsonObject StartInput(JsonNode binding) => new() { ["expected_revision_id"]=binding["revision_id"]!.DeepClone(), ["expected_configuration_revision_id"]=binding["configuration_revision_id"]!.DeepClone() };
+    private static JsonObject RunReport(Scenario s, JsonObject accepted, string state, bool includeOperation=true)
+    {
+        var now=AppProtocol.Timestamp(DateTimeOffset.UtcNow);var failed=state=="failed";
+        var failure=failed ? new JsonObject { ["code"]="execution_conflict", ["message"]="Stopped before start.", ["details"]=new JsonObject { ["retryable"]=false } } : null;
+        return new JsonObject { ["app_protocol_version"]=1, ["deployment_namespace"]=s.Namespace.ToString(), ["report_id"]=Guid.NewGuid().ToString(), ["report_sequence"]=++s.Sequence,
+            ["installations"]=new JsonArray(), ["operations"]=includeOperation ? new JsonArray(new JsonObject { ["operation_id"]=accepted["operation_id"]!.DeepClone(), ["installation_id"]=accepted["installation_id"]!.DeepClone(), ["run_id"]=accepted["run_id"]!.DeepClone(), ["kind"]="start", ["state"]=failed ? "failed" : "succeeded", ["phase"]=failed ? "failed" : "observed_running", ["observed_at"]=now, ["failure"]=failure?.DeepClone() }) : new JsonArray(),
+            ["runs"]=new JsonArray(new JsonObject { ["run_id"]=accepted["run_id"]!.DeepClone(), ["installation_id"]=accepted["installation_id"]!.DeepClone(), ["state"]=state, ["started_at"]=failed ? null : now, ["ended_at"]=null, ["observed_at"]=now, ["exit_code"]=null, ["failure"]=failure }) };
+    }
+    [Fact]
+    public async Task App_start_races_idempotency_observed_state_and_exact_stop_preserve_snapshot_and_slot()
+    {
+        await using var s=await Setup();var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";var binding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        var input=StartInput(binding);var key=Guid.NewGuid().ToString();
+        var requests=await Task.WhenAll(Post(s.Owner,path+"/start",input,key),Post(s.Owner,path+"/start",input));
+        Assert.Single(requests,x=>x.StatusCode==HttpStatusCode.Accepted);Assert.Single(requests,x=>x.StatusCode==HttpStatusCode.Conflict);
+        var accepted=await Json(requests.Single(x=>x.StatusCode==HttpStatusCode.Accepted));
+        // Use the winning key for replay regardless of request scheduling.
+        var replayKey=requests[0].StatusCode==HttpStatusCode.Accepted ? key : null;
+        if(replayKey is not null) Assert.True(JsonNode.DeepEquals(accepted,await Json(await Post(s.Owner,path+"/start",input,replayKey))));
+        var runPath=$"/v1/app-runs/{accepted["run_id"]}";var before=await Json(await s.Owner.GetAsync(runPath));Assert.Equal("accepted",before["state"]!.ToString());
+        await Command(s,accepted);Assert.Equal("accepted",(await Json(await s.Owner.GetAsync(runPath)))["state"]!.ToString());
+        var observed=RunReport(s,accepted,"running");await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",observed));
+        var running=await Json(await s.Owner.GetAsync(runPath));
+        Assert.Equal("running",running["state"]!.ToString());Assert.True(JsonNode.DeepEquals(before["snapshot"],running["snapshot"]));
+        await Error(await Post(s.Owner,path+"/start",input),409,"execution_conflict");
+        var stopping=await Json(await Post(s.Owner,path+"/stop",new JsonObject { ["expected_run_id"]=accepted["run_id"]!.DeepClone() }));await Command(s,stopping);
+        var terminal=RunReport(s,accepted,"stopped",false);terminal["runs"]![0]!["started_at"]=running["started_at"]!.DeepClone();
+        terminal["operations"]=new JsonArray(new JsonObject { ["operation_id"]=stopping["operation_id"]!.DeepClone(),["installation_id"]=accepted["installation_id"]!.DeepClone(),["run_id"]=accepted["run_id"]!.DeepClone(),["kind"]="stop",["state"]="succeeded",["phase"]="stopped",["observed_at"]=terminal["runs"]![0]!["observed_at"]!.DeepClone(),["failure"]=null });
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",terminal));
+        var next=await Json(await Post(s.Owner,path+"/start",input));Assert.NotEqual(accepted["run_id"]!.ToString(),next["run_id"]!.ToString());
+        var oldStop=await Json(await Post(s.Owner,path+"/stop",new JsonObject { ["expected_run_id"]=accepted["run_id"]!.DeepClone() }));
+        Assert.Equal("succeeded",(await Json(await s.Owner.GetAsync($"/v1/app-operations/{oldStop["operation_id"]}")))["state"]!.ToString());
+        Assert.Equal("accepted",(await Json(await s.Owner.GetAsync($"/v1/app-runs/{next["run_id"]}")))["state"]!.ToString());
+        using var stranger=s.Factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());await Error(await stranger.GetAsync(runPath),404,"not_found");
+        var list=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-runs?installation_id={install["installation_id"]}"));Assert.Equal(2,list["items"]!.AsArray().Count);
+    }
+    [Fact]
+    public async Task Stop_can_queue_before_start_observation_and_undispatched_start_expiry_releases_slot()
+    {
+        await using var s=await Setup();var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";var input=StartInput((await Json(await s.Owner.GetAsync(path)))["installed"]!);
+        var accepted=await Json(await Post(s.Owner,path+"/start",input));await Json(await Post(s.Owner,path+"/stop",new JsonObject { ["expected_run_id"]=accepted["run_id"]!.DeepClone() }));
+        await postgres.ExecuteAsync("UPDATE app_operations SET deadline_at=requested_at WHERE id=@id",("id",Guid.Parse(accepted["operation_id"]!.ToString())));
+        using var scope=s.Factory.Services.CreateScope();await AppInstallationWorker.Dispatch(scope.ServiceProvider.GetRequiredService<RingfourDbContext>(),Guid.Parse(accepted["operation_id"]!.ToString()),scope.ServiceProvider.GetRequiredService<DeviceConnectionManager>(),CancellationToken.None);
+        Assert.Equal("failed",(await Json(await s.Owner.GetAsync($"/v1/app-runs/{accepted["run_id"]}")))["state"]!.ToString());
+        await Json(await Post(s.Owner,path+"/start",input));
+    }
+
 }
