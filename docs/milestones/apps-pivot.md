@@ -171,21 +171,33 @@ No live stack operation was performed.
 
 Evidence: [AP-09](../evidence/AP-09.md). Human guide: [AP-09](../human-testing/AP-09.md).
 
+## AP-10 — App runtime and durable evidence (automated acceptance complete)
+
+- [x] Supply recoverable run-scoped credentials independently of Runner; persist hashes/expiry/revocation and reject terminal-run tokens.
+- [x] Bind the existing Logbook/HITL/artifact runtime clients to actual owned App runs.
+- [x] Snapshot bounded artifact bytes into a durable private spool and deliver after source mutation/deletion, API outage and Daemon replacement.
+- [x] Deliver bounded output prefixes/sealing/truncation with exact offset replay, including after run completion.
+- [x] Retain submitted versus applied decisions, timeout/cancellation distinctions and unknown engine state.
+- [x] Add workspace-scoped App output/artifact/interaction/history routes and lifecycle events; preserve legacy readers and evidence.
+- [x] Pass actual packaged runtime-client/API/Daemon/Engine acceptance without Runner, including offline spool recovery and human response across replacement.
+- [ ] Combined operator/human confidence pass: [AP-08/09/10](../human-testing/AP-08-10.md).
+
+Evidence: [AP-10](../evidence/AP-10.md). Human guide: [AP-10](../human-testing/AP-10.md).
+
 ## Subsequent work
 
-AP-01 through AP-04 acceptance are complete. AP-04 uses the agreed local
-wheel distribution; public Python publication is deferred. AP-05 Store/share/import and registry grants pass isolated acceptance; operator
-deployment is confirmed, while hosted registry/Auth0 checks remain pending. AP-06 authoring and publication CLI workflows pass component/isolated acceptance;
-AP-06 publication and standalone live IMU acceptance are now complete for the selected local registry. Owner-scoped engine management (AP-08) and durable installation (AP-07) now pass
-component/isolated acceptance; their operator deployment remains pending. Mutually exclusive
-hosted runs remain AP-09. Runtime evidence (AP-10), Studio
-(AP-11), CLI (AP-12) and virtual topology (AP-08V) converge at AP-13 acceptance.
-Retire managed UI (AP-14) and remaining Runner clients/defaults (AP-15) only
-through their explicit drain and recovery gates. AP-16 is a separate follow-up.
+AP-01 through AP-04 are accepted under the agreed local-wheel distribution.
+AP-05 catalog/share/import and registry grants pass automated acceptance; real
+local publication is proven, separate real-principal/provider checks remain
+recorded. AP-06 publication and standalone live IMU acceptance are complete for
+the selected local registry. AP-07/08/09/10 implementation and actual-protocol
+acceptance are complete. Their combined live deployment/human pass is next,
+as explicitly requested; pending human confidence checks did not block this
+implementation sequence. No live stack operation was performed by the agent.
 
-AP-01 defines the contracts and supplies independently tested readers; its acceptance does not claim live App execution. AP-02 persistence/reset is accepted. AP-03 negotiation and inventory routes are accepted, including deployed `virt2` verification; AP-07 installation dispatch is operator opt-in; hosted run dispatch remains AP-09.
-
-AP-05 publication/read/import routes are deployed; hosted registry/Auth0 acceptance remains pending.
-AP-07 installation dispatch requires both opt-in consumers; hosted run dispatch is not enabled. Do not
-mark an external registry, Auth0, simulator or physical gate as passing from
-schema fixtures. The operator performs every Platform/virtual stack operation.
+After that pass, resume virtual topology (AP-08V), Studio (AP-11) and operator CLI
+(AP-12), converging at full two-user/two-robot AP-13 acceptance. Retire managed UI
+(AP-14) and remaining Runner clients/defaults (AP-15) through their explicit drain
+and recovery gates. AP-16 is a separate second-platform follow-up. Never record
+unperformed real Auth0/provider/simulator/physical checks as passed. Operator
+controls every Platform and virtual stack reload/rebuild.

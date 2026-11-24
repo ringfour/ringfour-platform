@@ -2,8 +2,9 @@
 
 The daemon runs on a robot. It owns pairing and robot credentials, durable local
 SQLite state, the outbound authenticated Platform connection, and coordination
-of mission preparation and execution with the private Runner. Infrastructure
-starts the containers; the daemon never controls Docker or mounts its socket.
+of legacy mission execution with Runner and opt-in App execution through an
+operator-provided engine socket. Infrastructure starts Daemon/Agent; only the
+enrolled Daemon manages its owned App workloads. Apps never receive the socket.
 Its small status page shows pairing information or device and execution status.
 
 ## Get started
@@ -88,3 +89,25 @@ Install/configure/update/rollback are described in the [AP-07 guide](../../docs/
 and [installation contract](../../docs/apps-installation.md). Installation preparation
 performs fresh Agent checks and a scoped pull without creating a container/run;
 SQLite retains generation, staging, installed binding and unacknowledged reports.
+
+## App runs and runtime (AP-08/09/10)
+
+The opt-in App executor runs independently of Runner readiness. See
+[engine ownership](../../docs/apps-engine.md), [hosted run lifecycle](../../docs/apps-runs.md)
+and [runtime/evidence](../../docs/apps-runtime.md). The operator supplies the
+engine socket/group and network. `RINGFOUR_APP_RUNTIME_URL` is the Daemon HTTP
+origin reachable from that App network; the example overlay sets the per-project
+Daemon alias. App configuration cannot choose networks, mounts or privileges.
+
+SQLite migrations through 0020 retain enrollment/namespace, run/create/start
+intent, ordered reports, output delivery cursors, hashed run credentials and
+artifact spool metadata. The private `.runtime-key` next to the database and
+`app-artifact-spool/` must persist with daemon-data. Run-scoped engine artifact
+volumes are separate from that private data. No App receives the engine socket,
+Daemon/Runner secret, human token or registry token. Only run runtime credentials
+are passed. Replacements retain the same container; no ambiguous restart replay.
+
+Human checks are batched in [AP-08/09/10](../../docs/human-testing/AP-08-10.md).
+Implementation acceptance uses `tests/e2e/ap08-engine.py`, `ap09-runs.py` and
+`ap10-runtime.py` with actual components and disposable test engines. Live stack
+reloads remain operator-controlled. Legacy clients keep their Runner paths.

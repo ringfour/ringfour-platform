@@ -85,16 +85,16 @@ public static class LogbookEndpoints
         await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Operator, ct);
         if (limit is < 1 or > 100 || (from is not null && to is not null && from >= to) ||
             (type is not null && type is not ("mission.logbook.entry" or "mission.revision_selected" or "mission.started" or "mission.completed" or "mission.failed" or "mission.stopped" or "device.operation.state_changed" or "agent.motion.event" or
-                "human.interaction.requested" or "human.interaction.answered" or "human.interaction.timed_out" or "human.interaction.cancelled")))
+                "human.interaction.requested" or "human.interaction.answered" or "human.interaction.timed_out" or "human.interaction.cancelled" or "app.installation.changed" or "app.run.started" or "app.run.completed" or "app.run.failed" or "app.run.stopped" or "app.run.interrupted")))
             throw ApiException.InvalidInput("Invalid history filter.");
         from = from?.ToUniversalTime();
         to = to?.ToUniversalTime();
         var (after, id) = Pagination.DecodeCursor(cursor);
         var query = db.LogbookEvents.AsNoTracking().Include(item => item.Operation)
-            .Where(item => item.Robot.OrganizationId == orgId);
+            .Where(item => item.Robot.OrganizationId == orgId && item.AppOperationId == null);
         if (robotId is not null) query = query.Where(item => item.RobotId == robotId);
         if (executionId is not null) query = query.Where(item => item.ExecutionId == executionId);
-        if (operationId is not null) query = query.Where(item => item.OperationId == operationId);
+        if (operationId is not null) query = query.Where(item => (item.OperationId == operationId || item.AppOperationId == operationId));
         if (actorId is not null) query = query.Where(item => item.ActorUserId == actorId ||
             (!item.Type.StartsWith("human.interaction.") && item.ActorUserId == null &&
                 item.Operation != null && item.Operation.RequestedByUserId == actorId));
@@ -107,7 +107,7 @@ public static class LogbookEndpoints
         var rows = await query.OrderBy(item => item.ReceivedAt).ThenBy(item => item.Id).Take(pageSize + 1).ToListAsync(ct);
         var page = rows.Take(pageSize).ToList();
         return Results.Ok(new { items = page.Select(item => new { event_id = item.Id, robot_id = item.RobotId,
-            local_sequence = item.LocalSequence, operation_id = item.OperationId, execution_id = item.ExecutionId,
+            local_sequence = item.LocalSequence, operation_id = item.AppOperationId ?? item.OperationId, execution_id = item.ExecutionId,
             actor_user_id = item.ActorUserId ?? (!item.Type.StartsWith("human.interaction.") && item.Operation != null
                 ? item.Operation.RequestedByUserId : (Guid?)null), type = item.Type, schema_version = item.SchemaVersion,
             occurred_at = item.OccurredAt, received_at = item.ReceivedAt,
@@ -183,15 +183,16 @@ public static class LogbookEndpoints
         long sequence = checkpoint?.Sequence ?? 0;
         foreach (var item in events)
         {
-            if (item.RobotId != robot.Id || (item.OperationId is Guid operation && !await db.Operations.AnyAsync(op => op.Id == operation && op.RobotId == robot.Id, ct)))
+            var app = item.ExecutionId is null ? null : await db.AppRuns.AsNoTracking().SingleOrDefaultAsync(x=>x.Id==item.ExecutionId&&x.RobotId==robot.Id&&x.StartOperationId==item.OperationId,ct);
+            if (item.RobotId != robot.Id || (app is null && item.OperationId is Guid operation && !await db.Operations.AnyAsync(op => op.Id == operation && op.RobotId == robot.Id, ct)))
                 throw ApiException.Conflict("event_conflict", "Event robot or operation does not match the credential.");
-            if (item.ExecutionId is Guid execution && !await db.ScriptExecutions.AnyAsync(e => e.Id == execution && e.RobotId == robot.Id && e.Id == item.OperationId, ct) &&
+            if (app is null && item.ExecutionId is Guid execution && !await db.ScriptExecutions.AnyAsync(e => e.Id == execution && e.RobotId == robot.Id && e.Id == item.OperationId, ct) &&
                 !await db.DevSessionRuns.AnyAsync(e => e.Id == execution && e.RobotId == robot.Id && e.OperationId == item.OperationId, ct))
                 throw ApiException.Conflict("event_conflict", "Event execution does not match the operation.");
             if (item.Sequence <= sequence)
             {
                 var previous = await db.LogbookEvents.AsNoTracking().SingleOrDefaultAsync(e => e.RobotId == robot.Id && e.LocalSequence == item.Sequence, ct);
-                if (previous is null || previous.Id != item.Id || previous.OperationId != item.OperationId || previous.OccurredAt != item.OccurredAt || previous.State != item.State || previous.SchemaVersion != item.SchemaVersion ||
+                if (previous is null || previous.Id != item.Id || (previous.AppOperationId ?? previous.OperationId) != item.OperationId || previous.OccurredAt != item.OccurredAt || previous.State != item.State || previous.SchemaVersion != item.SchemaVersion ||
                     previous.Type != item.Type || previous.ExecutionId != item.ExecutionId || !JsonNode.DeepEquals(previous.Payload is null ? null : JsonNode.Parse(previous.Payload), item.Payload is null ? null : JsonNode.Parse(item.Payload)))
                     throw ApiException.Conflict("event_conflict", "An event ID or sequence was reused with different content.");
                 continue;
@@ -199,7 +200,7 @@ public static class LogbookEndpoints
             if (item.Sequence != sequence + 1) throw ApiException.Conflict("sequence_gap", "The batch does not start at the next expected sequence.");
             if (await db.LogbookEvents.AnyAsync(e => e.Id == item.Id, ct))
                 throw ApiException.Conflict("event_conflict", "An event ID or sequence was reused with different content.");
-            db.LogbookEvents.Add(new LogbookEvent { Id = item.Id, RobotId = robot.Id, OperationId = item.OperationId, LocalSequence = item.Sequence,
+            db.LogbookEvents.Add(new LogbookEvent { Id = item.Id, RobotId = robot.Id, OperationId = app is null ? item.OperationId : null, AppOperationId = app?.StartOperationId, AppInstallationId = app?.InstallationId, ActorUserId = app?.RequestedByUserId, LocalSequence = item.Sequence,
                 OccurredAt = item.OccurredAt, ReceivedAt = DateTimeOffset.UtcNow, Type = item.Type, SchemaVersion = item.SchemaVersion, State = item.State, ExecutionId = item.ExecutionId, Payload = item.Payload });
             sequence = item.Sequence;
         }

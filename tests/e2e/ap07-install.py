@@ -28,7 +28,7 @@ def load(name, path):
     return module
 
 
-def main(run_acceptance=None):
+def main(run_acceptance=None, configure=None):
     support = load("ap03_support", "ap03-inventory.py")
     catalog = load("ap05_support", "ap05-catalog.py")
     publisher = load("ap06_support", "ap06-publish.py")
@@ -39,6 +39,7 @@ def main(run_acceptance=None):
     api = daemon = None
     server = None
     logs = []
+    cleanup = None
     with tempfile.TemporaryDirectory(prefix="ap07-install-") as directory:
         root = Path(directory)
         try:
@@ -316,8 +317,15 @@ asyncio.run(main())
                                     ):
                                         request = data.split(b"\r\n", 1)[0].decode()
                                         requests.append(request)
-                                        if fault["armed"] and request.startswith(
-                                            "POST /v1.46/images/create"
+                                        if fault["armed"] and (
+                                            request.startswith(
+                                                "POST /v1.46/images/create"
+                                            )
+                                            or (
+                                                fault.get("artifact")
+                                                and request.startswith("GET ")
+                                                and "/archive?" in request
+                                            )
                                         ):
                                             fault["armed"] = False
                                             support.terminate(api)
@@ -355,6 +363,9 @@ asyncio.run(main())
                     "DAEMON_RECONCILE_DELAY_SECONDS": "2",
                 }
 
+                if configure is not None:
+                    cleanup = configure(locals())
+
                 def start_daemon():
                     log = (root / f"daemon-{len(logs)}.log").open("w+")
                     logs.append(log)
@@ -366,7 +377,7 @@ asyncio.run(main())
                             "ringfour_daemon.main:create_app",
                             "--factory",
                             "--host",
-                            "127.0.0.1",
+                            daemon_env.get("AP_TEST_BIND", "127.0.0.1"),
                             "--port",
                             str(daemon_port),
                         ],
@@ -601,6 +612,8 @@ asyncio.run(main())
                     print(text[-6000:], file=sys.stderr)
             raise
         finally:
+            if cleanup is not None:
+                cleanup()
             support.terminate(daemon)
             support.terminate(api)
             if server:

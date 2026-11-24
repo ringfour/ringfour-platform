@@ -5,6 +5,7 @@ services:
     environment:
       RINGFOUR_APPS_ENABLED: "true"
       RINGFOUR_ENGINE_SOCKET: /var/run/docker.sock
+      RINGFOUR_APP_RUNTIME_URL: http://${RINGFOUR_DAEMON_NETWORK_ALIAS:-daemon}:8081
       RINGFOUR_APP_NETWORK: ${BASE101_NETWORK_NAME:-base101_default}
     group_add:
       - ${RINGFOUR_ENGINE_SOCKET_GID:?Supply the actual engine socket group GID}

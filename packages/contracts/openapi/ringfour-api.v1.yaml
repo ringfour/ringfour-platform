@@ -1114,7 +1114,7 @@ paths:
       tags:
       - apps
       operationId: getAppRunOutput
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read durable per-stream UTF-8 output. Offsets count bytes; sealed means local output is durably
         final, independently of hosted upload progress. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -1157,7 +1157,7 @@ paths:
       tags:
       - apps
       operationId: listAppLogbook
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Workspace-wide App and robot events; optional App/installation/run filters link the same run. Legacy
         history remains at its existing endpoint during migration. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -1212,7 +1212,7 @@ paths:
       tags:
       - apps
       operationId: getAppRunInteraction
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read only an interaction attributed to this run and organization. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
       - name: run_id
@@ -1246,7 +1246,7 @@ paths:
       tags:
       - apps
       operationId: respondToAppRunInteraction
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Operator/developer/owner submits one provisional response. Submitted does not mean applied; only
         device acknowledgement confirms application. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -1288,7 +1288,7 @@ paths:
       tags:
       - apps
       operationId: getAppRunArtifact
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Inspect one run-owned artifact. Availability is independent of run completion. New Ringfour design;
         see docs/apps-api-contract.md.
       parameters:
@@ -1323,7 +1323,7 @@ paths:
       tags:
       - apps
       operationId: downloadAppRunArtifact
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Authorize bytes by run, artifact and workspace. Pending bytes are unavailable; never use a publisher
         listing to authorize access. New Ringfour design; see docs/apps-api-contract.md.
       parameters:
@@ -3123,6 +3123,94 @@ paths:
           $ref: "#/components/responses/InvalidInput"
         "401":
           $ref: "#/components/responses/InvalidToken"
+  /v1/device/app-runs/{run_id}/output/{stream}:
+    put:
+      tags: [apps]
+      operationId: deliverAppRunOutput
+      x-implementation-status: implemented
+      security:
+      - deviceCredentialId: []
+        deviceCredentialSecret: []
+      description: Enrolled robot credential headers authorize durable bounded byte-prefix delivery, including after run completion. Replay must match stored bytes; seal and truncation never regress.
+      parameters:
+      - {name: run_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: stream, in: path, required: true, schema: {type: string, enum: [stdout, stderr]}}
+      - {name: offset, in: query, required: true, schema: {type: integer, minimum: 0, maximum: 65536}}
+      - {name: sealed_output, in: query, required: true, schema: {type: boolean}}
+      - {name: truncated, in: query, required: true, schema: {type: boolean}}
+      - {name: x-ringfour-credential-id, in: header, required: true, schema: {type: string, format: uuid}}
+      - {name: x-ringfour-credential-secret, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary, maxLength: 16384}
+      responses:
+        '204': {description: Prefix durably acknowledged}
+        '400': *id002
+        '401': *id003
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/device/app-runs/{run_id}/artifacts/{artifact_id}:
+    put:
+      tags: [apps]
+      operationId: deliverAppRunArtifact
+      x-implementation-status: implemented
+      security:
+      - deviceCredentialId: []
+        deviceCredentialSecret: []
+      description: Enrolled robot credential headers authorize an immutable run artifact up to 16 MiB, at most 16 per run. Verify SHA-256 and retry exact identity/content, including after run completion.
+      parameters:
+      - {name: run_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: artifact_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: path, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 240}}
+      - {name: sha256, in: query, required: true, schema: {type: string, pattern: '^[0-9a-f]{64}$'}}
+      - {name: content_type, in: query, required: true, schema: {type: string, enum: [image/jpeg, image/png, application/octet-stream]}}
+      - {name: x-ringfour-credential-id, in: header, required: true, schema: {type: string, format: uuid}}
+      - {name: x-ringfour-credential-secret, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary, maxLength: 16777216}
+      responses:
+        '204': {description: Immutable bytes durably acknowledged}
+        '400': *id002
+        '401': *id003
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+  /v1/app-runs/{run_id}/artifacts:
+    get:
+      tags: [apps]
+      operationId: listAppRunArtifacts
+      x-implementation-status: implemented
+      parameters:
+      - {name: run_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Retained artifacts for this authorized run
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 16
+                    items:
+                      $ref: ../schemas/artifacts/v2/app-artifact.schema.json
+        '400': *id002
+        '409': *id006
+        '503': *id008
+        '401': *id003
+        '403': *id004
+        '404': *id005
 components:
   securitySchemes:
     deviceCredentialId:

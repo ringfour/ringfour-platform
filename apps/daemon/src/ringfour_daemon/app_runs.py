@@ -107,7 +107,7 @@ def fail(settings, executor, run_id, code, details=None):
             "details": details or {"retryable": False},
         }
         conn.execute(
-            "UPDATE app_runs SET state='failed',failure_json=?,observed_at=?,updated_at=? WHERE run_id=? AND started_at IS NULL AND state='accepted'",
+            "UPDATE app_runs SET state='failed',stdout_sealed=1,stderr_sealed=1,failure_json=?,observed_at=?,updated_at=? WHERE run_id=? AND started_at IS NULL AND state='accepted'",
             (app_validation.canonical(failure), utc_now(), utc_now(), run_id),
         )
 

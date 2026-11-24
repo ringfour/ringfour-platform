@@ -13,6 +13,7 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from .app_engine import EngineError
 from .db import connect
 from .enrollment import credential_error, load_identity
 from .runtime_logbook import _execution_token, _operation
@@ -62,6 +63,14 @@ async def publish(request: Request):
         identity = load_identity(settings.db_path)
         if identity is None or not _operation(settings.db_path, identity["robot_id"], execution):
             return error(401, "invalid_token", "A valid execution credential is required.")
+        from .app_runtime import local_run, running, snapshot
+        if local_run(settings, execution) is not None:
+            if await asyncio.to_thread(running, settings, execution) is not True:
+                return error(503, "runtime_unavailable", "App engine state is unavailable.")
+            executor = getattr(request.app.state, "app_executor", None)
+            if executor is None:
+                return error(503, "runtime_unavailable", "App executor is unavailable.")
+            return await asyncio.to_thread(snapshot, settings, executor, execution, value)
         headers = {"authorization": f"Bearer {settings.runner_auth_token}"}
         async with httpx.AsyncClient(base_url=settings.runner_url, headers=headers, timeout=30) as client:
             response = await client.post(f"/v1/executions/{execution}/live-artifacts", json=value)
@@ -71,6 +80,8 @@ async def publish(request: Request):
         artifact = response.json()
         enqueue(settings.db_path, execution, artifact)
         return artifact
+    except EngineError:
+        return error(503, "runtime_unavailable", "App engine is unavailable.")
     except FileExistsError:
         return error(409, "conflict", "Artifact ID conflicts with an existing publication.")
     except (ValueError, TypeError, KeyError, json.JSONDecodeError):

@@ -137,3 +137,24 @@ public sealed class RobotExecutionSlot
     public Guid ExecutionId { get; set; }
     public DateTimeOffset ClaimedAt { get; set; }
 }
+
+public sealed class AppRunOutput
+{
+    public Guid RunId { get; set; }
+    public byte[] Stdout { get; set; } = [];
+    public byte[] Stderr { get; set; } = [];
+    public bool StdoutSealed { get; set; }
+    public bool StderrSealed { get; set; }
+    public bool StdoutTruncated { get; set; }
+    public bool StderrTruncated { get; set; }
+}
+
+public sealed class AppArtifact
+{
+    public Guid Id { get; set; }
+    public Guid RunId { get; set; }
+    public string Path { get; set; } = null!;
+    public long Size { get; set; }
+    public string Sha256 { get; set; } = null!;
+    public string ContentType { get; set; } = null!;
+}

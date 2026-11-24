@@ -20,6 +20,8 @@ def record(db_path, payload):
         if existing and existing != (payload["session_id"], payload["operation_id"]):
             raise runner.RunnerRejected("conflict", "Execution ID was reused.")
         if not existing:
+            if conn.execute("SELECT 1 FROM device_execution_slots WHERE source='app'").fetchone():
+                raise runner.RunnerRejected("execution_conflict", "An App owns this robot's execution slot.")
             conn.execute("INSERT INTO local_dev_runs(execution_id,session_id,operation_id) VALUES (?,?,?)", (payload["execution_id"], payload["session_id"], payload["operation_id"]))
 
 

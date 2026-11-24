@@ -1,14 +1,16 @@
-# Combined acceptance — AP-05, AP-06, AP-08 and AP-07
+# Early acceptance — AP-05, AP-06, AP-08 and AP-07
+
+**Current sequence:** AP-08/09/10 implementation and automated protocol checks
+are complete. Use the [combined AP-08/09/10 human pass](AP-08-10.md) next, as
+agreed with the user. The early publication/install checks below remain useful.
 
 Run one flow in dependency order: configure/deploy → publish → discover/import →
 install → configure → update/rollback → standalone live IMU. AP-01 through AP-04
-are already accepted. Hosted App start/stop is AP-09; runtime Logbook delivery is
-AP-10. Installation success creates no App run/container.
+are already accepted. Hosted start/stop and runtime delivery are now implemented in AP-09/AP-10. Installation success creates no App run/container.
 
-Read-only deployment inspection on 24 November 2026 found healthy API/Daemon
-services, but an empty API registry policy, `Apps__InstallationsEnabled=false`,
-and a Daemon still using Runner readiness. A regular stack launch retains those
-defaults. The opt-in settings below are needed for deployed App acceptance.
+Earlier deployment inspection found App dispatch disabled and the Daemon using
+Runner readiness. Local registry configuration/publication subsequently passed.
+Enable the App flag and Daemon overlay for the combined deployment acceptance.
 
 ## 1. Configure registry policy, then deploy both consumers
 

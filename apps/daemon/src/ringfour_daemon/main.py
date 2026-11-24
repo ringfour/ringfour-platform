@@ -59,6 +59,8 @@ async def lifespan(app: FastAPI):
     advertisement_task = asyncio.create_task(publish_local_endpoint(settings))
     logbook_task = asyncio.create_task(deliver_logbook(settings))
     artifact_task = asyncio.create_task(deliver_artifacts(settings))
+    from .app_runtime import deliver as deliver_app_runtime
+    app_runtime_task = asyncio.create_task(deliver_app_runtime(settings))
     agent_motion_task = asyncio.create_task(run_agent_motion(settings))
     interaction_task = asyncio.create_task(reconcile_interactions(settings))
     interaction_delivery_task = asyncio.create_task(deliver_interactions(settings))
@@ -78,10 +80,11 @@ async def lifespan(app: FastAPI):
         advertisement_task.cancel()
         logbook_task.cancel()
         artifact_task.cancel()
+        app_runtime_task.cancel()
         agent_motion_task.cancel()
         interaction_task.cancel()
         interaction_delivery_task.cancel()
-        await asyncio.gather(app_run_task, app_engine_task, pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, artifact_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
+        await asyncio.gather(app_runtime_task, app_run_task, app_engine_task, pairing_task, sync_task, source_task, execution_task, advertisement_task, logbook_task, artifact_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
         try:
             await task
         except asyncio.CancelledError:

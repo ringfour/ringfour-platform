@@ -178,4 +178,39 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
         await Json(await Post(s.Owner,path+"/start",input));
     }
 
+    [Fact]
+    public async Task Completed_App_run_accepts_deduplicated_late_output_and_immutable_artifacts_with_workspace_scope()
+    {
+        await using var s=await Setup();var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";var accepted=await Json(await Post(s.Owner,path+"/start",StartInput((await Json(await s.Owner.GetAsync(path)))["installed"]!)));await Command(s,accepted);
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",RunReport(s,accepted,"failed")));
+        var runPath=$"/v1/app-runs/{accepted["run_id"]}";var machinePath=$"/v1/device/app-runs/{accepted["run_id"]}";
+        var upload=machinePath+"/output/stdout?offset=0&sealed_output=true&truncated=true";
+        Assert.Equal(HttpStatusCode.NoContent,(await s.Device.PutAsync(upload,new ByteArrayContent(Encoding.UTF8.GetBytes("hello 🦾")))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,(await s.Device.PutAsync(upload,new ByteArrayContent(Encoding.UTF8.GetBytes("hello 🦾")))).StatusCode);
+        await Error(await s.Device.PutAsync(upload,new ByteArrayContent("changed"u8.ToArray())),409,"invalid_observation");
+        var output=await Json(await s.Owner.GetAsync(runPath+"/output?stream=stdout"));Assert.Equal("hello 🦾",Encoding.UTF8.GetString(Convert.FromBase64String(output["data_base64"]!.ToString())));Assert.True(output["sealed"]!.GetValue<bool>());Assert.True(output["truncated"]!.GetValue<bool>());
+        var bytes="frozen bytes"u8.ToArray();var hash=Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));var id=Guid.NewGuid();var artifact=machinePath+$"/artifacts/{id}?path=proof.bin&sha256={hash}&content_type=application/octet-stream";
+        Assert.Equal(HttpStatusCode.NoContent,(await s.Device.PutAsync(artifact,new ByteArrayContent(bytes))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,(await s.Device.PutAsync(artifact,new ByteArrayContent(bytes))).StatusCode);
+        await Error(await s.Device.PutAsync(artifact,new ByteArrayContent("tampered"u8.ToArray())),400,"invalid_input");
+        var summary=await Json(await s.Owner.GetAsync(runPath+$"/artifacts/{id}"));Assert.Equal("available",summary["state"]!.ToString());Assert.Equal(bytes,await s.Owner.GetByteArrayAsync(runPath+$"/artifacts/{id}/content"));
+        using var stranger=s.Factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());await Error(await stranger.GetAsync(runPath+$"/artifacts/{id}/content"),404,"not_found");
+        var global=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook"));var scoped=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?run_id={accepted["run_id"]}"));
+        Assert.Contains(scoped["items"]!.AsArray(),x=>x!["type"]!.ToString()=="app.run.failed");Assert.All(scoped["items"]!.AsArray(),x=>Assert.Contains(global["items"]!.AsArray(),g=>g!["event_id"]!.ToString()==x!["event_id"]!.ToString()));
+    }
+    [Fact]
+    public async Task App_HITL_is_run_bound_and_submitted_response_requires_device_confirmation()
+    {
+        await using var s=await Setup();var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";var accepted=await Json(await Post(s.Owner,path+"/start",StartInput((await Json(await s.Owner.GetAsync(path)))["installed"]!)));await Command(s,accepted);
+        var request=Guid.NewGuid();var now=AppProtocol.Timestamp(DateTimeOffset.UtcNow);var sync=new JsonObject { ["request_id"]=request.ToString(),["execution_id"]=accepted["run_id"]!.DeepClone(),["prompt"]="Continue?",["choices"]=JsonNode.Parse("[{\"value\":\"yes\",\"label\":\"Yes\"},{\"value\":\"no\",\"label\":\"No\"}]"),["deadline"]=null,["timeout_outcome"]=null,["state"]="pending",["outcome"]=null,["applied_response_id"]=null,["created_at"]=now,["updated_at"]=now };
+        await Json(await s.Device.PutAsJsonAsync($"/v1/device/interactions/{request}",sync));var interaction=$"/v1/app-runs/{accepted["run_id"]}/interactions/{request}";
+        var submitted=await Json(await Post(s.Owner,interaction+"/responses",new JsonObject { ["chosen_value"]="yes" }));Assert.Equal("submitted",submitted["response"]!["status"]!.ToString());
+        await Error(await s.Owner.GetAsync($"/v1/app-runs/{Guid.NewGuid()}/interactions/{request}"),404,"not_found");
+        sync["state"]="answered";sync["outcome"]="yes";sync["applied_response_id"]=submitted["response"]!["response_id"]!.DeepClone();sync["updated_at"]=AppProtocol.Timestamp(DateTimeOffset.UtcNow);
+        await Json(await s.Device.PutAsJsonAsync($"/v1/device/interactions/{request}",sync));var applied=await Json(await s.Owner.GetAsync(interaction));Assert.Equal("applied",applied["response"]!["status"]!.ToString());
+        var events=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?run_id={accepted["run_id"]}"));Assert.Contains(events["items"]!.AsArray(),x=>x!["type"]!.ToString()=="human.interaction.answered");
+    }
+
 }

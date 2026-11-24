@@ -121,6 +121,7 @@ public static class AppInstallationDevice
                     await AppInstallationEndpoints.RequireIdle(db,robot.Id,ct);
                     var binding = incoming["installed"]!.DeepClone().AsObject(); binding["observed_at"] = incoming["observed_at"]!.DeepClone();
                     installation.InstalledBinding = binding.ToJsonString(); installation.Candidate = null;
+                    db.LogbookEvents.Add(new LogbookEvent { Id=o.Id,RobotId=robot.Id,AppOperationId=o.Id,AppInstallationId=installation.Id,ActorUserId=o.RequestedByUserId,Type="app.installation.changed",SchemaVersion=3,OccurredAt=observed,ReceivedAt=now,Payload=new JsonObject { ["revision_id"]=release["revision_id"]!.DeepClone(),["kind"]=o.Kind }.ToJsonString() });
                 }
                 else
                 {
@@ -187,6 +188,7 @@ public sealed class AppInstallationWorker(IServiceScopeFactory scopes, DeviceCon
                 {
                     var run = await db.AppRuns.SingleAsync(x => x.Id == o.RunId, ct);
                     run.State = "failed"; run.Failure = o.Failure; run.CompletedAt = o.CompletedAt;
+                    AppHistoryEndpoints.Event(db,run,"app.run.failed",o.CompletedAt!.Value,o.CompletedAt.Value);
                 }
                 // No device observation is invented for an undispatched failure.
                 await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return;

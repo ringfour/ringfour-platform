@@ -110,7 +110,9 @@ class OpenApiContracts(unittest.TestCase):
                                 self.assertEqual(operation["security"], [{"deviceCredentialId": [], "deviceCredentialSecret": []}])
                                 names = {p["name"] for p in parameters if p["in"] == "header" and p.get("required")}
                                 self.assertTrue({"x-ringfour-credential-id", "x-ringfour-credential-secret"} <= names)
-                                if not path.endswith("/negotiate"):
+                                # Durable App evidence delivery is authenticated by enrollment, including
+                                # after run completion and without an active WebSocket session.
+                                if not path.endswith("/negotiate") and not path.startswith("/v1/device/app-runs/"):
                                     self.assertIn("x-ringfour-device-session", names)
                             else:
                                 self.assertEqual(operation.get("security", document.get("security")), [{"bearerAuth": []}])

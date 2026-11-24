@@ -260,3 +260,32 @@ and appends its retained outbox report atomically. The previous binding survives
 preparation failure. Local-dev/script insert triggers refuse new legacy work while
 an App candidate is staging; apply also checks existing execution slots and local
 dev state. Completed rows/reports/configurations remain retained across replacement.
+
+### Hosted App runs and evidence (AP-09/AP-10)
+
+`AppRunDispatch` adds `robot_app_inventory.runs_supported`, negotiated separately
+from installation support. The unique pending-operation index applies only when
+`run_id IS NULL`, permitting exact-run Stop alongside pending Start. AP-09's
+robot row lock and AP-02 shared execution slot serialize App/legacy starts; local
+development and diagnostics are also guarded. Run snapshots remain immutable.
+
+`AppRuntimeEvidence` adds `app_run_outputs` (one row per run, independent stdout/
+stderr prefixes capped at 65536 bytes with monotonic seals/truncation) and
+`app_artifacts` (run-owned, globally unique artifact ID and unique run/path, size,
+SHA-256 and MIME metadata). Bytes live in object storage under run-scoped keys.
+Device uploads accept late evidence after terminal state and exact retries.
+
+`logbook_events` gains nullable `app_operation_id` and `app_installation_id`
+foreign keys alongside the existing legacy operation relationship. Extended
+constraints retain old entries and allow App lifecycle events. Authored entries
+and HITL preserve their existing ingestion format, with App attribution resolved
+against the exact run/start operation and robot. The App history projection maps
+these to schema v3 and filters by run/App/installation without losing event IDs.
+Legacy history readers keep their previous response format.
+
+Daemon SQLite 0019 retains run/operation report fingerprints and supports
+prelaunch stop. SQLite 0020 adds immutable artifact spool metadata and output
+delivery offsets/seal/truncation acknowledgements. Existing run-credential rows
+store hashes, expiry and revocation; the derivation key stays in a private file
+next to SQLite. Output and queued artifact bytes remain durable across Daemon
+replacement and API outages. Hosted confirmation precedes local byte cleanup.

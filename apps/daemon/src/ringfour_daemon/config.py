@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -30,10 +31,15 @@ class Settings:
     apps_enabled: bool = False
     engine_socket: str = "/var/run/docker.sock"
     app_network: str | None = None
+    app_runtime_url: str | None = None
     app_memory_bytes: int = 268435456
     app_nano_cpus: int = 1000000000
 
     def __post_init__(self):
+        if self.app_runtime_url:
+            origin = urlsplit(self.app_runtime_url)
+            if origin.scheme not in ("http", "https") or not origin.hostname or origin.username is not None or origin.password is not None or origin.path not in ("", "/") or origin.query or origin.fragment or any(c in self.app_runtime_url for c in "\r\n"):
+                raise ValueError("App runtime URL must be an owner-configured HTTP(S) origin")
         if self.apps_enabled and (self.app_memory_bytes < 16777216 or self.app_nano_cpus <= 0 or not self.engine_socket.startswith("/")):
             raise ValueError("App engine requires an absolute socket path and positive resource limits")
 
@@ -43,6 +49,7 @@ class Settings:
             apps_enabled=os.environ.get("RINGFOUR_APPS_ENABLED", "false").lower() == "true",
             engine_socket=os.environ.get("RINGFOUR_ENGINE_SOCKET", "/var/run/docker.sock"),
             app_network=os.environ.get("RINGFOUR_APP_NETWORK") or None,
+            app_runtime_url=os.environ.get("RINGFOUR_APP_RUNTIME_URL", "http://daemon:8081") or None,
             app_memory_bytes=int(os.environ.get("RINGFOUR_APP_MEMORY_BYTES", "268435456")),
             app_nano_cpus=int(os.environ.get("RINGFOUR_APP_NANO_CPUS", "1000000000")),
             db_path=os.environ.get("DAEMON_DB_PATH", "/data/ringfour.db"),

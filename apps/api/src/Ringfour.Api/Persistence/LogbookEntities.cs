@@ -5,6 +5,8 @@ public sealed class LogbookEvent
     public Guid Id { get; set; }
     public Guid RobotId { get; set; }
     public Guid? OperationId { get; set; }
+    public Guid? AppOperationId { get; set; }
+    public Guid? AppInstallationId { get; set; }
     public long? LocalSequence { get; set; }
     public required string Type { get; set; }
     public int SchemaVersion { get; set; }

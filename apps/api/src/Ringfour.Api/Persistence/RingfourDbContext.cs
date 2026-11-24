@@ -43,6 +43,8 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<AppConfigurationRevision> AppConfigurationRevisions => Set<AppConfigurationRevision>();
     public DbSet<AppOperation> AppOperations => Set<AppOperation>();
     public DbSet<AppRun> AppRuns => Set<AppRun>();
+    public DbSet<AppRunOutput> AppRunOutputs => Set<AppRunOutput>();
+    public DbSet<AppArtifact> AppArtifacts => Set<AppArtifact>();
     public DbSet<AppIdempotencyRecord> AppIdempotencyRecords => Set<AppIdempotencyRecord>();
     public DbSet<RobotExecutionSlot> RobotExecutionSlots => Set<RobotExecutionSlot>();
     public DbSet<RobotAppInventory> RobotAppInventories => Set<RobotAppInventory>();
@@ -122,6 +124,10 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.Property(item => item.Id).HasColumnName("id");
             entity.Property(item => item.RobotId).HasColumnName("robot_id");
             entity.Property(item => item.OperationId).HasColumnName("operation_id");
+            entity.Property(item => item.AppOperationId).HasColumnName("app_operation_id");
+            entity.Property(item => item.AppInstallationId).HasColumnName("app_installation_id");
+            entity.HasOne<AppOperation>().WithMany().HasForeignKey(item => item.AppOperationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppInstallation>().WithMany().HasForeignKey(item => item.AppInstallationId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(item => item.LocalSequence).HasColumnName("local_sequence");
             entity.Property(item => item.Type).HasColumnName("type");
             entity.Property(item => item.SchemaVersion).HasColumnName("schema_version");
@@ -135,9 +141,9 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasIndex(item => new { item.RobotId, item.ReceivedAt, item.Id });
             entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(item => item.Operation).WithMany().HasForeignKey(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped'))"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted'))"));
             entity.ToTable(table => table.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND app_operation_id IS NOT NULL AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted'))"));
         });
         modelBuilder.Entity<LogbookCheckpoint>(entity =>
         {
@@ -840,6 +846,22 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.ToTable(t => t.HasCheckConstraint("ck_app_run_completion", "(state IN ('accepted','running') AND completed_at IS NULL) OR (state IN ('succeeded','failed','stopped','interrupted') AND completed_at IS NOT NULL)"));
             e.ToTable(t => t.HasCheckConstraint("ck_app_run_snapshot_object", "jsonb_typeof(snapshot) = 'object'"));
             e.ToTable(t => t.HasCheckConstraint("ck_app_run_failure_object", "failure IS NULL OR jsonb_typeof(failure) = 'object'"));
+        });
+        modelBuilder.Entity<AppRunOutput>(e =>
+        {
+            e.ToTable("app_run_outputs", t => t.HasCheckConstraint("ck_app_output_bounds", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536"));
+            e.HasKey(x => x.RunId); e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.Stdout).HasColumnName("stdout"); e.Property(x => x.Stderr).HasColumnName("stderr");
+            e.Property(x => x.StdoutSealed).HasColumnName("stdout_sealed"); e.Property(x => x.StderrSealed).HasColumnName("stderr_sealed");
+            e.Property(x => x.StdoutTruncated).HasColumnName("stdout_truncated"); e.Property(x => x.StderrTruncated).HasColumnName("stderr_truncated");
+            e.HasOne<AppRun>().WithOne().HasForeignKey<AppRunOutput>(x => x.RunId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<AppArtifact>(e =>
+        {
+            e.ToTable("app_artifacts"); e.HasKey(x => x.Id); e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.Path).HasColumnName("path").HasMaxLength(240); e.Property(x => x.Size).HasColumnName("size");
+            e.Property(x => x.Sha256).HasColumnName("sha256").HasMaxLength(64); e.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(80);
+            e.HasIndex(x => new { x.RunId, x.Path }).IsUnique(); e.HasOne<AppRun>().WithMany().HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<AppIdempotencyRecord>(e =>
         {

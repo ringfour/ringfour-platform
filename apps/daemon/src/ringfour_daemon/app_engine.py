@@ -343,13 +343,14 @@ class Executor:
             if intent["phase"] != "create":
                 return self.interrupt(run_id)
             self.deadline(row)
+            from . import app_runtime
             body = {
                 "Image": intent["image_id"],
                 "Labels": self.labels(row),
                 "Env": [
                     "RINGFOUR_AGENT_URL=" + (self.settings.agent_uri or ""),
                     "RINGFOUR_APP_CONFIG=/app/ringfour-config.json",
-                ],
+                ] + app_runtime.environment(self.settings, row),
                 "HostConfig": {
                     "NetworkMode": intent["network_id"],
                     "ReadonlyRootfs": False,
@@ -365,6 +366,8 @@ class Executor:
                     },
                 },
             }
+            if self.settings.app_runtime_url:
+                body["HostConfig"]["Mounts"] = [app_runtime.volume(self, row)]
             self.fence()
             self.engine.request(
                 "POST",
@@ -474,6 +477,10 @@ class Executor:
             params={"path": "/app"},
             content=archive.getvalue(),
         )
+        if self.settings.app_runtime_url:
+            from .app_runtime import directory
+            user = self.engine.image(snapshot["image"])["Config"]["User"]
+            directory(self, row, user)
         self.phase(
             run_id, "start"
         )  # Ambiguous HTTP replies can never cause a second start.
@@ -491,7 +498,7 @@ class Executor:
                 }
             )
             conn.execute(
-                "UPDATE app_runs SET state='interrupted',failure_json=?,observed_at=?,updated_at=? WHERE run_id=? AND state IN ('accepted','starting','running')",
+                "UPDATE app_runs SET state='interrupted',stdout_sealed=1,stderr_sealed=1,stdout_truncated=1,stderr_truncated=1,failure_json=?,observed_at=?,updated_at=? WHERE run_id=? AND state IN ('accepted','starting','running')",
                 (failure, utc_now(), utc_now(), run_id),
             )
         self.phase(run_id, "terminal")

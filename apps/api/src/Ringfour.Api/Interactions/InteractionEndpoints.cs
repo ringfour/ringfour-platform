@@ -28,6 +28,8 @@ public static class InteractionEndpoints
         human.MapGet("/interactions/{requestId:guid}", Get);
         human.MapPost("/interactions/{requestId:guid}/responses", Respond);
         endpoints.MapPut("/v1/device/interactions/{requestId:guid}", Sync);
+        human.MapGet("/app-runs/{runId:guid}/interactions/{requestId:guid}", GetApp).WithMetadata(new AppErrorResponse());
+        human.MapPost("/app-runs/{runId:guid}/interactions/{requestId:guid}/responses", RespondApp).WithMetadata(new AppErrorResponse());
     }
 
     private static object Document(HumanInteraction item) => new
@@ -72,6 +74,8 @@ public static class InteractionEndpoints
         var development = await db.DevSessionRuns.AsNoTracking().Where(item => item.Id == executionId)
             .Select(item => new { item.OperationId, item.ActorUserId }).SingleOrDefaultAsync(ct);
         if (development is not null) return (development.OperationId, development.ActorUserId);
+        var app = await db.AppRuns.AsNoTracking().SingleOrDefaultAsync(x => x.Id == executionId, ct);
+        if (app is not null) return (app.StartOperationId, app.RequestedByUserId);
         throw ApiException.Conflict("interaction_conflict", "The execution attribution is unavailable.");
     }
 
@@ -85,9 +89,10 @@ public static class InteractionEndpoints
         Guid operationId, Guid executionId, Guid? actorUserId, string type, DateTimeOffset occurredAt,
         object payload)
     {
+        var app = db.AppRuns.AsNoTracking().SingleOrDefault(x=>x.Id==executionId);
         db.LogbookEvents.Add(new LogbookEvent
         {
-            Id = eventId, RobotId = robotId, OperationId = operationId, LocalSequence = null,
+            Id = eventId, RobotId = robotId, OperationId = app is null ? operationId : null, AppOperationId = app?.StartOperationId, AppInstallationId = app?.InstallationId, LocalSequence = null,
             Type = type, SchemaVersion = 1, OccurredAt = occurredAt.ToUniversalTime(),
             ReceivedAt = DateTimeOffset.UtcNow, ExecutionId = executionId, ActorUserId = actorUserId,
             Payload = JsonSerializer.Serialize(payload, RingfourJson.Options)
@@ -167,7 +172,8 @@ public static class InteractionEndpoints
         if (credential.RevokedAt is not null || credential.ExpiresAt <= DateTimeOffset.UtcNow)
             throw ApiException.InvalidToken("The robot credential is invalid, expired, or revoked.");
         if (!await db.ScriptExecutions.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct) &&
-            !await db.DevSessionRuns.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct))
+            !await db.DevSessionRuns.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct) &&
+            !await db.AppRuns.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct))
             throw ApiException.Conflict("interaction_conflict", "The execution does not belong to this robot.");
 
         var item = await db.HumanInteractions.Include(candidate => candidate.Response)
@@ -301,4 +307,17 @@ public static class InteractionEndpoints
         return Results.Json(new { request_id = item.Id, response_id = response.Id, status = response.Status,
             submitted_at = response.SubmittedAt }, statusCode: 202);
     }
+    private static async Task<HumanInteraction> AppItem(Guid runId, Guid requestId, HttpContext c, RingfourDbContext db, CancellationToken ct)
+    {
+        await Apps.AppRunEndpoints.Read(runId,c,db,ct);
+        return await db.HumanInteractions.Include(x=>x.Response).SingleOrDefaultAsync(x=>x.Id==requestId&&x.ExecutionId==runId,ct)??throw ApiException.NotFound("Interaction does not belong to this run.");
+    }
+    private static IResult AppDocument(HumanInteraction item)
+    {
+        var document=JsonSerializer.SerializeToNode(Document(item),RingfourJson.Options)!.AsObject();document.Remove("execution_id");document["run_id"]=item.ExecutionId.ToString();return Results.Json(document);
+    }
+    private static async Task<IResult> GetApp(Guid runId,Guid requestId,HttpContext c,RingfourDbContext db,CancellationToken ct) => AppDocument(await AppItem(runId,requestId,c,db,ct));
+    private static async Task<IResult> RespondApp(Guid runId,Guid requestId,HttpContext c,RingfourDbContext db,CancellationToken ct)
+    { await AppItem(runId,requestId,c,db,ct);await Respond(c,db,requestId,ct);return AppDocument(await AppItem(runId,requestId,c,db,ct)); }
+
 }

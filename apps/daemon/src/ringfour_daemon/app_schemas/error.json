@@ -50,7 +50,11 @@
             "stale_observation",
             "conflicting_report",
             "invalid_observation",
-            "execution_failed"
+            "execution_failed",
+            "interaction_conflict",
+            "interaction_already_answered",
+            "interaction_terminal",
+            "interaction_expired"
           ]
         },
         "message": {
@@ -341,7 +345,11 @@
             "stale_observation",
             "conflicting_report",
             "invalid_observation",
-            "execution_failed"
+            "execution_failed",
+            "interaction_conflict",
+            "interaction_already_answered",
+            "interaction_terminal",
+            "interaction_expired"
           ]
         },
         "message": {

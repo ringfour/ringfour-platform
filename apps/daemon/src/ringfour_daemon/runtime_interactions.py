@@ -118,6 +118,9 @@ async def _context(request: Request) -> tuple[str, str] | None:
 
 
 async def _running(settings, execution: str) -> bool | None:
+    from .app_runtime import local_run, running
+    if local_run(settings, execution) is not None:
+        return await asyncio.to_thread(running, settings, execution)
     try:
         async with httpx.AsyncClient(base_url=settings.runner_url, timeout=5, headers={"authorization": f"Bearer {settings.runner_auth_token}"}) as client:
             response = await client.get(f"/v1/executions/{execution}")
@@ -164,6 +167,10 @@ def _apply_response(db_path: str, request_id: str, response: object) -> None:
             raise ValueError("Unknown interaction acknowledgement")
         if row["state"] != "pending":
             return
+        app = conn.execute("SELECT state FROM app_runs WHERE run_id=?", (row["execution_id"],)).fetchone()
+        if app and app[0] not in ("accepted", "starting", "running"):
+            conn.execute("UPDATE runtime_interactions SET state='cancelled',updated_at=? WHERE request_id=? AND state='pending'", (time.time(),request_id))
+            return
         now = time.time()
         if row["deadline"] is not None and row["deadline"] <= now:
             conn.execute("UPDATE runtime_interactions SET state='timed_out',outcome=timeout_outcome,updated_at=? WHERE request_id=? AND state='pending'", (now, request_id))
@@ -199,7 +206,8 @@ async def deliver(settings) -> None:
                         if not isinstance(acknowledgement, dict) or set(acknowledgement) != {"request_id", "response"} or acknowledgement["request_id"] != row["request_id"]:
                             raise ValueError("Invalid interaction acknowledgement")
                         if acknowledgement["response"] is not None:
-                            _apply_response(settings.db_path, row["request_id"], acknowledgement["response"])
+                            if await _running(settings, row["execution_id"]) is True:
+                                _apply_response(settings.db_path, row["request_id"], acknowledgement["response"])
             except (httpx.HTTPError, sqlite3.Error, OSError, ValueError, TypeError, KeyError):
                 logger.warning("interaction synchronization failed; will retry")
             await asyncio.sleep(2)

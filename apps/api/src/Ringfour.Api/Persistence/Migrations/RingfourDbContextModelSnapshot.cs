@@ -22,6 +22,47 @@ namespace Ringfour.Api.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.AppArtifact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("content_type");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("path");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "Path")
+                        .IsUnique();
+
+                    b.ToTable("app_artifacts", (string)null);
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.AppConfigurationRevision", b =>
                 {
                     b.Property<Guid>("Id")
@@ -612,6 +653,46 @@ namespace Ringfour.Api.Persistence.Migrations
                             t.HasCheckConstraint("ck_app_run_snapshot_object", "jsonb_typeof(snapshot) = 'object'");
 
                             t.HasCheckConstraint("ck_app_run_state", "state IN ('accepted','running','succeeded','failed','stopped','interrupted')");
+                        });
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.AppRunOutput", b =>
+                {
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("run_id");
+
+                    b.Property<byte[]>("Stderr")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("stderr");
+
+                    b.Property<bool>("StderrSealed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("stderr_sealed");
+
+                    b.Property<bool>("StderrTruncated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("stderr_truncated");
+
+                    b.Property<byte[]>("Stdout")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("stdout");
+
+                    b.Property<bool>("StdoutSealed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("stdout_sealed");
+
+                    b.Property<bool>("StdoutTruncated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("stdout_truncated");
+
+                    b.HasKey("RunId");
+
+                    b.ToTable("app_run_outputs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_app_output_bounds", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536");
                         });
                 });
 
@@ -1276,6 +1357,14 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("actor_user_id");
 
+                    b.Property<Guid?>("AppInstallationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("app_installation_id");
+
+                    b.Property<Guid?>("AppOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("app_operation_id");
+
                     b.Property<Guid?>("ExecutionId")
                         .HasColumnType("uuid")
                         .HasColumnName("execution_id");
@@ -1319,6 +1408,10 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AppInstallationId");
+
+                    b.HasIndex("AppOperationId");
+
                     b.HasIndex("OperationId");
 
                     b.HasIndex("RobotId", "LocalSequence")
@@ -1328,11 +1421,11 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.ToTable("logbook_events", null, t =>
                         {
-                            t.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped'))");
+                            t.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted'))");
 
                             t.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')");
 
-                            t.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND operation_id IS NOT NULL AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND operation_id IS NOT NULL AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL)");
+                            t.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND app_operation_id IS NOT NULL AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted'))");
                         });
                 });
 
@@ -2372,6 +2465,15 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("Ringfour.Api.Persistence.AppArtifact", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.AppRun", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.AppConfigurationRevision", b =>
                 {
                     b.HasOne("Ringfour.Api.Persistence.User", null)
@@ -2561,6 +2663,15 @@ namespace Ringfour.Api.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("InstallationId", "RobotId", "OrganizationId")
                         .HasPrincipalKey("Id", "RobotId", "OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Persistence.AppRunOutput", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.AppRun", null)
+                        .WithOne()
+                        .HasForeignKey("Ringfour.Api.Persistence.AppRunOutput", "RunId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -2804,6 +2915,16 @@ namespace Ringfour.Api.Persistence.Migrations
 
             modelBuilder.Entity("Ringfour.Api.Persistence.LogbookEvent", b =>
                 {
+                    b.HasOne("Ringfour.Api.Persistence.AppInstallation", null)
+                        .WithMany()
+                        .HasForeignKey("AppInstallationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Ringfour.Api.Persistence.AppOperation", null)
+                        .WithMany()
+                        .HasForeignKey("AppOperationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Ringfour.Api.Persistence.Operation", "Operation")
                         .WithMany()
                         .HasForeignKey("OperationId")

@@ -34,7 +34,9 @@ private PID, dropped capabilities, no-new-privileges, bounded CPU/memory/PIDs/lo
 and one owner network. The immutable image supplies ENTRYPOINT; no command or
 entrypoint override, socket, credentials or host bind is accepted. Configuration
 is copied as a read-only file into the root-owned application directory before start.
-Only the Agent URL/config path and later explicitly bound runtime URLs/tokens may
-be passed; AP-08 passes no runtime credentials. Install preparation only pulls
+Only the Agent URL/config path and explicitly bound runtime URLs/tokens may
+be passed. AP-10 now supplies run-scoped credentials and an owner-labeled
+artifact volume; see [App runtime](apps-runtime.md). AP-08-only fixtures may
+leave the runtime origin unset. Install preparation only pulls
 and inspects images, and never invokes create/start. AP-09 owns hosted run dispatch;
 AP-10 owns runtime delivery and upstream output/artifact synchronization.

@@ -198,7 +198,8 @@ public sealed class DeploymentLifecycleWorker(IServiceScopeFactory scopes, Devic
         {
             if (await db.AppOperations.AnyAsync(x => x.RobotId == robotId && (x.State == "queued" || x.State == "accepted" || x.State == "running") && x.RunId == null, ct)) { await tx.CommitAsync(ct); return; }
             if (manager.Get(robotId) is null) { await tx.CommitAsync(ct); return; }
-            if (await db.DevSessionRuns.AnyAsync(item => item.RobotId == robotId && (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct) ||
+            if (await db.RobotExecutionSlots.AnyAsync(item => item.RobotId == robotId, ct) ||
+                await db.DevSessionRuns.AnyAsync(item => item.RobotId == robotId && (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct) ||
                 await db.ScriptExecutions.AnyAsync(item => item.RobotId == robotId &&
                 (item.State == "queued" || item.State == "preparing" || item.State == "running"), ct))
             { Fail(action, deployment, now, "execution_conflict", "Another execution is active."); }

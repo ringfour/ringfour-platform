@@ -30,10 +30,15 @@ internal static class AppRunDevice
             }
             else
             {
+                var firstStart = run.StartedAt is null && started is not null;
+                var changedState = run.State != state;
                 if (run.State == "running" && state == "accepted") throw Invalid();
                 run.State = state; run.StartedAt = started; run.EndedAt = ended; run.ExitCode = exit; run.Failure = failure;
                 if (!AppRunEndpoints.Active.Contains(state)) run.CompletedAt = received;
                 run.ObservedAt = observed; run.ReceivedAt = received;
+                if (firstStart) AppHistoryEndpoints.Event(db,run,"app.run.started",started!.Value,received);
+                if (changedState && !AppRunEndpoints.Active.Contains(state))
+                    AppHistoryEndpoints.Event(db,run,"app.run." + (state=="succeeded"?"completed":state),ended??observed,received);
             }
             runs.Add(id,run);
         }
