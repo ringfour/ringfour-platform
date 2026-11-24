@@ -4,6 +4,15 @@ Governed by [specification](../../../app-pivot.md) and
 [implementation backlog](../../../apps-pivot-backlog.md). Work sequentially.
 The earlier 00–10 milestones describe legacy behavior and regression evidence.
 
+## Current execution agreement · 24 November 2026
+
+The user authorized completing AP-08, AP-09 and AP-10 before one combined human
+acceptance pass. Continue sequential implementation after passing automated
+component and real-protocol tests; pending operator confidence checks do not
+block the next authorized milestone. Record them as pending, never passed.
+Stack reloads/rebuilds remain operator-controlled. Resume the remaining
+virtual/product/cutover milestones after the combined human pass.
+
 ## AP-01 — contracts and authority (contract acceptance complete)
 
 - [x] Resolve socket and deployment authority in normative instructions.
