@@ -1,7 +1,7 @@
 # Ringfour Python runtime clients
 
 This optional, dependency-free Python package supplies App runtime clients for
-Logbook entries, human decisions and artifact publication. It installs
+Logbook entries, human decisions, artifact publication and live settings. It installs
 independently of `ringfour-sdk` and the Agent. Robot-control calls use the
 separate SDK/Agent connection.
 
@@ -14,11 +14,13 @@ versioned local wheel bundle. From its extracted `linux-amd64` directory:
 uv venv --python 3.13 .venv
 uv pip install --python .venv/bin/python --no-index --find-links wheels \
   --require-hashes --only-binary=:all: -r requirements-runtime.txt
-.venv/bin/python -c "from ringfour_runtime import artifacts, interactions, logbook"
+.venv/bin/python -c "from ringfour_runtime import artifacts, interactions, logbook, settings"
 ```
 
-AP-04 qualifies the local distribution and package checksum. Public package-feed
-publication is deferred.
+AP-04 qualifies the `0.1.0.dev0` local distribution and package checksum. AP-17
+adds the `0.1.1.dev0` settings client; it needs a newly pinned wheel bundle
+before a live-settings App can be built. Public package-feed publication is
+deferred.
 
 ## Use from an App
 
@@ -36,6 +38,29 @@ request = interactions.create(
 )
 request = interactions.wait(request.request_id)
 ```
+
+Apps that declare live settings can poll, validate, apply and acknowledge full
+settings revisions with the run-scoped Daemon client:
+
+```python
+from ringfour_runtime import settings
+
+def validate(values):
+    if not 100 <= values["sample_interval_ms"] <= 5000:
+        raise settings.SettingsRejected("Sample interval must be 100–5000 ms.")
+
+def apply(values):
+    sampler.set_interval(values["sample_interval_ms"])
+
+settings.serve(apply, poll_seconds=2, validate=validate)
+```
+
+`serve` retries transient runtime outages and retains each completed result in
+memory until the Daemon acknowledges it. A process restart can cause a handler
+to run again if the result never reached the Daemon, so handlers should make
+their effects idempotent. Use `SettingsRejected` for a safe, single-line reason;
+other exceptions remain application failures. Pass a `threading.Event` as
+`stop_event` to cancel polling cleanly.
 
 An API response is provisional until the Daemon confirms application. Stop,
 timeout, offline and competing-response outcomes remain distinct. See

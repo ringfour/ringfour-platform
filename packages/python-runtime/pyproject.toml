@@ -1,7 +1,7 @@
 [project]
 name = "ringfour-platform-runtime"
-version = "0.1.0.dev0"
-description = "Optional App and mission clients for Ringfour Logbook, interactions and artifacts."
+version = "0.1.1.dev0"
+description = "Optional Ringfour App runtime clients for settings, artifacts, Logbook and interactions."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
