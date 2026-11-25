@@ -1,5 +1,4 @@
 using Ringfour.Api.Logbook;
-using Ringfour.Api.MissionUi;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
 using Ringfour.Api;
@@ -7,11 +6,9 @@ using Ringfour.Api.Apps;
 using Ringfour.Api.Auth;
 using Ringfour.Api.Connectivity;
 using Ringfour.Api.Errors;
-using Ringfour.Api.DevSessions;
 using Ringfour.Api.Health;
 using Ringfour.Api.Identity;
 using Ringfour.Api.Interactions;
-using Ringfour.Api.Missions;
 using Ringfour.Api.Persistence;
 using Ringfour.Api.Robots;
 using Ringfour.Api.Storage;
@@ -47,15 +44,10 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 builder.Services.AddSingleton<DeviceConnectionManager>();
-builder.Services.AddSingleton<MissionUiDeviceConnectionManager>();
 builder.Services.AddSingleton<ConnectivityMetrics>();
-builder.Services.AddHostedService<OperationSweeper>();
+builder.Services.AddSingleton<AppDispatchSignal>();
 builder.Services.AddHostedService<AppInstallationWorker>();
-builder.Services.AddHostedService<DeploymentLifecycleWorker>();
-builder.Services.AddHostedService<DevSessionWorker>();
-builder.Services.AddHostedService<DevGrantRetentionWorker>();
 builder.Services.AddRingfourStorage(builder.Configuration);
-builder.Services.AddHostedService<ScriptStorageSweeper>();
 
 builder.AddRingfourAuth();
 
@@ -109,27 +101,16 @@ app.MapAppInventoryEndpoints();
 app.MapAppCatalogEndpoints();
 app.MapAppRegistryEndpoints();
 app.MapAppInstallationEndpoints();
+app.MapAppSettingsEndpoints();
 app.MapAppRunEndpoints();
 app.MapAppRuntimeEndpoints();
+app.MapAppArtifactEndpoints();
 app.MapAppHistoryEndpoints();
 app.MapAppInstallationDevice();
 app.MapPairingEndpoints();
 app.MapOperationEndpoints();
-app.MapScriptRevisionEndpoints();
-app.MapScriptRunEndpoints();
-app.MapMissionEndpoints();
-app.MapDeploymentEndpoints();
-app.MapLocalGrantEndpoints();
-app.MapDevSessionEndpoints();
-app.MapDevRestartEndpoints();
-app.MapDevRunStatusEndpoints();
-app.MapDevSourceReports();
 app.MapLogbookEndpoints();
 app.MapInteractionEndpoints();
-app.MapMissionUiEndpoints();
-app.MapMissionUiDeviceSocketEndpoint();
-app.MapDeploymentLifecycle();
-app.MapDeviceExecutionEndpoints();
 app.MapDeviceSocketEndpoint();
 app.MapFallback(() =>
 {

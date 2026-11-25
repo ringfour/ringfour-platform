@@ -9,8 +9,13 @@ export function useLocation() {
   return new URL(useSyncExternalStore(subscribe, () => window.location.href));
 }
 
-export function visit(path: string) {
+export function visit(path: string): boolean {
   const next = new URL(path, window.location.origin);
+  const navigation = new CustomEvent("ringfour:navigation", {
+    cancelable: true,
+    detail: { href: next.href },
+  });
+  if (!window.dispatchEvent(navigation)) return false;
   const previous = window.location.pathname;
   const returning =
     ["/runs", "/robots", "/apps"].includes(previous) &&
@@ -29,6 +34,7 @@ export function visit(path: string) {
     path,
   );
   window.dispatchEvent(new PopStateEvent("popstate"));
+  return true;
 }
 
 export function setQuery(name: string, value: string) {

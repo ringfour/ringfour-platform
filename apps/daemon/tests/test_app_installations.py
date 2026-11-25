@@ -22,7 +22,7 @@ def uid():
 
 
 @pytest.fixture
-def device(tmp_path, monkeypatch):
+def device(tmp_path, monkeypatch, request):
     db = str(tmp_path / "daemon.db")
     migrate(db)
     robot, namespace, app, revision, configuration, installation = [
@@ -39,11 +39,11 @@ def device(tmp_path, monkeypatch):
         )
     settings = Settings(
         db_path=db,
-        runner_url="http://unavailable-runner",
+
         apps_enabled=True,
         agent_uri="ws://agent",
     )
-    manifest = json.loads((ROOT / "fixtures/apps/v1/manifest.json").read_text())
+    manifest = json.loads((ROOT / f"fixtures/apps/v{getattr(request, 'param', 1)}/manifest.json").read_text())
     target = manifest["targets"][0]
     calls = []
 
@@ -171,6 +171,7 @@ def process(settings, executor, operation):
     asyncio.run(apps.process(settings, executor, operation, {}))
 
 
+@pytest.mark.parametrize("device", [1, 2], indirect=True)
 def test_install_checks_fresh_before_pull_and_creates_zero_runs_or_containers(device):
     settings, executor, command, payload, calls, reports, _ = device
     operation = command()

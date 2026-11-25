@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
+from jsonschema import ValidationError
+from ringfour_daemon import app_validation
 from ringfour_daemon.app_protocol import (
     InventoryReport,
     NegotiationRequest,
@@ -75,6 +77,42 @@ def test_negotiation_is_bound_to_session_namespace_and_offer():
     )
     with pytest.raises(ProtocolError, match="daemon_upgrade_required"):
         select_version(unsupported)
+
+
+def test_negotiation_feature_offers_default_false_and_remain_explicit():
+    offer = parse(NegotiationRequest, json.dumps(fixture("negotiation_offer")))
+    assert not offer.supports_manifest_v2
+    assert not offer.supports_live_settings
+    updated = parse(
+        NegotiationRequest,
+        json.dumps({
+            **fixture("negotiation_offer"),
+            "supports_manifest_v2": True,
+            "supports_live_settings": True,
+        }),
+    )
+    assert updated.supports_manifest_v2 and updated.supports_live_settings
+
+
+def test_manifest_v2_environment_mapping_is_validated_and_scalar():
+    contracts = Path(__file__).resolve().parents[3] / "packages/contracts/fixtures/apps/v2"
+    manifest = json.loads((contracts / "manifest.json").read_text())
+    app_validation.validate_manifest(manifest)
+    canonical = json.loads((contracts / "canonical.json").read_text())
+    assert app_validation.canonical(manifest) == canonical["json"]
+    assert app_validation.digest(manifest) == canonical["digest"]
+    values = manifest["configuration"]["defaults"]
+    assert app_validation.configuration_environment(manifest, values) == {"SAMPLE_COUNT": "3"}
+    manifest["configuration"]["environment"] = {"PATH": "sample_count"}
+    with pytest.raises(ValidationError, match="PATH"):
+        app_validation.validate_manifest(manifest)
+    manifest = json.loads((contracts / "manifest.json").read_text())
+    manifest["configuration"]["schema"]["properties"]["note"] = {"type": "string"}
+    manifest["configuration"]["environment"]["APP_NOTE"] = "note"
+    with pytest.raises(ValueError, match="NUL"):
+        app_validation.configuration_environment(
+            manifest, {"sample_count": 3, "note": "bad\0value"}
+        )
 
 
 @pytest.mark.parametrize("value", [True, "1", 1.5, 0, 2])

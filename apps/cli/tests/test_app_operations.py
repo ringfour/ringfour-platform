@@ -19,7 +19,7 @@ def setup_commands(monkeypatch):
     )
     monkeypatch.setattr(main, "_resolve_org", lambda settings, org: org or ORG)
     monkeypatch.setattr(main.auth, "TokenStore", lambda: object())
-    monkeypatch.setattr(main, "_mission_key", lambda key: key or "generated-key")
+    monkeypatch.setattr(main, "_idempotency_key", lambda key: key or "generated-key")
     calls = []
     state = {"installations": []}
 
@@ -78,6 +78,11 @@ def setup_commands(monkeypatch):
                     "run_id": RUN,
                 },
             )
+        if method == "POST" and path.endswith("/rollback"):
+            return httpx.Response(
+                202,
+                json={"installation_id": INSTALLATION, "operation_id": "op-rollback"},
+            )
         return httpx.Response(
             404, json={"error": {"code": "not_found", "message": "missing"}}
         )
@@ -105,6 +110,7 @@ def test_install_uses_selected_workspace_robot_and_release_defaults(monkeypatch)
     assert (method, path) == ("POST", f"/v1/robots/{ROBOT}/app-installations")
     assert kwargs["json"] == {
         "revision_id": REVISION,
+        "share_id": None,
         "configuration": {"sample_count": 1},
     }
     assert kwargs["headers"]["Idempotency-Key"] == "install-key"
@@ -175,3 +181,31 @@ def test_start_refuses_ambiguous_app_installation(monkeypatch):
     assert result.exit_code != 0
     assert "No unique installation" in result.output
     assert not any(call[0] == "POST" and call[1].endswith("/start") for call in calls)
+
+
+def test_rollback_targets_prior_release_and_configuration_without_starting(monkeypatch):
+    calls, _ = setup_commands(monkeypatch)
+    result = CliRunner().invoke(
+        main.app,
+        [
+            "app",
+            "rollback",
+            INSTALLATION,
+            "--revision",
+            REVISION,
+            "--configuration-revision",
+            CONFIG_REVISION,
+            "--idempotency-key",
+            "rollback-key",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    call = calls[-1]
+    assert call[1] == f"/v1/app-installations/{INSTALLATION}/rollback"
+    assert call[2]["json"] == {
+        "expected_revision_id": REVISION,
+        "expected_configuration_revision_id": CONFIG_REVISION,
+        "revision_id": REVISION,
+        "configuration_revision_id": CONFIG_REVISION,
+    }
+    assert call[2]["headers"]["Idempotency-Key"] == "rollback-key"

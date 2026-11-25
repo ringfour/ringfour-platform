@@ -1,0 +1,37 @@
+{
+  "ap17_passed": true,
+  "manifest_v2": true,
+  "startup_environment": true,
+  "initial_and_live_settings": true,
+  "rejection_and_cas": true,
+  "api_daemon_replacement": true,
+  "lost_result_ack_no_reapply": true,
+  "stop_pending_no_cross_run_delivery": true,
+  "files_cli_and_scope": true,
+  "test_principals_not_live_auth0": true,
+  "organization_id": "f16b848f-539c-4ff5-bf04-147de3120988",
+  "robot_id": "dc0e0974-cbbc-4c7a-9289-ee20b81c1080",
+  "app_id": "59f8e88b-75ba-44c8-8efe-16fe01e5741c",
+  "revision_id": "1a1bda1f-561f-4651-8c04-e028b8fa1666",
+  "manifest_digest": "sha256:9b51319654ec36c5410480966d80b1865e695f667b8166f47056c7104faa8ce9",
+  "image": "127.0.0.1:47865/apps/ap17-settings@sha256:2747608ba20fa92783dd806a6ebe615aa06b8c230be4c381bb1389cb10c11e10",
+  "wheel_bundle": {
+    "sha256": "78301da6097376e69e024bb7254a1d5aa8a7e79615e622d872bab3e0676de7f5",
+    "version": "0.1.1.dev0"
+  },
+  "run_ids": [
+    "93727263-678c-498b-869e-6158b201a17d",
+    "cae1d5d5-8408-43e5-8083-7f71ac57993f"
+  ],
+  "application_ids": {
+    "recovered": "0505508d-23db-41db-82c1-632497c53f35",
+    "rejected": "7fd00de4-423e-45e5-a873-e54da6a2db87",
+    "ended_pending": "a74159f2-fc9b-421b-85df-36c2505a03c4"
+  },
+  "operator_user_id": "0ffe0463-5151-4c01-80d9-001d51a5745d",
+  "publisher_user_id": "3ce8bed7-775b-4bfd-9af3-341c3f4f4b6b",
+  "artifact_ids": [
+    "4f7e1a5e-615b-444f-9386-2eeba8ba2020",
+    "30837e7c-4106-4c9e-a270-ccf285ab504b"
+  ]
+}

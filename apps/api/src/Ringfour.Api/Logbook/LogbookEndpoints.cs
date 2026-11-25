@@ -71,48 +71,6 @@ public static class LogbookEndpoints
     public static void MapLogbookEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/v1/device/logbook/events", Ingest);
-        app.MapGet("/v1/organizations/{orgId:guid}/events", History).RequireAuthorization();
-    }
-
-    private static async Task<IResult> History(HttpContext context, RingfourDbContext db, Guid orgId,
-        [FromQuery(Name = "robot_id")] Guid? robotId, [FromQuery(Name = "execution_id")] Guid? executionId,
-        [FromQuery(Name = "operation_id")] Guid? operationId, [FromQuery(Name = "actor_user_id")] Guid? actorId,
-        [FromQuery(Name = "event_id")] Guid? eventId,
-        string? type, [FromQuery(Name = "from")] DateTimeOffset? from, [FromQuery(Name = "to")] DateTimeOffset? to,
-        string? cursor, int? limit, CancellationToken ct)
-    {
-        var user = await IdentityAccess.ResolveOrCreateUser(db, IdentityAccess.RequireSubject(context), ct);
-        await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Operator, ct);
-        if (limit is < 1 or > 100 || (from is not null && to is not null && from >= to) ||
-            (type is not null && type is not ("mission.logbook.entry" or "mission.revision_selected" or "mission.started" or "mission.completed" or "mission.failed" or "mission.stopped" or "device.operation.state_changed" or "agent.motion.event" or
-                "human.interaction.requested" or "human.interaction.answered" or "human.interaction.timed_out" or "human.interaction.cancelled" or "app.installation.changed" or "app.run.started" or "app.run.completed" or "app.run.failed" or "app.run.stopped" or "app.run.interrupted")))
-            throw ApiException.InvalidInput("Invalid history filter.");
-        from = from?.ToUniversalTime();
-        to = to?.ToUniversalTime();
-        var (after, id) = Pagination.DecodeCursor(cursor);
-        var query = db.LogbookEvents.AsNoTracking().Include(item => item.Operation)
-            .Where(item => item.Robot.OrganizationId == orgId && item.AppOperationId == null);
-        if (robotId is not null) query = query.Where(item => item.RobotId == robotId);
-        if (executionId is not null) query = query.Where(item => item.ExecutionId == executionId);
-        if (operationId is not null) query = query.Where(item => (item.OperationId == operationId || item.AppOperationId == operationId));
-        if (actorId is not null) query = query.Where(item => item.ActorUserId == actorId ||
-            (!item.Type.StartsWith("human.interaction.") && item.ActorUserId == null &&
-                item.Operation != null && item.Operation.RequestedByUserId == actorId));
-        if (eventId is not null) query = query.Where(item => item.Id == eventId);
-        if (type is not null) query = query.Where(item => item.Type == type);
-        if (from is not null) query = query.Where(item => item.OccurredAt >= from);
-        if (to is not null) query = query.Where(item => item.OccurredAt < to);
-        if (after is not null) query = query.Where(item => item.ReceivedAt > after || (item.ReceivedAt == after && item.Id.CompareTo(id!.Value) > 0));
-        var pageSize = limit ?? 100;
-        var rows = await query.OrderBy(item => item.ReceivedAt).ThenBy(item => item.Id).Take(pageSize + 1).ToListAsync(ct);
-        var page = rows.Take(pageSize).ToList();
-        return Results.Ok(new { items = page.Select(item => new { event_id = item.Id, robot_id = item.RobotId,
-            local_sequence = item.LocalSequence, operation_id = item.AppOperationId ?? item.OperationId, execution_id = item.ExecutionId,
-            actor_user_id = item.ActorUserId ?? (!item.Type.StartsWith("human.interaction.") && item.Operation != null
-                ? item.Operation.RequestedByUserId : (Guid?)null), type = item.Type, schema_version = item.SchemaVersion,
-            occurred_at = item.OccurredAt, received_at = item.ReceivedAt,
-            payload = item.Payload is null ? new JsonObject { ["state"] = item.State } : JsonNode.Parse(item.Payload) }),
-            next_cursor = Pagination.NextCursor(rows.Count > pageSize, page, item => item.ReceivedAt, item => item.Id) });
     }
 
     private static bool Fields(JsonElement value, params string[] fields) =>
@@ -170,7 +128,7 @@ public static class LogbookEndpoints
             throw ApiException.InvalidToken("A valid robot credential is required.");
         var (robot, credential) = await DeviceAuth.VerifyCredential(db, credentialId, context.Request.Headers["x-ringfour-credential-secret"].ToString(), ct);
         List<Event> events;
-        try { events = Parse(await ScriptRevisionEndpoints.ReadLimited(context.Request.Body, 65536, ct)); }
+        try { events = Parse(await RequestBody.ReadLimited(context.Request.Body, 65536, ct)); }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
         { throw ApiException.InvalidInput("Invalid logbook event batch."); }
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -184,10 +142,9 @@ public static class LogbookEndpoints
         foreach (var item in events)
         {
             var app = item.ExecutionId is null ? null : await db.AppRuns.AsNoTracking().SingleOrDefaultAsync(x=>x.Id==item.ExecutionId&&x.RobotId==robot.Id&&x.StartOperationId==item.OperationId,ct);
-            if (item.RobotId != robot.Id || (app is null && item.OperationId is Guid operation && !await db.Operations.AnyAsync(op => op.Id == operation && op.RobotId == robot.Id, ct)))
+            if (item.RobotId != robot.Id || (app is null && item.OperationId is not null))
                 throw ApiException.Conflict("event_conflict", "Event robot or operation does not match the credential.");
-            if (app is null && item.ExecutionId is Guid execution && !await db.ScriptExecutions.AnyAsync(e => e.Id == execution && e.RobotId == robot.Id && e.Id == item.OperationId, ct) &&
-                !await db.DevSessionRuns.AnyAsync(e => e.Id == execution && e.RobotId == robot.Id && e.OperationId == item.OperationId, ct))
+            if (app is null && item.ExecutionId is not null)
                 throw ApiException.Conflict("event_conflict", "Event execution does not match the operation.");
             if (item.Sequence <= sequence)
             {

@@ -63,7 +63,6 @@ def daemon_replacement(root, settings, engine_url, container_id):
     env = os.environ | {
         "DAEMON_DB_PATH": settings.db_path,
         "DAEMON_CREDENTIAL_PATH": str(credential),
-        "RUNNER_STAGE_DIR": str(root / "staged"),
         "RINGFOUR_APPS_ENABLED": "true",
         "RINGFOUR_ENGINE_SOCKET": path,
         "RINGFOUR_APP_NETWORK": settings.app_network,
@@ -236,7 +235,7 @@ def main():
                 )
             settings = Settings(
                 db_path=db,
-                runner_url="http://unused",
+
                 apps_enabled=True,
                 app_network=network,
             )

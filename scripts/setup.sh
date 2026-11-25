@@ -19,7 +19,7 @@ for app in console; do
   fi
 done
 
-for app in daemon runner cli; do
+for app in daemon cli; do
   if [ -d "apps/$app" ]; then
     echo "==> apps/$app"
     uv sync --frozen --project "apps/$app"

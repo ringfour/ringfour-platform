@@ -8,15 +8,10 @@ from .db import connect
 # Local deduplication and reconciliation records for hosted operations. The
 # platform owns queued; a device record starts at accepted once the command is
 # committed locally (before the ack goes out). Terminal states are immutable.
-TERMINAL_STATES = ("succeeded", "failed", "cancelled")
 
 
 class OperationConflict(Exception):
     """An operation id was reused with different command content."""
-
-
-class OperationNotFound(Exception):
-    pass
 
 
 @dataclass(frozen=True)
@@ -123,42 +118,6 @@ def record_command(db_path: str, robot_id: str, command: dict) -> tuple[DeviceOp
         )
 
 
-def apply_status(
-    db_path: str, operation_id: str, state: str, result: dict | None = None
-) -> DeviceOperation:
-    with connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM device_operations WHERE operation_id = ?", (operation_id,)
-        ).fetchone()
-        if row is None:
-            raise OperationNotFound(operation_id)
-        stored = _row_to_operation(row)
-        if stored.state in TERMINAL_STATES:
-            if stored.state == state:
-                return stored
-            raise OperationConflict(
-                f"operation {operation_id} is already terminal ({stored.state})"
-            )
-        now = utc_now()
-        conn.execute(
-            "UPDATE device_operations SET state = ?, result = ?, updated_at = ?"
-            " WHERE operation_id = ?",
-            (state, canonical(result) if result is not None else None, now, operation_id),
-        )
-        return DeviceOperation(
-            operation_id=stored.operation_id,
-            robot_id=stored.robot_id,
-            kind=stored.kind,
-            payload_version=stored.payload_version,
-            payload=stored.payload,
-            state=state,
-            deadline_at=stored.deadline_at,
-            updated_at=now,
-            result=result,
-        )
-
-
 def get(db_path: str, operation_id: str) -> DeviceOperation | None:
     with connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -166,33 +125,3 @@ def get(db_path: str, operation_id: str) -> DeviceOperation | None:
             "SELECT * FROM device_operations WHERE operation_id = ?", (operation_id,)
         ).fetchone()
         return _row_to_operation(row) if row is not None else None
-
-
-def list_nonterminal(db_path: str) -> list[DeviceOperation]:
-    with connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM device_operations"
-            " WHERE state NOT IN ('succeeded', 'failed', 'cancelled')"
-            " ORDER BY updated_at, operation_id"
-        ).fetchall()
-        return [_row_to_operation(row) for row in rows]
-
-
-def mark_superseded(db_path: str, operation_id: str) -> DeviceOperation:
-    """Fail a nonterminal local record the platform no longer considers active.
-
-    Used by startup reconciliation: every nonterminal platform operation is
-    replayed after welcome, so absence from the replay means terminal-or-gone.
-    """
-    return apply_status(
-        db_path,
-        operation_id,
-        "failed",
-        {
-            "error": {
-                "code": "superseded",
-                "message": "The platform no longer has this operation active.",
-            }
-        },
-    )

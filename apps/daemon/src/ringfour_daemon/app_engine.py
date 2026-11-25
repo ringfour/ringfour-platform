@@ -343,6 +343,7 @@ class Executor:
             if intent["phase"] != "create":
                 return self.interrupt(run_id)
             self.deadline(row)
+            snapshot = json.loads(row["snapshot_json"])
             from . import app_runtime
             body = {
                 "Image": intent["image_id"],
@@ -350,6 +351,9 @@ class Executor:
                 "Env": [
                     "RINGFOUR_AGENT_URL=" + (self.settings.agent_uri or ""),
                     "RINGFOUR_APP_CONFIG=/app/ringfour-config.json",
+                ] + [
+                    name + "=" + value
+                    for name, value in sorted(snapshot.get("configuration_environment", {}).items())
                 ] + app_runtime.environment(self.settings, row),
                 "HostConfig": {
                     "NetworkMode": intent["network_id"],
@@ -504,24 +508,29 @@ class Executor:
         self.phase(run_id, "terminal")
         return self.row(run_id)[0]
 
-    @serialized
     def stop(self, run_id):
-        row = self.reconcile(run_id)
-        row, intent = self.row(run_id)
-        if row["state"] not in ACTIVE:
-            return row
-        container = self.engine.container(row["container_id"])
-        self.verify(container, row, intent)
-        with closing(connect(self.settings.db_path)) as conn, conn:
-            conn.execute(
-                "UPDATE app_engine_intents SET stop_requested=1 WHERE run_id=?",
-                (run_id,),
-            )
-        self.fence()
+        # Do not hold the executor mutex while Docker waits for the container
+        # to exit. A stopping App may need that same mutex to snapshot its final
+        # artifacts; holding it here deadlocks the App until Docker SIGKILLs it.
+        with self.mutex:
+            row = self.reconcile(run_id)
+            row, intent = self.row(run_id)
+            if row["state"] not in ACTIVE:
+                return row
+            container = self.engine.container(row["container_id"])
+            self.verify(container, row, intent)
+            with closing(connect(self.settings.db_path)) as conn, conn:
+                conn.execute(
+                    "UPDATE app_engine_intents SET stop_requested=1 WHERE run_id=?",
+                    (run_id,),
+                )
+            self.fence()
+
         self.engine.request(
             "POST", "/containers/" + row["container_id"] + "/stop", params={"t": 10}
         )
-        return self.reconcile(run_id)
+        with self.mutex:
+            return self.reconcile(run_id)
 
     @serialized
     def remove(self, run_id):

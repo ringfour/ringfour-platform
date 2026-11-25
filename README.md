@@ -8,19 +8,13 @@ safety.
 
 ## Current implementation
 
-The active plan is the [Apps pivot](docs/milestones/apps-pivot.md), governed by
-the [product specification](../app-pivot.md) and
-[implementation backlog](../apps-pivot-backlog.md). AP-01–10 implement the
-catalog, authoring/publication, installation, hosted runs and durable runtime
-evidence. AP-08V adds an opt-in Runner-free virtual deployment; its operator
-acceptance remains pending. Next is the combined AP-08/09/10/08V confidence pass,
-then Studio and App CLI operations. See the
-[acceptance guide](docs/human-testing/AP-08-10.md) and
-[AP-08V guide](docs/human-testing/AP-08V.md).
+App authoring, catalog, installation, execution, settings and evidence are
+implemented. [AP-14/AP-15](docs/evidence/AP-14-15.md) reduce the supported
+surface to Apps. The current milestone checklist is in
+[Apps pivot](docs/milestones/apps-pivot.md); the
+[combined acceptance guide](docs/human-testing/AP-14-15.md) covers cdr/ring1.
 
-The legacy Runner and mission workflows remain during migration. Their old
-user guides and milestone records are in the
-[mission-era documentation archive](docs/archive/legacy-mission-workflows/README.md).
+The mission/script/Runner and hosted UI workflows were retired in AP-14/AP-15.
 
 ## Architecture
 
@@ -30,7 +24,6 @@ user guides and milestone records are in the
   authoring/publication.
 - `apps/console`: authenticated internal web interface; App workflow migration
   is tracked in AP-11.
-- `apps/runner`: legacy execution service, retained only for migration callers.
 - `packages/contracts`: versioned OpenAPI, JSON Schema and fixtures.
 - `infra/server`: local API, PostgreSQL and registry/UI Compose stack.
 - `tests/e2e`: protocol and process acceptance harnesses.

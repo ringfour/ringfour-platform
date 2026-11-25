@@ -1,3 +1,8 @@
+# Current combined acceptance
+
+Use [AP-14/AP-15 combined acceptance](AP-14-15.md) for the current two-user sweep.
+The early sequence below is historical context; its old overlay/Runner references are retired.
+
 # Early acceptance — AP-05, AP-06, AP-08 and AP-07
 
 **Current sequence:** AP-08/09/10 implementation and automated protocol checks

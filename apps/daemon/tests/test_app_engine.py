@@ -1,4 +1,5 @@
 import json
+import threading
 import uuid
 
 import httpx
@@ -125,14 +126,14 @@ def setup(tmp_path):
                 uid(),
                 image,
                 uid(),
-                json.dumps({"image": image, "configuration": {"sample_count": 2}}),
+                json.dumps({"image": image, "configuration": {"sample_count": 2}, "configuration_environment": {"SAMPLE_COUNT": "2", "APP_READY": "false"}}),
                 "2026-11-23T12:00:00Z",
                 "2026-11-23T12:00:00Z",
             ),
         )
     settings = Settings(
         db_path=db,
-        runner_url="http://runner",
+
         apps_enabled=True,
         app_network="apps",
         agent_uri="ws://agent:10101",
@@ -241,8 +242,18 @@ def test_policy_has_no_entrypoint_bind_privileges_or_credentials(setup):
         executor.remove(run)
 
 
+def test_create_injects_only_the_frozen_configuration_environment(setup):
+    executor, engine, run = setup
+    executor.create(run)
+    env = engine.calls[0][2]["json"]["Env"]
+    assert "SAMPLE_COUNT=2" in env
+    assert "APP_READY=false" in env
+    assert "PATH=anything" not in env
+    assert "RINGFOUR_APP_CONFIG=false" not in env
+
+
 def test_real_http_protocol_platform_and_pull_error_stream(tmp_path):
-    settings = Settings(db_path=str(tmp_path / "unused"), runner_url="http://unused")
+    settings = Settings(db_path=str(tmp_path / "unused"), )
     requests = []
 
     def handler(request):
@@ -286,6 +297,33 @@ def test_fast_exit_preserves_output_and_terminal_replay(setup):
     assert result["state"] == "succeeded" and result["stdout_sealed"] == 1
     assert executor.stop(run)["state"] == "succeeded"
     assert not any(p.endswith(("/stop", "/start")) for _, p, _ in engine.calls)
+
+
+def test_stop_releases_executor_mutex_while_waiting_for_container(setup):
+    executor, engine, run = setup
+    executor.start(run)
+    stop_entered = threading.Event()
+    finish_stop = threading.Event()
+    original_request = engine.request
+
+    def delayed_request(method, path, **kwargs):
+        if path.endswith("/stop"):
+            stop_entered.set()
+            assert finish_stop.wait(2)
+        return original_request(method, path, **kwargs)
+
+    engine.request = delayed_request
+    result = []
+    worker = threading.Thread(target=lambda: result.append(executor.stop(run)))
+    worker.start()
+    assert stop_entered.wait(2)
+    # Runtime artifact snapshots take this lock while Docker waits for the App.
+    with executor.mutex:
+        assert executor.row(run)[0]["state"] == "running"
+    finish_stop.set()
+    worker.join(2)
+    assert not worker.is_alive()
+    assert result[0]["state"] == "stopped"
 
 
 def test_duplicate_owner_matches_and_conflicting_name_are_never_adopted(setup):

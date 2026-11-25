@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "app_key": "settings-check",
+  "release": "1.0.0",
+  "display": {
+    "name": "Settings Check",
+    "description": "Exercise manifest v2 environment mapping and live settings."
+  },
+  "targets": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "native_requirements": [],
+      "repository": "registry.example.com/ringfour/settings-check"
+    }
+  ],
+  "capabilities": {
+    "required": [
+      {
+        "capability": "imu"
+      }
+    ],
+    "optional": [
+      {
+        "capability": "cameras"
+      }
+    ]
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "sample_count"
+      ]
+    },
+    "defaults": {
+      "sample_count": 3
+    },
+    "environment": {
+      "SAMPLE_COUNT": "sample_count"
+    }
+  },
+  "runtime_settings": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interval_ms": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 2000
+        }
+      },
+      "required": [
+        "interval_ms"
+      ]
+    },
+    "defaults": {
+      "interval_ms": 250
+    }
+  },
+  "build": {
+    "dockerfile": "Dockerfile",
+    "files": [
+      "main.py",
+      ".dockerignore"
+    ]
+  },
+  "wheel_bundle": {
+    "version": "0.1.0.dev0",
+    "sha256": "7ea68b854805abcd2843793c2e981aef623f287bb6eadf0839e9cf7c9912f290"
+  }
+}

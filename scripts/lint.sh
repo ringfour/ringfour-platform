@@ -13,7 +13,7 @@ for app in console; do
   fi
 done
 
-for app in daemon runner cli; do
+for app in daemon cli; do
   if [ -d "apps/$app" ]; then
     echo "==> lint apps/$app"
     (cd "apps/$app" && uv run ruff check src tests)

@@ -6,7 +6,6 @@
 | [CLI](cli/README.md) | Auth0 login, organization/device inspection and App authoring/publication |
 | [Console](console/README.md) | Authenticated internal web interface; App workflows are in AP-11 |
 | [Daemon](daemon/README.md) | Enrolled-device identity, operations, App engine and runtime evidence |
-| [Runner](runner/README.md) | Legacy execution compatibility until AP-15 retirement |
 
 Applications communicate through versioned contracts in
 [`packages/contracts`](../packages/contracts). They do not import another

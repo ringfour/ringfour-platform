@@ -76,6 +76,8 @@ http.server.ThreadingHTTPServer(('0.0.0.0',8081),Handler).serve_forever()
         bufsize=1,
     )
 
+    hook = c.get("runtime_fixture_hook", lambda *_: False)
+
     def forward():
         with httpx.Client(
             base_url=f"http://127.0.0.1:{c['daemon_port']}", timeout=60, trust_env=False
@@ -83,6 +85,8 @@ http.server.ThreadingHTTPServer(('0.0.0.0',8081),Handler).serve_forever()
             for line in process.stdout:
                 value = json.loads(line)
                 try:
+                    if hook(value, "before", None):
+                        raise httpx.ConnectError("Injected runtime fixture outage")
                     reply = client.request(
                         value["method"],
                         value["path"],
@@ -101,6 +105,8 @@ http.server.ThreadingHTTPServer(('0.0.0.0',8081),Handler).serve_forever()
                         ),
                         "body": base64.b64encode(reply.content).decode(),
                     }
+                    if hook(value, "after", reply.status_code):
+                        result = {"id": value["id"], "status": 503, "body": base64.b64encode(b"{}").decode()}
                 except httpx.HTTPError:
                     result = {
                         "id": value["id"],

@@ -21,8 +21,8 @@ from .agent_inventory import utc_now
 from .app_engine import API, Engine, EngineError
 from .app_protocol import ownership_labels
 from .db import connect
+from .device_auth import machine_headers
 from .enrollment import load_identity
-from .scripts import machine_headers
 
 logger = logging.getLogger(__name__)
 MAX_ARTIFACT = 16 * 1024 * 1024
@@ -146,7 +146,14 @@ def environment(settings, row):
         return []
     token = credential(settings, row["run_id"])
     result = ["RINGFOUR_ARTIFACT_DIR=/artifacts/files"]
-    for service in ("LOGBOOK", "INTERACTION", "ARTIFACT"):
+    services = ("LOGBOOK", "INTERACTION", "ARTIFACT")
+    try:
+        snapshot = json.loads(row["snapshot_json"])
+    except (KeyError, TypeError, json.JSONDecodeError):
+        snapshot = {}
+    if isinstance(snapshot, dict) and isinstance(snapshot.get("runtime_settings"), dict):
+        services += ("SETTINGS",)
+    for service in services:
         result.extend(
             [
                 "RINGFOUR_" + service + "_URL=" + settings.app_runtime_url,

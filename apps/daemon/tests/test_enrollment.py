@@ -3,7 +3,6 @@ import stat
 
 import httpx
 from fastapi.testclient import TestClient
-
 from ringfour_daemon.config import Settings
 from ringfour_daemon.enrollment import load_identity
 from ringfour_daemon.main import create_app
@@ -19,7 +18,7 @@ ENROLL_RESPONSE = {
 def make_client(tmp_path, platform_handler) -> TestClient:
     settings = Settings(
         db_path=str(tmp_path / "daemon.db"),
-        runner_url="http://runner",
+
         platform_url="http://platform",
         credential_path=str(tmp_path / "secret" / "robot-credential"),
     )

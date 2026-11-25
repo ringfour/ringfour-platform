@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 import httpx
 
 from .db import connect
+from .device_auth import machine_headers
 from .enrollment import credential_error, load_identity
-from .scripts import machine_headers
 
 logger = logging.getLogger(__name__)
 MAX_EVENTS = 4096

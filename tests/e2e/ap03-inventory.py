@@ -140,7 +140,6 @@ asyncio.run(main())
                 daemon_env = os.environ | {
                     "PYTHONPATH": str(ROOT / "apps/daemon/src"), "DAEMON_DB_PATH": str(temp / "daemon.db"),
                     "DAEMON_CREDENTIAL_PATH": str(temp / "credential"), "PLATFORM_API_URL": str(client.base_url),
-                    "RUNNER_URL": "http://127.0.0.1:1", "RUNNER_STAGE_DIR": str(temp / "staged"),
                     "RINGFOUR_AGENT_URI": f"ws://127.0.0.1:{agent_port}", "RINGFOUR_ENGINE_OS": engine_os,
                     "RINGFOUR_ENGINE_ARCHITECTURE": engine_arch, "RINGFOUR_APP_INVENTORY_INTERVAL_SECONDS": "0.3",
                     "RINGFOUR_AGENT_INVENTORY_TIMEOUT_SECONDS": "1",

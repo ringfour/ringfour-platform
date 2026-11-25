@@ -8,6 +8,9 @@ subsequently reloaded both stacks; readiness and anonymous Store 401 are verifie
 editable target repositories, explicit Dockerfile and source-file allowlist,
 and a checksum-pinned AP-04 local wheel bundle. It is not publication input.
 `app.manifest.json` follows manifest v1 and contains only concrete image digests.
+Authoring schema v2 remains additive: v1 files and published releases continue
+to validate unchanged. Select `"schema_version": 2` to declare startup
+environment mappings or live settings.
 
 `app init PATH --app-key KEY --repository REGISTRY/REPO` extracts the one Robot
 Check template from a versioned checksum-pinned archive, then applies the selected
@@ -25,6 +28,16 @@ wheel inputs, then builds one loaded image per platform using Docker Buildx.
 Credentials, context/state files, `.env`, symlinks and engine options never become
 implicit build inputs. Images use the Dockerfile's plain entrypoint. Results in
 `.ringfour/build.json` bind source fingerprint and local image IDs, not just tags.
+
+These identifiers answer different questions: `source_fingerprint` binds the
+authoring document and declared build inputs; Docker `image_id` / published OCI
+digest identifies image bytes; API `manifest_digest` identifies the canonical
+immutable release manifest, including display metadata. A display-name change
+can therefore keep the same image digest while producing a different manifest
+digest. Release metadata is immutable: increment `release` in `app.json` before
+publishing a changed name or description. The Store name changes when the new
+listed release is successfully published. Existing runs retain their frozen
+manifest and image references.
 
 `app publish PATH [--org UUID] [--visibility listed|unlisted]` uses Docker's normal
 registry login, verifies the unchanged build inputs/local IDs, pushes images,
@@ -48,5 +61,31 @@ stop its loop. It emits timestamped JSON, and writes recognizable Logbook entrie
 only when execution runtime URLs/credentials are supplied. No runtime configuration
 means stdout-only standalone use. App configuration is a JSON file selected by
 owner-supplied `RINGFOUR_APP_CONFIG`, defaulting to the image's example file;
-AP-08 will wire owner-controlled configuration delivery. Agent address comes from
-`RINGFOUR_AGENT_URL`. Run-scoped runtime delivery remains an AP-10 gate.
+the Daemon supplies its validated values from the immutable installation
+configuration revision. In authoring v2, `configuration.environment` may map
+declared startup keys to literal environment variables, for example
+`"SAMPLE_COUNT": "sample_count"`. Names must be unique, match the uppercase
+environment-name pattern, and cannot use `RINGFOUR_`, `PATH`, `LD_*`,
+`PYTHONPATH` or `PYTHONHOME`. Values are passed literally; mappings cannot
+change the container command, entrypoint, mounts, devices, ports or network.
+Agent address comes from `RINGFOUR_AGENT_URL`.
+
+Optional `runtime_settings` declares a second flat object with `schema` and
+`defaults`. Use `ringfour_runtime.settings` to validate and apply a complete
+object, then acknowledge it from the App. Startup configuration is supplied
+when a process starts; live settings can target that exact running process.
+Initial live settings must be acknowledged before behavior that depends on
+them. Device delivery is at least once, so handlers should make effects
+idempotent. `SettingsRejected` takes a bounded safe reason; validation errors
+must never be treated as applied values. Live settings are ordinary retained
+configuration and Logbook data, not secret storage. Values are limited to the
+existing closed, flat string/integer/boolean schema subset, up to 32 keys and
+16 KiB runtime messages. See [App runtime](apps-runtime.md) and the
+[runtime package guide](../packages/python-runtime/README.md) for recovery,
+acknowledgement and helper usage.
+
+Published artifacts are immutable outputs, limited to 16 files and 16 MiB per
+file in this milestone. The per-run artifact directory is a publication source,
+not persistent App working storage: caches, databases and downloaded models do
+not survive as an installation disk. Persistent working volumes are not part
+of AP-17.

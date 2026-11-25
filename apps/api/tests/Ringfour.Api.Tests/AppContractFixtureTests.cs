@@ -14,7 +14,7 @@ public sealed class AppContractFixtureTests
     private static readonly Lazy<bool> Registered = new(() =>
     {
         foreach (var path in new[] {
-            "apps/v1/manifest.schema.json", "errors/v2/app-error.schema.json",
+            "apps/v1/manifest.schema.json", "apps/v2/manifest.schema.json", "apps/v2/authoring.schema.json", "apps/v2/settings.schema.json", "artifacts/v3/app-artifact-page.schema.json", "errors/v2/app-error.schema.json",
             "apps/v1/api.schema.json", "apps/v1/requests.schema.json",
             "interactions/v2/app-interaction.schema.json", "artifacts/v2/app-artifact.schema.json",
             "logbook/v3/app-history-page.schema.json", "device/v1/command.schema.json",
@@ -56,9 +56,22 @@ public sealed class AppContractFixtureTests
             Assert.False(ManifestValid(fixture.GetProperty("manifest")), fixture.GetProperty("name").GetString());
     }
 
+    [Fact]
+    public void V2ManifestFixturesMatchIndependentReader()
+    {
+        _ = Registered.Value;
+        using var valid = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, "fixtures/apps/v2/manifest.json")));
+        Assert.True(ManifestValid(valid.RootElement));
+        using var rejected = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, "fixtures/apps/v2/rejected.json")));
+        foreach (var fixture in rejected.RootElement.EnumerateArray())
+            Assert.False(ManifestValid(fixture.GetProperty("manifest")), fixture.GetProperty("name").GetString());
+    }
+
     private static bool ManifestValid(JsonElement manifest)
     {
-        var schema = JsonSchema.FromText("{\"$ref\":\"https://contracts.ringfour.dev/apps/v1/manifest.schema.json\"}");
+        var version = manifest.TryGetProperty("schema_version", out var schemaVersion) ? schemaVersion.GetInt32() : 0;
+        if (version is not (1 or 2)) return false;
+        var schema = JsonSchema.FromText($"{{\"$ref\":\"https://contracts.ringfour.dev/apps/v{version}/manifest.schema.json\"}}");
         if (!schema.Evaluate(manifest).IsValid || JsonSerializer.SerializeToUtf8Bytes(manifest).Length > 65536) return false;
         var targets = manifest.GetProperty("targets").EnumerateArray().ToArray();
         if (targets.Select(t => (t.GetProperty("os").GetString(), t.GetProperty("architecture").GetString())).Distinct().Count() != targets.Length) return false;
@@ -84,8 +97,26 @@ public sealed class AppContractFixtureTests
                 if (choices.EnumerateArray().Any(choice => !validator.Evaluate(choice).IsValid)) return false;
             }
         }
-        return JsonSerializer.SerializeToUtf8Bytes(configuration.GetProperty("defaults")).Length <= 16384
-            && JsonSchema.FromText(configSchema.GetRawText()).Evaluate(configuration.GetProperty("defaults")).IsValid;
+        if (JsonSerializer.SerializeToUtf8Bytes(configuration.GetProperty("defaults")).Length > 16384
+            || !JsonSchema.FromText(configSchema.GetRawText()).Evaluate(configuration.GetProperty("defaults")).IsValid) return false;
+        if (version == 1) return true;
+        var reserved = new HashSet<string>(StringComparer.Ordinal) { "PATH", "IFS", "ENV", "BASH_ENV", "BASHOPTS", "SHELLOPTS", "NODE_OPTIONS", "NODE_PATH", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "RUBYOPT", "RUBYLIB", "PERL5OPT", "PERL5LIB" };
+        if (configuration.TryGetProperty("environment", out var environment))
+        {
+            var mappings = environment.EnumerateObject().ToArray();
+            var names = properties.EnumerateObject().Select(x => x.Name).ToHashSet(StringComparer.Ordinal);
+            if (mappings.Length > 32 || mappings.Any(pair =>
+                !System.Text.RegularExpressions.Regex.IsMatch(pair.Name, "^[A-Z_][A-Z0-9_]*$") ||
+                pair.Name.StartsWith("RINGFOUR_", StringComparison.Ordinal) ||
+                pair.Name.StartsWith("LD_", StringComparison.Ordinal) ||
+                pair.Name.StartsWith("DYLD_", StringComparison.Ordinal) ||
+                pair.Name.StartsWith("PYTHON", StringComparison.Ordinal) ||
+                reserved.Contains(pair.Name) || !names.Contains(pair.Value.GetString() ?? ""))) return false;
+        }
+        if (!manifest.TryGetProperty("runtime_settings", out var runtime)) return true;
+        var runtimeDefaults = runtime.GetProperty("defaults");
+        return JsonSerializer.SerializeToUtf8Bytes(runtimeDefaults).Length <= 16384
+            && JsonSchema.FromText(runtime.GetProperty("schema").GetRawText()).Evaluate(runtimeDefaults).IsValid;
     }
 
     [Fact]
@@ -93,6 +124,19 @@ public sealed class AppContractFixtureTests
     {
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, "fixtures/apps/v1/manifest.json")));
         using var golden = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, "fixtures/apps/v1/canonical.json")));
+        using var output = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+            WriteCanonical(writer, manifest.RootElement);
+        var bytes = output.ToArray();
+        Assert.Equal(golden.RootElement.GetProperty("json").GetString(), Encoding.UTF8.GetString(bytes));
+        Assert.Equal(golden.RootElement.GetProperty("digest").GetString(), "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes)));
+    }
+
+    [Fact]
+    public void V2ManifestCanonicalBytesMatchIndependentReader()
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, "fixtures/apps/v2/manifest.json")));
+        using var golden = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, "fixtures/apps/v2/canonical.json")));
         using var output = new MemoryStream();
         using (var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
             WriteCanonical(writer, manifest.RootElement);

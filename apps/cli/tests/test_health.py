@@ -1,7 +1,6 @@
 import httpx
-from typer.testing import CliRunner
-
 from ringfour_cli.main import app, collect_health
+from typer.testing import CliRunner
 
 runner = CliRunner()
 

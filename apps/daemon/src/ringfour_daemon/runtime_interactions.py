@@ -17,9 +17,9 @@ import httpx
 from fastapi import APIRouter, Request
 
 from .db import connect
+from .device_auth import machine_headers
 from .enrollment import credential_error, load_identity
 from .runtime_logbook import _execution_token, _operation, error
-from .scripts import machine_headers
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -118,18 +118,8 @@ async def _context(request: Request) -> tuple[str, str] | None:
 
 
 async def _running(settings, execution: str) -> bool | None:
-    from .app_runtime import local_run, running
-    if local_run(settings, execution) is not None:
-        return await asyncio.to_thread(running, settings, execution)
-    try:
-        async with httpx.AsyncClient(base_url=settings.runner_url, timeout=5, headers={"authorization": f"Bearer {settings.runner_auth_token}"}) as client:
-            response = await client.get(f"/v1/executions/{execution}")
-        if response.status_code != 200:
-            return None
-        payload = response.json()
-        return payload.get("state") == "running" if isinstance(payload, dict) else None
-    except (httpx.HTTPError, ValueError):
-        return None  # A Runner outage must not fabricate cancellation or approval.
+    from .app_runtime import running
+    return await asyncio.to_thread(running, settings, execution)
 
 
 async def reconcile(settings) -> None:
@@ -205,9 +195,8 @@ async def deliver(settings) -> None:
                         acknowledgement = reply.json()
                         if not isinstance(acknowledgement, dict) or set(acknowledgement) != {"request_id", "response"} or acknowledgement["request_id"] != row["request_id"]:
                             raise ValueError("Invalid interaction acknowledgement")
-                        if acknowledgement["response"] is not None:
-                            if await _running(settings, row["execution_id"]) is True:
-                                _apply_response(settings.db_path, row["request_id"], acknowledgement["response"])
+                        if acknowledgement["response"] is not None and await _running(settings, row["execution_id"]) is True:
+                            _apply_response(settings.db_path, row["request_id"], acknowledgement["response"])
             except (httpx.HTTPError, sqlite3.Error, OSError, ValueError, TypeError, KeyError):
                 logger.warning("interaction synchronization failed; will retry")
             await asyncio.sleep(2)

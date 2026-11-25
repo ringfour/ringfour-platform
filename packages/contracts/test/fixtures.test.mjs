@@ -13,137 +13,13 @@ async function loadJson(relativePath) {
 const ajv = addContractFormats(new Ajv2020({ allErrors: true, strict: true }));
 const validators = new Map();
 
-test("mission manifest fixture rejects traversal and unknown fields", async () => {
-  const validate = await validatorFor("schemas/missions/v1/manifest.schema.json");
-  const manifest = await loadJson("fixtures/missions/v1/manifest.json");
-  assert.ok(validate(manifest));
-  assert.equal(validate({ ...manifest, entrypoint: "../secret.py" }), false);
-  assert.equal(validate({ ...manifest, schema_version: 2 }), false);
-  assert.equal(validate({ ...manifest, source_digest: "bad" }), false);
-  assert.equal(validate({ ...manifest, undocumented: true }), false);
-});
-
-test("local CLI mission context fixture rejects unknown fields", async () => {
-  const validate = await validatorFor("schemas/missions/v1/cli-context.schema.json");
-  const context = await loadJson("fixtures/missions/v1/cli-context.json");
-  assert.ok(validate(context), JSON.stringify(validate.errors));
-  assert.equal(validate({ ...context, version: 2 }), false);
-  assert.equal(validate({ ...context, targets: [{ ...context.targets[0], token: "secret" }] }), false);
-});
-
-test("mission deployment and action responses validate", async () => {
-  const deployment = await validatorFor("schemas/missions/v1/deployment-accepted.schema.json");
-  const action = await validatorFor("schemas/missions/v1/action-accepted.schema.json");
-  assert.ok(deployment(await loadJson("fixtures/missions/v1/deployment-accepted.json")));
-  assert.ok(action(await loadJson("fixtures/missions/v1/action-accepted.json")));
-  const state = await validatorFor("schemas/missions/v1/deployment.schema.json");
-  assert.ok(state(await loadJson("fixtures/missions/v1/deployment.json")));
-  const prepare = await validatorFor("schemas/missions/v1/runner-prepare.schema.json");
-  assert.ok(prepare(await loadJson("fixtures/missions/v1/runner-prepare.json")));
-  const prepared = await validatorFor("schemas/missions/v1/runner-prepared.schema.json");
-  assert.ok(prepared(await loadJson("fixtures/missions/v1/runner-prepared.json")));
-});
-
-test("mission pages and device preparation payloads validate", async () => {
-  for (const name of ["mission-page", "revision-page", "device-prepare"]) {
-    const validate = await validatorFor(`schemas/missions/v1/${name}.schema.json`);
-    const fixture = await loadJson(`fixtures/missions/v1/${name}.json`);
-    assert.ok(validate(fixture), JSON.stringify(validate.errors));
-    assert.equal(validate({ ...fixture, unexpected: true }), false);
-  }
-  const error = await validatorFor("schemas/errors/v1/error.schema.json");
-  for (const code of ["version_conflict", "execution_conflict", "deployment_in_progress", "robot_unavailable"]) {
-    assert.ok(error(await loadJson(`fixtures/missions/v1/error-${code}.json`)));
-  }
-  const page = await validatorFor("schemas/missions/v1/revision-page.schema.json");
-  const fixture = await loadJson("fixtures/missions/v1/revision-page.json");
-  assert.equal(page({ ...fixture, items: [{ ...fixture.items[0], manifest: {} }] }), false);
-});
-
-test("Runner artifact fixtures enforce bounds", async () => {
-  const list = await validatorFor("schemas/runner/v1/artifact-list.schema.json");
-  const chunk = await validatorFor("schemas/runner/v1/artifact-chunk.schema.json");
-  const listing = await loadJson("fixtures/runner/v1/artifact-list.json");
-  const output = await loadJson("fixtures/runner/v1/artifact-chunk.json");
-  assert.ok(list(listing));
-  assert.ok(chunk(output));
-  assert.equal(list({ ...listing, artifacts: Array(17).fill(listing.artifacts[0]) }), false);
-  assert.equal(chunk({ ...output, next_offset: 262145 }), true);
-  assert.equal(chunk({ ...output, next_offset: 9007199254740992 }), false);
-});
-
-test("Runner active mission UI status list is bounded", async () => {
-  const validate = await validatorFor("schemas/runner/v1/ui-status-list.schema.json");
-  const list = await loadJson("fixtures/runner/v1/ui-status-list.json");
-  assert.ok(validate(list), JSON.stringify(validate.errors));
-  assert.equal(validate({ executions: Array(65).fill(list.executions[0]) }), false);
-});
-
-test("mission UI device tunnel frames validate and enforce envelope bounds", async () => {
-  const validate = await validatorFor("schemas/mission-ui/v1/device-frame.schema.json");
-  const frames = await loadJson("fixtures/mission-ui/v1/device-frames.json");
-  for (const frame of frames) assert.ok(validate(frame), JSON.stringify(validate.errors));
-  assert.equal(validate({ ...frames[4], sequence: 0 }), false, "sequence starts at one");
-  assert.equal(validate({ ...frames[4], payload: { ...frames[4].payload, path: "//example.com/" } }), false, "authority form rejected");
-  assert.equal(validate({ ...frames[4], payload: { ...frames[4].payload, unexpected: true } }), false, "unknown payload field rejected");
-  assert.equal(validate({ ...frames[5], payload: { ...frames[5].payload, data: "***" } }), false, "non-base64 chunk rejected");
-  assert.equal(validate({ ...frames[8], payload: { ...frames[8].payload, status: 101 } }), false, "inner WebSocket upgrade rejected");
-  assert.equal(validate({ ...frames[4], unexpected: true }), false, "unknown envelope field rejected");
-});
-
-test("script revision request enforces upload bounds", async () => {
-  const validate = await validatorFor("schemas/scripts/v1/create-revision-request.schema.json");
-  const request = await loadJson("fixtures/scripts/v1/create-revision.json");
-  assert.ok(validate(request));
-  assert.equal(validate({ ...request, archive_size: 2147483648 }), true);
-  assert.equal(validate({ ...request, archive_size: 9007199254740992 }), false);
-  assert.equal(validate({ ...request, archive_sha256: "wrong" }), false);
-  assert.equal(validate({ ...request, unexpected: true }), false);
-});
-
-test("script run fixtures validate and reject extra fields", async () => {
-  const request = await validatorFor("schemas/scripts/v1/create-run-request.schema.json");
-  const response = await validatorFor("schemas/scripts/v1/create-run-response.schema.json");
-  const input = await loadJson("fixtures/scripts/v1/create-run.json");
-  assert.ok(request(input));
-  assert.ok(response(await loadJson("fixtures/scripts/v1/create-run-response.json")));
-  assert.equal(request({ ...input, revision_id: "bad" }), false);
-  assert.equal(request({ ...input, extra: true }), false);
-});
-
-test("script revision response fixture validates", async () => {
-  const revision = await validatorFor("schemas/scripts/v1/revision.schema.json");
-  const body = await loadJson("fixtures/scripts/v1/revision-uploading.json");
-  assert.ok(revision(body));
-  assert.equal(revision({ ...body, state: "unknown" }), false);
-});
-
-test("script execution and device status fixtures validate", async () => {
-  const execution = await validatorFor("schemas/scripts/v1/execution.schema.json");
-  const status = await validatorFor("schemas/scripts/v1/device-status.schema.json");
-  const body = await loadJson("fixtures/scripts/v1/device-status.json");
-  assert.ok(execution(await loadJson("fixtures/scripts/v1/execution.json")));
-  assert.ok(status(body));
-  assert.equal(status({ ...body, state: "unknown" }), false);
-});
-
-test("device script command fixtures validate", async () => {
-  const start = await validatorFor("schemas/scripts/v1/device-start.schema.json");
-  const stop = await validatorFor("schemas/scripts/v1/device-stop.schema.json");
-  const body = await loadJson("fixtures/scripts/v1/device-start.json");
-  assert.ok(start(body));
-  assert.ok(start({ ...body, mission_revision_id: body.revision_id }));
-  assert.equal(start({ ...body, mission_revision_id: "bad" }), false);
-  assert.ok(stop(await loadJson("fixtures/scripts/v1/device-stop.json")));
-  assert.equal(start({ ...body, entrypoint: "../hello.py" }), false);
-});
-
 async function validatorFor(relativePath) {
   if (!validators.has(relativePath)) {
     validators.set(relativePath, ajv.compile(await loadJson(relativePath)));
   }
   return validators.get(relativePath);
 }
+
 
 test("health fixtures validate against the v1 health schemas", async () => {
   const liveness = await validatorFor("schemas/health/v1/liveness-response.schema.json");
@@ -282,7 +158,6 @@ test("device fixtures validate against the v1 device schemas", async () => {
     heartbeat: await validatorFor("schemas/device/v1/heartbeat.schema.json"),
     command: await validatorFor("schemas/device/v1/command.schema.json"),
     ack: await validatorFor("schemas/device/v1/ack.schema.json"),
-    operation_status: await validatorFor("schemas/device/v1/operation-status.schema.json"),
     error: await validatorFor("schemas/device/v1/protocol-error.schema.json"),
   };
 
@@ -292,8 +167,6 @@ test("device fixtures validate against the v1 device schemas", async () => {
     "heartbeat",
     "command",
     "ack",
-    "operation-status-succeeded",
-    "operation-status-interrupted",
     "protocol-error",
   ]) {
     const message = await loadJson(`fixtures/device/v1/${name}.json`);
@@ -307,7 +180,6 @@ test("device schemas reject malformed documents", async () => {
   const hello = await validatorFor("schemas/device/v1/hello.schema.json");
   const welcome = await validatorFor("schemas/device/v1/welcome.schema.json");
   const command = await validatorFor("schemas/device/v1/command.schema.json");
-  const operationStatus = await validatorFor("schemas/device/v1/operation-status.schema.json");
   const protocolError = await validatorFor("schemas/device/v1/protocol-error.schema.json");
 
   assert.equal(
@@ -361,70 +233,17 @@ test("device schemas reject malformed documents", async () => {
     "command with a kind outside the allowed shape",
   );
   assert.equal(
-    operationStatus({
-      operation_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
-      state: "queued",
-    }),
-    false,
-    "operation_status with a platform-only state",
-  );
-  assert.equal(
     protocolError({ code: "something_else", message: "x" }),
     false,
     "protocol error with an unknown code",
   );
 });
 
-test("operation and status fixtures validate against the v1 robots schemas", async () => {
+test("robot presence fixtures validate", async () => {
   const status = await validatorFor("schemas/robots/v1/robot-status-response.schema.json");
-  const operation = await validatorFor("schemas/robots/v1/operation.schema.json");
-  const createOperation = await validatorFor("schemas/robots/v1/create-operation-request.schema.json");
-
-  assert.ok(status(await loadJson("fixtures/robots/v1/robot-status-online.json")), "status online fixture");
-  assert.ok(status(await loadJson("fixtures/robots/v1/robot-status-offline.json")), "status offline fixture");
-  assert.ok(operation(await loadJson("fixtures/robots/v1/operation-queued.json")), "operation queued fixture");
-  assert.ok(operation(await loadJson("fixtures/robots/v1/operation-succeeded.json")), "operation succeeded fixture");
-  assert.ok(createOperation({ kind: "diagnostic.noop", payload_version: 1, payload: {} }), "create operation request");
-  assert.ok(createOperation({ kind: "diagnostic.execution.start", payload_version: 1, payload: { fixture: "hello" } }));
-  assert.ok(createOperation({ kind: "diagnostic.execution.stop", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b" } }));
-  assert.ok(createOperation({ kind: "diagnostic.execution.inspect", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", stream: "stdout", offset: 0, limit: 16384 } }));
-  assert.equal(createOperation({ kind: "diagnostic.execution.start", payload_version: 1, payload: { fixture: "unknown" } }), false);
-  assert.equal(createOperation({ kind: "diagnostic.execution.inspect", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", stream: "stdout", offset: 0, limit: 16385 } }), false);
-  assert.equal(createOperation({ kind: "diagnostic.execution.inspect", payload_version: 1, payload: { execution_id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", stream: "stdout", offset: 65537, limit: 1 } }), false);
-
-  assert.equal(
-    createOperation({ kind: "mission.run", payload_version: 1, payload: {} }),
-    false,
-    "create request with an unsupported kind",
-  );
-  assert.equal(
-    operation({
-      id: "4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b",
-      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
-      kind: "diagnostic.noop",
-      payload_version: 1,
-      payload: {},
-      state: "preparing",
-      created_at: "2026-11-10T09:00:05Z",
-      updated_at: "2026-11-10T09:00:05Z",
-      deadline_at: "2026-11-10T09:01:05Z",
-      acknowledged_at: null,
-      result: null,
-    }),
-    false,
-    "operation with an execution-era state",
-  );
-  assert.equal(
-    status({
-      robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e",
-      online: "yes",
-      last_seen_at: "2026-11-10T09:00:14Z",
-      daemon_version: null,
-      protocol_version: null,
-    }),
-    false,
-    "status with a non-boolean online",
-  );
+  assert.ok(status(await loadJson("fixtures/robots/v1/robot-status-online.json")));
+  assert.ok(status(await loadJson("fixtures/robots/v1/robot-status-offline.json")));
+  assert.equal(status({ robot_id: "7c2f9a1d-4e6b-4c8a-9d1e-2f3a4b5c6d7e", online: "yes", last_seen_at: null, daemon_version: null, protocol_version: null }), false);
 });
 
 test("schemas reject malformed documents", async () => {
@@ -496,18 +315,6 @@ test("identity schemas reject malformed documents", async () => {
 });
 
 
-test("runner v1 fixtures validate and output limits hold", async () => {
-  for (const [name, schema] of [["start", "start-execution-request"], ["execution", "execution"], ["output", "output"]]) {
-    const validate = await validatorFor(`schemas/runner/v1/${schema}.schema.json`);
-    assert.ok(validate(await loadJson(`fixtures/runner/v1/${name}.json`)), name);
-  }
-  const error = await validatorFor("schemas/errors/v1/error.schema.json");
-  assert.ok(error(await loadJson("fixtures/runner/v1/error-execution-conflict.json")));
-  const start = await validatorFor("schemas/runner/v1/start-execution-request.schema.json");
-  assert.equal(start({execution_id: "invalid", revision_digest: "bad", code_ref: "x", entrypoint: "x"}), false);
-});
-
-
 test("device pairing fixtures and exclusive claim targets", async () => {
   for (const [name, schema] of [["create", "create-request"], ["claim", "claim-request"], ["pending", "poll-response"], ["claimed", "poll-response"]]) {
     const validate = await validatorFor(`schemas/pairing/v1/${schema}.schema.json`);
@@ -515,51 +322,6 @@ test("device pairing fixtures and exclusive claim targets", async () => {
   }
   const claim = await validatorFor("schemas/pairing/v1/claim-request.schema.json");
   assert.equal(claim({code:"ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ", name:"x", robot_id:"4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b"}), false);
-});
-
-test("development session proposal fixtures and source bounds validate", async () => {
-  for (const name of ["create-request", "session", "source-request", "accepted", "runner-sync", "runner-restart", "lifecycle-command", "sync-result", "grant-request", "grant-accepted", "device-grant", "revoke-grants", "local-status", "device-endpoint", "device-source-report", "local-source-state", "runner-restart-result", "restart-request", "device-run-status"]) {
-    const validate = await validatorFor(`schemas/dev-sessions/v1/${name}.schema.json`);
-    const fixture = await loadJson(`fixtures/dev-sessions/v1/${name}.json`);
-    assert.ok(validate(fixture), `${name}: ${JSON.stringify(validate.errors)}`);
-    assert.equal(validate({ ...fixture, unexpected: true }), false);
-  }
-  const status = await validatorFor("schemas/dev-sessions/v1/local-status.schema.json");
-  const localStatus = await loadJson("fixtures/dev-sessions/v1/local-status.json");
-  assert.ok(status({ ...localStatus, generation: 25, report_pending: 25 }));
-  const restart = await validatorFor("schemas/dev-sessions/v1/restart-request.schema.json");
-  assert.ok(restart({ generation: 25 }));
-  assert.equal(restart({ generation: 2147483648 }), false);
-  const source = await validatorFor("schemas/dev-sessions/v1/source-request.schema.json");
-  const input = await loadJson("fixtures/dev-sessions/v1/source-request.json");
-  assert.equal(source({ ...input, base_generation: -1 }), false);
-  assert.equal(source({ ...input, archive_size: 1048577 }), false);
-  assert.equal(source({ ...input, archive_base64: "!bad" }), false);
-  assert.equal(source({ ...input, manifest: { ...input.manifest, entrypoint: "../main.py" } }), false);
-  assert.equal(source({ ...input, manifest: { ...input.manifest, deleted_paths: ["a", "a"] } }), false);
-  const grant = await validatorFor("schemas/dev-sessions/v1/grant-accepted.schema.json");
-  const grantFixture = await loadJson("fixtures/dev-sessions/v1/grant-accepted.json");
-  assert.ok(grant({ ...grantFixture, daemon_url: null }));
-  assert.equal(grant({ ...grantFixture, daemon_url: "http://robot:8084" }), false);
-  assert.equal(grant({ ...grantFixture, certificate_sha256: "bad" }), false);
-  const deviceGrant = await validatorFor("schemas/dev-sessions/v1/device-grant.schema.json");
-  const deviceFixture = await loadJson("fixtures/dev-sessions/v1/device-grant.json");
-  assert.equal(deviceGrant({ ...deviceFixture, scopes: ["source", "source"] }), false);
-  const revoke = await validatorFor("schemas/dev-sessions/v1/revoke-grants.schema.json");
-  const revokeFixture = await loadJson("fixtures/dev-sessions/v1/revoke-grants.json");
-  assert.equal(revoke({ ...revokeFixture, grant_ids: [revokeFixture.grant_ids[0], revokeFixture.grant_ids[0]] }), false);
-  const create = await validatorFor("schemas/dev-sessions/v1/create-request.schema.json");
-  assert.equal(create({ ttl_seconds: 299 }), false);
-  assert.equal(create({ ttl_seconds: 28801 }), false);
-});
-
-test("local development artifact snapshots enforce bounded safe manifests", async () => {
-  const validate = await validatorFor("schemas/dev-sessions/v1/artifact-list.schema.json");
-  const fixture = await loadJson("fixtures/dev-sessions/v1/artifact-list.json");
-  assert.ok(validate(fixture), JSON.stringify(validate.errors));
-  assert.equal(validate({ ...fixture, artifacts: [{ ...fixture.artifacts[0], path: "../secret" }] }), false);
-  assert.equal(validate({ ...fixture, artifacts: [{ ...fixture.artifacts[0], sha256: "bad" }] }), false);
-  assert.equal(validate({ ...fixture, unexpected: true }), false);
 });
 
 test("proposed Logbook event and batch fixtures enforce the allowlisted payload", async () => {
@@ -626,15 +388,6 @@ test("mission author device events carry execution and bounded structured fields
   assert.equal(validate({ ...event, actor_user_id: execution_id }), false);
 });
 
-test("proposed organization Logbook history page includes attribution", async () => {
-  const validate = await validatorFor("schemas/logbook/v1/history-page.schema.json");
-  const fixture = await loadJson("fixtures/logbook/v1/history-page.json");
-  assert.ok(validate(fixture), JSON.stringify(validate.errors));
-  assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], actor_user_id: "invalid" }] }), false);
-  assert.equal(validate({ ...fixture, items: [{ ...fixture.items[0], secret: "not allowed" }] }), false);
-  assert.ok(validate({ ...fixture, items: [{ ...fixture.items[0], local_sequence: null,
-    type: "human.interaction.answered", actor_user_id: "3fe6c325-e930-4c33-8b26-7b5759826c81" }] }));
-});
 
 test("proposed Agent motion records cannot assert an unverified stop", async () => {
   const validate = await validatorFor("schemas/logbook/v1/agent-motion-event.schema.json");

@@ -48,3 +48,23 @@ test("installation support is an explicit optional boolean offer", () => {
   assert.ok(validateResource(path("negotiation_request"), offer));
   assert.throws(() => validateResource(path("negotiation_request"), {...offer, supports_app_installations: "true"}), /invalid_resource/);
 });
+test("v2 and live-settings support are explicit optional session offers", () => {
+  const offer = example("negotiation_offer");
+  const upgraded = {...offer, supports_manifest_v2: true, supports_live_settings: true};
+  assert.ok(validateResource(path("negotiation_request"), upgraded));
+  assert.throws(() => validateResource(path("negotiation_request"), {...offer, supports_live_settings: "true"}), /invalid_resource/);
+  assert.ok(validateResource(path("negotiation_request"), offer));
+});
+test("live settings use the existing scoped command and observation envelopes", () => {
+  const id = "10000000-0000-4000-8000-000000000001";
+  const command = {operation_id:id, kind:"app.settings.apply", payload_version:1, deadline_at:"2026-11-24T10:00:00Z", payload:{
+    app_protocol_version:1, deployment_namespace:id, installation_id:id, run_id:id,
+    application_id:id, settings_revision_id:id, expected_applied_revision_id:null,
+    values:{interval_ms:250}, initial:false,
+  }};
+  assert.ok(validateResource(path("command"), command));
+  const result = {operation_id:id, installation_id:id, run_id:id, kind:"settings.apply", state:"succeeded", phase:"applied", observed_at:"2026-11-24T10:00:00Z", failure:null,
+    settings_application:{application_id:id,settings_revision_id:id,outcome:"applied",reason:null}};
+  assert.ok(validateResource(path("operation_observation"), result));
+  assert.throws(() => validateResource(path("command"), {...command, payload:{...command.payload, application_id:"ffffffff-ffff-4fff-8fff-ffffffffffff"}}), /invalid_resource/);
+});

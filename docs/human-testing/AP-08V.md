@@ -27,7 +27,7 @@ export RINGFOUR_ENGINE_SOCKET_HOST_PATH=/var/run/docker.sock
 export RINGFOUR_ENGINE_SOCKET_GID="$(stat -Lc '%g' "$RINGFOUR_ENGINE_SOCKET_HOST_PATH")"
 export BASE101_NETWORK_NAME=base101_default
 export RINGFOUR_APP_NETWORK=base101_default
-docker compose -p ringfour-virtual -f compose.apps.yaml config -q
+docker compose -p ringfour-virtual -f compose.yaml config -q
 
 COMPOSE_PROJECT_NAME=ringfour-virtual-2 \
 BASE101_NETWORK_NAME=ringfour-sim-2_default \
@@ -39,7 +39,7 @@ RINGFOUR_DAEMON_HOST_PORT=8091 \
 RINGFOUR_STATUS_HOST_PORT=8093 \
 RINGFOUR_ENGINE_SOCKET_HOST_PATH="$RINGFOUR_ENGINE_SOCKET_HOST_PATH" \
 RINGFOUR_ENGINE_SOCKET_GID="$RINGFOUR_ENGINE_SOCKET_GID" \
-docker compose -p ringfour-virtual-2 -f compose.apps.yaml config -q
+docker compose -p ringfour-virtual-2 -f compose.yaml config -q
 ```
 
 Review `docker compose ... config` output if any environment interpolation needs
@@ -63,8 +63,8 @@ robot remains enrolled and its inventory is fresh in the Platform. Inspect the
 Daemon and Agent containers:
 
 ```sh
-docker compose -p ringfour-virtual -f compose.apps.yaml ps
-DAEMON="$(docker compose -p ringfour-virtual -f compose.apps.yaml ps -q daemon)"
+docker compose -p ringfour-virtual -f compose.yaml ps
+DAEMON="$(docker compose -p ringfour-virtual -f compose.yaml ps -q daemon)"
 docker exec "$DAEMON" id
 docker inspect "$DAEMON" --format '{{json .Mounts}}'
 ```
@@ -97,8 +97,8 @@ simulator and device Compose projects:
 Inspect instance 1 and 2 independently:
 
 ```sh
-docker compose -p ringfour-virtual-1 -f compose.apps.yaml ps
-docker compose -p ringfour-virtual-2 -f compose.apps.yaml ps
+docker compose -p ringfour-virtual-1 -f compose.yaml ps
+docker compose -p ringfour-virtual-2 -f compose.yaml ps
 docker network inspect ringfour-sim-1_default
 docker network inspect ringfour-sim-2_default
 ```

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/artifacts/v3/app-artifact-page.schema.json",
+  "title": "Workspace-scoped App artifact page v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "next_cursor"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"$ref": "#/$defs/item"}
+    },
+    "next_cursor": {"type": ["string", "null"], "maxLength": 1024}
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "run_id", "installation_id", "robot_id", "path", "size", "sha256", "content_type", "published_at"],
+      "properties": {
+        "artifact_id": {"$ref": "#/$defs/uuid"},
+        "run_id": {"$ref": "#/$defs/uuid"},
+        "installation_id": {"$ref": "#/$defs/uuid"},
+        "robot_id": {"$ref": "#/$defs/uuid"},
+        "path": {"type": "string", "minLength": 1, "maxLength": 240},
+        "size": {"type": "integer", "minimum": 0, "maximum": 16777216},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "content_type": {"enum": ["image/jpeg", "image/png", "application/octet-stream"]},
+        "published_at": {"type": ["string", "null"], "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"}
+      }
+    }
+  }
+}

@@ -226,11 +226,9 @@ retained. Full application backup gates were waived for this reset. AP-02
 preserves device SQLite enrollment/outbox data; AP-03 adds inventory reporting.
 Installation/run writers and dispatch remain gated by their corresponding milestones.
 
-Socket-test migration remains narrow: `tests/e2e/04-runner.sh` continues rejecting
-Runner sockets. `tests/e2e/06-missions.sh` keeps its no-socket assertion for the
-legacy fixture. AP-08/08V adds an explicit positive socket/ownership assertion
-for only the authorized App Daemon and negative assertions for server, Runner
-and App containers. Do not weaken the blanket legacy check ahead of that slice.
+AP-15 retires the old Runner/mission socket fixtures. App engine tests enforce
+that only the authorized daemon receives engine authority; Apps and the server
+do not receive the socket. See tests/e2e/ap08-engine.py and AP-14/AP-15 evidence.
 
 
 ## AP-05 registry and catalog contract

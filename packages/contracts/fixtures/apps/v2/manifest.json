@@ -1,0 +1,70 @@
+{
+  "schema_version": 2,
+  "app_key": "settings-check",
+  "release": "1.0.0",
+  "display": {
+    "name": "Settings Check",
+    "description": "Exercise manifest v2 environment mapping and live settings."
+  },
+  "targets": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "native_requirements": []
+    }
+  ],
+  "capabilities": {
+    "required": [
+      {
+        "capability": "imu"
+      }
+    ],
+    "optional": [
+      {
+        "capability": "cameras"
+      }
+    ]
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "sample_count"
+      ]
+    },
+    "defaults": {
+      "sample_count": 3
+    },
+    "environment": {
+      "SAMPLE_COUNT": "sample_count"
+    }
+  },
+  "runtime_settings": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interval_ms": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 2000
+        }
+      },
+      "required": [
+        "interval_ms"
+      ]
+    },
+    "defaults": {
+      "interval_ms": 250
+    }
+  }
+}

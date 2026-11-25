@@ -15,6 +15,8 @@ public static class AppCompatibility
         if (projection["connectivity"]?.GetValue<string>() != "online") return result;
         if (projection["support"]?.GetValue<string>() != "supported")
         { result["status"] = "daemon_upgrade_required"; return result; }
+        if (manifest["schema_version"]!.GetValue<int>() == 2 && projection["supports_manifest_v2"]?.GetValue<bool>() != true)
+        { result["status"] = "daemon_upgrade_required"; return result; }
         if (projection["inventory"] is not JsonObject inventory || inventory["state"]!.GetValue<string>() != "available" ||
             projection["received_at"] is null ||
             DateTimeOffset.Parse(projection["received_at"]!.GetValue<string>(), CultureInfo.InvariantCulture) < now.AddSeconds(-freshnessSeconds))

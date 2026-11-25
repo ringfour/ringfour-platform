@@ -30,7 +30,6 @@
         "heartbeat",
         "command",
         "ack",
-        "operation_status",
         "error"
       ]
     },

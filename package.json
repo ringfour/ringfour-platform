@@ -11,14 +11,7 @@
     "test:e2e": "bash tests/e2e/00-health.sh",
     "test:e2e:01": "bash tests/e2e/01-identity.sh",
     "test:e2e:02": "bash tests/e2e/02-enrollment.sh",
-    "test:e2e:03": "bash tests/e2e/03-connectivity.sh",
-    "integration:up": "docker compose -f tests/integration/compose/docker-compose.yml up -d --build",
-    "integration:down": "docker compose -f tests/integration/compose/docker-compose.yml down",
-    "integration:clean": "docker compose -f tests/integration/compose/docker-compose.yml down -v --remove-orphans",
-    "integration:logs": "docker compose -f tests/integration/compose/docker-compose.yml logs -f",
-    "test:e2e:04": "bash tests/e2e/04-runner.sh",
     "test:e2e:pairing": "bash tests/e2e/02-pairing.sh",
-    "test:e2e:05": "bash tests/e2e/05-scripts.sh",
-    "test:e2e:garage": "bash tests/e2e/05-garage.sh"
+    "test:e2e:apps": "uv run --project apps/daemon python tests/e2e/ap10-runtime.py"
   }
 }

@@ -71,6 +71,7 @@ def main(run_acceptance=None, configure=None):
                     "-p",
                     "127.0.0.1::5432",
                     "postgres:18",
+                    *(["-c", "shared_preload_libraries=pg_stat_statements", "-c", "track_io_timing=on"] if os.environ.get("AP_TEST_PG_STATS") == "true" else []),
                 ]
             )
             support.command(
@@ -182,7 +183,8 @@ asyncio.run(main())
                 "Storage__Backend": "filesystem",
                 "Storage__FilesystemRoot": str(root / "objects"),
                 "Apps__InstallationsEnabled": "true",
-                "Apps__InstallationSweepMilliseconds": "300",
+                "Apps__InstallationSweepMilliseconds": os.environ.get("AP_TEST_API_SWEEP_MS", "300"),
+                "Apps__LiveSettingsEnabled": "true",
                 "Apps__Registries__0__Host": host,
                 "Apps__Registries__0__RepositoryPrefix": "apps",
                 "Apps__Registries__0__AllowHttp": "true",
@@ -297,6 +299,7 @@ asyncio.run(main())
                 )
                 fault = {"armed": False}
                 requests = []
+                engine_timings = []
 
                 class Proxy(socketserver.BaseRequestHandler):
                     def handle(self):
@@ -304,6 +307,7 @@ asyncio.run(main())
                         with socket.create_connection(
                             ("127.0.0.1", engine_port)
                         ) as remote:
+                            pending_request = None
                             while True:
                                 readable, _, _ = select.select(
                                     [self.request, remote], [], [], 3
@@ -317,6 +321,7 @@ asyncio.run(main())
                                     ):
                                         request = data.split(b"\r\n", 1)[0].decode()
                                         requests.append(request)
+                                        pending_request = (request, time.perf_counter())
                                         if fault["armed"] and (
                                             request.startswith(
                                                 "POST /v1.46/images/create"
@@ -330,6 +335,10 @@ asyncio.run(main())
                                             fault["armed"] = False
                                             support.terminate(api)
                                             api = None
+                                    if source is remote and pending_request is not None:
+                                        label, began = pending_request
+                                        engine_timings.append({"request": label, "first_response_byte_ms": (time.perf_counter() - began) * 1000})
+                                        pending_request = None
                                     (
                                         remote
                                         if source is self.request
@@ -348,11 +357,8 @@ asyncio.run(main())
                     "DAEMON_DB_PATH": db,
                     "DAEMON_CREDENTIAL_PATH": str(root / "credential"),
                     "PLATFORM_API_URL": str(client.base_url),
-                    "RUNNER_URL": "http://127.0.0.1:1",
-                    "RUNNER_STAGE_DIR": str(root / "staged"),
                     "RINGFOUR_APPS_ENABLED": "true",
                     "RINGFOUR_ENGINE_NATIVE_FACTS": "",
-                    "RINGFOUR_LOCAL_DEV_ENABLED": "false",
                     "RINGFOUR_AGENT_MOTION_SOCKET": "",
                     "RINGFOUR_ENGINE_SOCKET": socket_path,
                     "RINGFOUR_APP_NETWORK": network,
@@ -360,7 +366,6 @@ asyncio.run(main())
                     "RINGFOUR_APP_INVENTORY_INTERVAL_SECONDS": "0.3",
                     "DAEMON_BACKOFF_INITIAL_SECONDS": "0.1",
                     "DAEMON_BACKOFF_MAX_SECONDS": "0.5",
-                    "DAEMON_RECONCILE_DELAY_SECONDS": "2",
                 }
 
                 if configure is not None:
@@ -500,7 +505,8 @@ asyncio.run(main())
                 configured_binding = checked(client.get(resource))["installed"]
                 # New metadata release uses the immutable AP-06 image; its schema intentionally excludes the prior count.
                 v2 = json.loads(json.dumps(manifest))
-                v2["release"] = "0.2.0"
+                v2["release"] = "0.3.0"
+                v2["configuration"]["defaults"] = {"sample_count": 1}
                 v2["configuration"]["schema"]["properties"]["sample_count"][
                     "maximum"
                 ] = 1
@@ -522,7 +528,7 @@ asyncio.run(main())
                 assert completed(updating)["state"] == "succeeded"
                 v2_binding = checked(client.get(resource))["installed"]
                 v3 = json.loads(json.dumps(v2))
-                v3["release"] = "0.3.0"
+                v3["release"] = "0.4.0"
                 v3["targets"][0]["native_requirements"] = ["ap07.missing_dependency"]
                 final.write_text(json.dumps(v3))
                 third = cli("publish", "--manifest", final)
@@ -608,8 +614,7 @@ asyncio.run(main())
                 log.flush()
                 log.seek(0)
                 text = log.read()
-                if "Traceback" in text or "fail:" in text:
-                    print(text[-6000:], file=sys.stderr)
+                print(f"--- {log.name} ---\n{text[-12000:]}", file=sys.stderr)
             raise
         finally:
             if cleanup is not None:

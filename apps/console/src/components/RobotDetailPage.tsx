@@ -9,6 +9,7 @@ import {
   mutateApp,
   type Robot,
   readJson,
+  readLiveRuns,
   readPage,
   type Token,
 } from "@/lib/apps";
@@ -61,6 +62,9 @@ export function RobotDetailPage({
   const [operationId, setOperationId] = useState("");
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
+  const refreshAfterOperation = useCallback(() => {
+    setRefresh((value) => value + 1);
+  }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh explicitly requests a new snapshot
   useEffect(() => {
     let live = true;
@@ -73,7 +77,7 @@ export function RobotDetailPage({
             token,
             `/v1/robots/${robotId}/app-installations`,
           ),
-          readPage<AppRun>(
+          readLiveRuns(
             token,
             `/v1/organizations/${current.organization_id}/app-runs?robot_id=${robotId}`,
           ),
@@ -238,7 +242,11 @@ export function RobotDetailPage({
         </section>
       )}
       {operationId && (
-        <AppOperationStatus operationId={operationId} token={token} />
+        <AppOperationStatus
+          operationId={operationId}
+          token={token}
+          onTerminal={refreshAfterOperation}
+        />
       )}
       <section className="robot-detail-section">
         <header>

@@ -90,7 +90,7 @@ def test_delivery_replays_after_lost_response_and_validates_ack(tmp_path):
         if len(attempts) == 2:
             return httpx.Response(200, json={"acknowledged_sequence": True})
         return httpx.Response(200, json={"acknowledged_sequence": 1})
-    settings = Settings(db_path=db, runner_url="http://runner", credential_path=str(secret_path))
+    settings = Settings(db_path=db,  credential_path=str(secret_path))
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
             with pytest.raises(httpx.ReadTimeout):
@@ -118,5 +118,5 @@ def test_author_migration_preserves_existing_outbox(tmp_path):
             conn.executescript(path.read_text())
             conn.execute("INSERT INTO schema_migrations VALUES (?, '2026-01-01')", (version,))
     event = append(db, robot, operation)
-    assert migrate(db) == [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    assert migrate(db) == [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
     assert logbook.batch(db, robot) == [event]

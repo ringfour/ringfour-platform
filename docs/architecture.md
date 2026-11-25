@@ -29,7 +29,7 @@ the enrolled Daemon; fresh device inventory and policy remain authoritative.
 
 Starting creates a server-owned run snapshot bound to its installation,
 revision, configuration, image, initiator and robot. Each robot has one shared
-execution slot across App and remaining legacy callers. Only the enrolled
+execution slot across App runs. Only the enrolled
 Daemon manages its robot's App containers. It reconciles the exact run after
 restart and does not relaunch an ambiguous start. Accepted commands are not
 treated as observed running state.
@@ -77,8 +77,14 @@ No local-signing-key bypass is allowed in hosted configuration.
 
 Infrastructure owns Daemon and Agent lifecycle. The local server Compose stack
 contains API, PostgreSQL and development services; the sibling `ringfour-virtual`
-repository owns Base101 and device Compose. The opt-in App topology and
-single-/multi-instance launchers are documented in
-[AP-08V](human-testing/AP-08V.md). Legacy mission and Runner pathways remain
-only for existing callers until their cutover and recovery gates pass. Their
-historical design is archived; AP-14/AP-15 track their final removal.
+repository owns Base101 and device Compose. Agent and daemon form the default
+device stack; App containers are created dynamically. Runner and local source
+execution are retired. Historical design remains in the archive.
+
+## AP-14/AP-15 reduction
+
+Apps are the supported execution workflow. Runner, script/mission deployments,
+local source development sessions and managed Gradio UI are retired, including
+their routes and background workers. The virtual stack defaults to Agent and
+daemon with Docker App execution. Use compose.yaml; --apps remains an optional
+launcher spelling. See [the reduction and acceptance guide](human-testing/AP-14-15.md).

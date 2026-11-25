@@ -61,7 +61,7 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
         using var device = Machine(factory, credential, secret, session);
         var ns = Guid.NewGuid();
         var offer = new JsonObject { ["session_id"] = session.ToString(), ["deployment_namespace"] = ns.ToString(),
-            ["supported_app_protocol_versions"] = new JsonArray(1) };
+            ["supported_app_protocol_versions"] = new JsonArray(1), ["supports_manifest_v2"] = true };
         using var invalidCredential = Machine(factory, credential, "wrong-secret", session);
         await AssertError(await Send(invalidCredential, "/v1/device/app-protocol/negotiate", offer, true), HttpStatusCode.Unauthorized);
         await AssertError(await device.PutAsync("/v1/device/app-inventory",
@@ -80,6 +80,8 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
         await AssertError(await Send(device, "/v1/device/app-inventory", gap), HttpStatusCode.Conflict);
         var status = await Json(await owner.GetAsync($"/v1/robots/{robot}/app-status"));
         Assert.Equal("supported", status["support"]!.GetValue<string>());
+        Assert.True(status["supports_manifest_v2"]!.GetValue<bool>());
+        Assert.False(status["supports_live_settings"]!.GetValue<bool>());
         Assert.Equal(accepted["received_at"]!.GetValue<string>(), status["received_at"]!.GetValue<string>());
         AppProtocol.Validate(status.ToJsonString(), "robot_app_status");
         await AssertError(await outsider.GetAsync($"/v1/robots/{robot}/app-status"), HttpStatusCode.NotFound);
@@ -193,6 +195,7 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
     [InlineData("unavailable", "inventory_unavailable")]
     [InlineData("target", "no_matching_image")]
     [InlineData("native", "native_requirement_unavailable")]
+    [InlineData("manifest_v2", "daemon_upgrade_required")]
     public void Preview_is_fail_closed_and_matches_capability_semantics(string scenario, string expected)
     {
         var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "contracts/fixtures/apps/v1/manifest.json")))!.AsObject();
@@ -206,6 +209,7 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
         if (scenario == "unavailable") projection["inventory"] = new JsonObject { ["state"] = "unavailable" };
         if (scenario == "target") projection["platform"]!["architecture"] = "arm64";
         if (scenario == "native") manifest["targets"]![0]!["native_requirements"] = new JsonArray("cuda:12");
+        if (scenario == "manifest_v2") { manifest["schema_version"] = 2; projection["supports_manifest_v2"] = false; }
         var result = AppCompatibility.Evaluate(manifest, projection, now);
         Assert.Equal(expected, result["status"]!.GetValue<string>());
         AppProtocol.Validate(result.ToJsonString(), "compatibility");

@@ -12,7 +12,10 @@
       ],
       "properties": {
         "manifest": {
-          "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json"
+          "oneOf": [
+            { "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json" },
+            { "$ref": "https://contracts.ringfour.dev/apps/v2/manifest.schema.json" }
+          ]
         },
         "visibility": {
           "enum": [
@@ -148,6 +151,13 @@
         },
         "configuration": {
           "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/configuration"
+        },
+        "runtime_settings": {
+          "anyOf": [
+            { "type": "object", "maxProperties": 32 },
+            { "type": "null" }
+          ],
+          "description": "Optional complete live-settings values for the target release; null explicitly selects defaults and clears the prior selection."
         }
       }
     },
@@ -176,6 +186,13 @@
         "configuration_revision_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "runtime_settings": {
+          "anyOf": [
+            { "type": "object", "maxProperties": 32 },
+            { "type": "null" }
+          ],
+          "description": "Optional complete live-settings values for the target release; null explicitly selects defaults and clears the prior selection."
         }
       }
     },

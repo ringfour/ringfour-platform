@@ -147,7 +147,10 @@
           }
         },
         "manifest": {
-          "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json"
+          "oneOf": [
+            { "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json" },
+            { "$ref": "https://contracts.ringfour.dev/apps/v2/manifest.schema.json" }
+          ]
         },
         "manifest_digest": {
           "$ref": "#/$defs/digest"
@@ -1322,6 +1325,22 @@
         },
         "configuration": {
           "$ref": "#/$defs/configuration"
+        },
+        "configuration_environment": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": { "pattern": "^[A-Z_][A-Z0-9_]*$" },
+          "additionalProperties": { "type": "string", "maxLength": 4096 }
+        },
+        "runtime_settings_revision_id": {
+          "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }]
+        },
+        "runtime_settings": {
+          "type": ["object", "null"],
+          "maxProperties": 32
+        },
+        "initial_settings_application_id": {
+          "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }]
         },
         "image": {
           "$ref": "#/$defs/image"

@@ -63,6 +63,39 @@ public sealed class AppInstallation
     public string? InstalledBinding { get; set; }
     public string? Candidate { get; set; }
     public DateTimeOffset? LastObservedAt { get; set; }
+    public Guid? SelectedSettingsRevisionId { get; set; }
+}
+
+public sealed class AppSettingsRevision
+{
+    public Guid Id { get; set; }
+    public Guid InstallationId { get; set; }
+    public Guid AppId { get; set; }
+    public Guid RevisionId { get; set; }
+    public string Values { get; set; } = "{}";
+    public Guid CreatedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class AppSettingsApplication
+{
+    public Guid ApplicationId { get; set; }
+    public Guid InstallationId { get; set; }
+    public Guid RunId { get; set; }
+    public Guid SettingsRevisionId { get; set; }
+    public Guid? ExpectedAppliedRevisionId { get; set; }
+    public Guid? ExpectedSelectedRevisionId { get; set; }
+    public bool Initial { get; set; }
+    public string State { get; set; } = "pending";
+    public string DeliveryState { get; set; } = "queued";
+    public string? Outcome { get; set; }
+    public string? Reason { get; set; }
+    public Guid RequestedByUserId { get; set; }
+    public DateTimeOffset RequestedAt { get; set; }
+    public DateTimeOffset? DeliveredAt { get; set; }
+    public DateTimeOffset? LocallyReceivedAt { get; set; }
+    public DateTimeOffset? ReportedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
 }
 
 public sealed class AppConfigurationRevision
@@ -116,6 +149,7 @@ public sealed class AppRun
     public int? ExitCode { get; set; }
     public string? Failure { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public Guid? AppliedSettingsRevisionId { get; set; }
 }
 
 public sealed class AppIdempotencyRecord
@@ -157,4 +191,5 @@ public sealed class AppArtifact
     public long Size { get; set; }
     public string Sha256 { get; set; } = null!;
     public string ContentType { get; set; } = null!;
+    public DateTimeOffset? PublishedAt { get; set; }
 }

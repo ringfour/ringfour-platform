@@ -1,6 +1,5 @@
 import sqlite3
 
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -19,8 +18,7 @@ def live() -> dict[str, str]:
 def ready(request: Request) -> JSONResponse:
     checks = {
         "sqlite": _check_sqlite(request.app.state.settings.db_path),
-        **({"engine": _check_engine(request)} if request.app.state.settings.apps_enabled
-           else {"runner": _check_runner(request)}),
+        "engine": _check_engine(request),
     }
     status = "ok" if all(v == "ok" for v in checks.values()) else "fail"
     return JSONResponse(
@@ -37,16 +35,6 @@ def _check_sqlite(db_path: str) -> str:
             conn.rollback()
         return "ok"
     except sqlite3.Error:
-        return "fail"
-
-
-def _check_runner(request: Request) -> str:
-    try:
-        with request.app.state.http_client_factory() as client:
-            response = client.get(f"{request.app.state.settings.runner_url}/health/ready")
-            body = response.json()
-            return "ok" if response.status_code == 200 and body.get("status") == "ok" else "fail"
-    except (httpx.HTTPError, ValueError):
         return "fail"
 
 

@@ -11,7 +11,7 @@ using Ringfour.Api.Persistence;
 namespace Ringfour.Api.Tests;
 
 [Collection(PostgresCollection.Name)]
-public sealed class AppInstallationTests(PostgresFixture postgres)
+public sealed partial class AppInstallationTests(PostgresFixture postgres)
 {
     private static Task<HttpResponseMessage> Post(HttpClient c,string path,JsonNode body,string? key=null) => c.SendAsync(new HttpRequestMessage(HttpMethod.Post,path) { Headers={{"Idempotency-Key",key??Guid.NewGuid().ToString()}}, Content=new StringContent(body.ToJsonString(),Encoding.UTF8,"application/json") });
     private static async Task<JsonObject> Json(HttpResponseMessage r)
@@ -26,17 +26,18 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
         public JsonObject Input => new(){["revision_id"]=Revision["id"]!.DeepClone(),["share_id"]=null,["configuration"]=Revision["manifest"]!["configuration"]!["defaults"]!.DeepClone()};
         public async ValueTask DisposeAsync(){Socket.Abort();Socket.Dispose();Owner.Dispose();Device.Dispose();await Factory.DisposeAsync();await Registry.DisposeAsync();}
     }
-    private async Task<Scenario> Setup(bool supported=true)
+    private async Task<Scenario> Setup(bool supported=true, bool manifestV2=false, bool? negotiatedManifestV2=null, bool liveSettings=false, bool automaticDispatch=false)
     {
-        var registry=new RegistryFixture();var options=registry.Configuration().ToDictionary(x=>x.Key,x=>x.Value);options["Apps:InstallationsEnabled"]="true";options["Apps:InstallationSweepMilliseconds"]="3600000";
-        var factory=new ApiFactory(postgres.ConnectionString,extraConfiguration:options);var owner=factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());
+        var registry=new RegistryFixture();var options=registry.Configuration().ToDictionary(x=>x.Key,x=>x.Value);options["Apps:InstallationsEnabled"]="true";options["Apps:LiveSettingsEnabled"]=liveSettings.ToString();options["Apps:InstallationSweepMilliseconds"]="3600000";
+        var factory=new ApiFactory(postgres.ConnectionString,extraConfiguration:options,automaticAppDispatch:automaticDispatch);var owner=factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());
         var org=await OrganizationTests.CreateOrganization(owner,"installation owner");var robot=await RobotTests.CreateRobot(owner,org,"installation robot");
         var(_,token)=await RobotTests.IssueToken(owner,robot);var(credential,secret)=await DeviceEnrollmentTests.Enroll(factory,token);
         var socket=await DeviceSocket.ConnectAsync(factory,robot,credential,secret);using var welcome=await DeviceSocket.ReceiveAsync(socket);var session=welcome.Payload().GetProperty("session_id").GetGuid();
         var machine=factory.CreateClient();machine.DefaultRequestHeaders.Add("x-ringfour-credential-id",credential.ToString());machine.DefaultRequestHeaders.Add("x-ringfour-credential-secret",secret);machine.DefaultRequestHeaders.Add("x-ringfour-device-session",session.ToString());var ns=Guid.NewGuid();
-        await Json(await machine.PostAsJsonAsync("/v1/device/app-protocol/negotiate",new {session_id=session,deployment_namespace=ns,supported_app_protocol_versions=new[]{1},supports_app_installations=supported,supports_app_runs=supported}));
+        await Json(await machine.PostAsJsonAsync("/v1/device/app-protocol/negotiate",new {session_id=session,deployment_namespace=ns,supported_app_protocol_versions=new[]{1},supports_app_installations=supported,supports_app_runs=supported,supports_manifest_v2=negotiatedManifestV2??manifestV2,supports_live_settings=liveSettings}));
         var report=Fixture("base101_inventory");report["deployment_namespace"]=ns.ToString();report["report_id"]=Guid.NewGuid().ToString();await Json(await machine.PutAsJsonAsync("/v1/device/app-inventory",report));
-        var manifest=JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"contracts/fixtures/apps/v1/manifest.json")))!.AsObject();manifest["app_key"]="check-"+Guid.NewGuid().ToString("N");manifest["targets"]![0]!["image"]=registry.Image;
+        var manifestPath=manifestV2?"contracts/fixtures/apps/v2/manifest.json":"contracts/fixtures/apps/v1/manifest.json";
+        var manifest=JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,manifestPath)))!.AsObject();manifest["app_key"]="check-"+Guid.NewGuid().ToString("N");manifest["targets"]![0]!["image"]=registry.Image;
         var revision=await Json(await Post(owner,$"/v1/organizations/{org}/app-revisions",new JsonObject{["manifest"]=manifest,["visibility"]="listed"}));
         return new Scenario{Factory=factory,Registry=registry,Owner=owner,Device=machine,Socket=socket,Robot=robot,Organization=org,Namespace=ns,Revision=revision};
     }
@@ -56,6 +57,21 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
             ["installations"]=new JsonArray(new JsonObject{["installation_id"]=payload["installation_id"]!.DeepClone(),["observed_at"]=now,["candidate"]=null,
                 ["installed"]=new JsonObject{["revision_id"]=release["revision_id"]!.DeepClone(),["configuration_revision_id"]=release["configuration_revision_id"]!.DeepClone(),["image"]=release["target"]!["image"]!.DeepClone(),["applied_operation_id"]=command["operation_id"]!.DeepClone(),["installed_at"]=now}})};
     }
+    [Fact]
+    public async Task Committed_work_wakes_dispatch_with_an_hour_long_recovery_interval()
+    {
+        await using var s = await Setup(automaticDispatch: true);
+        var accepted = await Json(await Post(s.Owner, $"/v1/robots/{s.Robot}/app-installations", s.Input));
+        // No manual Dispatch and no timer acceleration: the real hosted worker is waiting for an hour.
+        using var frame = await DeviceSocket.ReceiveAsync(s.Socket).WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal("command", frame.RootElement.GetProperty("type").GetString());
+        Assert.Equal(accepted["operation_id"]!.ToString(), frame.Payload().GetProperty("operation_id").GetString());
+        using var scope = s.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RingfourDbContext>();
+        var id = Guid.Parse(accepted["operation_id"]!.ToString());
+        Assert.NotNull(await db.AppOperations.FindAsync(id));
+    }
+
     [Fact]
     public void Canonical_utf8_and_configuration_byte_limits_match_independent_unicode_fixture()
     {
@@ -100,7 +116,7 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
         await Error(await stranger.GetAsync($"/v1/app-operations/{accepted["operation_id"]}"),404,"not_found");
         var configuration=await Json(await s.Owner.GetAsync(installationPath+$"/configuration-revisions/{binding["configuration_revision_id"]}"));Assert.Equal(1,configuration["values"]!["sample_count"]!.GetValue<int>());
         Assert.Equal(0L,(long)(await postgres.QueryAsync("SELECT count(*) FROM app_runs WHERE robot_id=@robot",("robot",s.Robot)))[0][0]!);
-        Assert.Equal(0L,(long)(await postgres.QueryAsync("SELECT count(*) FROM script_executions WHERE robot_id=@robot",("robot",s.Robot)))[0][0]!);
+        Assert.Equal(0L,(long)(await postgres.QueryAsync("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='script_executions'"))[0][0]!);
     }
     [Fact]
     public async Task Invalid_config_wrong_actor_fabricated_application_and_inventory_only_daemon_are_refused()
@@ -166,6 +182,268 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
         using var stranger=s.Factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());await Error(await stranger.GetAsync(runPath),404,"not_found");
         var list=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-runs?installation_id={install["installation_id"]}"));Assert.Equal(2,list["items"]!.AsArray().Count);
     }
+
+    [Fact]
+    public async Task Manifest_v2_start_freezes_and_resolves_declared_environment_mapping()
+    {
+        await using var s=await Setup(manifestV2:true,liveSettings:true);
+        var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";
+        var binding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        var accepted=await Json(await Post(s.Owner,path+"/start",StartInput(binding)));
+        var snapshot=(await Json(await s.Owner.GetAsync($"/v1/app-runs/{accepted["run_id"]}")))["snapshot"]!;
+        Assert.Equal("3",snapshot["configuration_environment"]!["SAMPLE_COUNT"]!.GetValue<string>());
+        Assert.Equal(250,snapshot["runtime_settings"]!["interval_ms"]!.GetValue<int>());
+        Assert.NotNull(snapshot["initial_settings_application_id"]);
+        Assert.True(JsonNode.DeepEquals(snapshot,(await Json(await s.Owner.GetAsync($"/v1/app-runs/{accepted["run_id"]}")))["snapshot"]));
+    }
+
+    [Fact]
+    public async Task Manifest_v2_install_is_refused_when_current_daemon_did_not_negotiate_it()
+    {
+        await using var s=await Setup(manifestV2:true,negotiatedManifestV2:false);
+        await Error(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input),409,"daemon_upgrade_required");
+    }
+
+    [Fact]
+    public async Task Settings_are_versioned_and_idle_save_is_selected_for_the_next_run()
+    {
+        await using var s=await Setup(manifestV2:true,liveSettings:true);
+        var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";
+        var settingsPath=path+"/settings";
+        var state=await Json(await s.Owner.GetAsync(settingsPath));
+        Assert.Equal("supported",state["support"]!.GetValue<string>());
+        Assert.Null(state["selected_for_next_start"]);
+        await Error(await Post(s.Owner,settingsPath,new JsonObject
+        {
+            ["values"]=new JsonObject { ["interval_ms"]=0 },["expected_selected_revision_id"]=null,
+            ["expected_applied_revision_id"]=null,["expected_run_id"]=null
+        }),400,"invalid_input");
+        var body=new JsonObject { ["values"]=new JsonObject { ["interval_ms"]=500 }, ["expected_selected_revision_id"]=null, ["expected_applied_revision_id"]=null, ["expected_run_id"]=null };
+        var saved=await Json(await Post(s.Owner,settingsPath,body,"settings-idle-once"));
+        Assert.Equal("saved_for_next_start",saved["state"]!.GetValue<string>());
+        await Error(await Post(s.Owner,settingsPath,new JsonObject
+        {
+            ["values"]=new JsonObject { ["interval_ms"]=750 },["expected_selected_revision_id"]=null,
+            ["expected_applied_revision_id"]=null,["expected_run_id"]=null
+        }),409,"stale_settings_selection");
+        var selected=(await Json(await s.Owner.GetAsync(settingsPath)))["selected_for_next_start"]!;
+        Assert.Equal(saved["selected_revision_id"]!.ToString(),selected["id"]!.ToString());
+        Assert.Equal(500,selected["values"]!["interval_ms"]!.GetValue<int>());
+        var revision=await Json(await s.Owner.GetAsync(settingsPath+"/revisions/"+saved["settings_revision_id"]));
+        Assert.True(JsonNode.DeepEquals(selected,revision));
+        var history=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?installation_id={install["installation_id"]}"));
+        Assert.Contains(history["items"]!.AsArray(),x=>x!["type"]!.GetValue<string>()=="app.settings.selected" && x["payload"]!["settings_revision_id"]!.GetValue<string>()==saved["settings_revision_id"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Active_settings_edit_is_an_exact_run_application_and_keeps_selection_until_confirmation()
+    {
+        await using var s=await Setup(manifestV2:true,liveSettings:true);
+        var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";var settingsPath=path+"/settings";
+        var saved=await Json(await Post(s.Owner,settingsPath,new JsonObject { ["values"]=new JsonObject { ["interval_ms"]=500 },["expected_selected_revision_id"]=null,["expected_applied_revision_id"]=null,["expected_run_id"]=null }));
+        var binding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        var accepted=await Json(await Post(s.Owner,path+"/start",StartInput(binding)));
+        var snapshot=(await Json(await s.Owner.GetAsync($"/v1/app-runs/{accepted["run_id"]}")))["snapshot"]!;
+        var initialId=snapshot["initial_settings_application_id"]!.GetValue<string>();
+        var initialRevision=snapshot["runtime_settings_revision_id"]!.GetValue<string>();
+        await postgres.ExecuteAsync("UPDATE app_settings_applications SET state='applied',delivery_state='reported',outcome='applied',reported_at=now(),completed_at=now() WHERE application_id=@id",("id",Guid.Parse(initialId)));
+        await postgres.ExecuteAsync("UPDATE app_runs SET applied_settings_revision_id=@revision WHERE id=@run",("revision",Guid.Parse(initialRevision)),("run",Guid.Parse(accepted["run_id"]!.GetValue<string>())));
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",RunReport(s,accepted,"running")));
+        var changeInput=new JsonObject
+        {
+            ["values"]=new JsonObject { ["interval_ms"]=750 },["expected_selected_revision_id"]=saved["selected_revision_id"]!.DeepClone(),
+            ["expected_applied_revision_id"]=initialRevision,["expected_run_id"]=accepted["run_id"]!.DeepClone()
+        };
+        var changeKey=Guid.NewGuid().ToString();
+        var changed=await Json(await Post(s.Owner,settingsPath,changeInput,changeKey));
+        var replay=await Json(await Post(s.Owner,settingsPath,changeInput,changeKey));
+        Assert.True(JsonNode.DeepEquals(changed,replay));
+        Assert.Equal("pending",changed["state"]!.GetValue<string>());
+        Assert.Equal(accepted["run_id"]!.ToString(),changed["run_id"]!.ToString());
+        var state=await Json(await s.Owner.GetAsync(settingsPath));
+        Assert.Equal(saved["selected_revision_id"]!.ToString(),state["selected_for_next_start"]!["id"]!.ToString());
+        Assert.Equal(initialRevision,state["last_applied"]!["id"]!.ToString());
+        Assert.Equal(changed["application_id"]!.ToString(),state["pending_application"]!["application_id"]!.ToString());
+        Assert.Equal("queued",state["pending_application"]!["delivery_state"]!.GetValue<string>());
+        var history=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?run_id={accepted["run_id"]}"));
+        Assert.Contains(history["items"]!.AsArray(),x=>x!["type"]!.GetValue<string>()=="app.settings.application_requested" && x["payload"]!["application_id"]!.GetValue<string>()==changed["application_id"]!.GetValue<string>());
+        await Error(await Post(s.Owner,settingsPath,changeInput),409,"settings_pending");
+        var dispatchIdentity=new JsonObject
+        {
+            ["operation_id"]=changed["application_id"]!.DeepClone(),["installation_id"]=accepted["installation_id"]!.DeepClone(),
+            ["run_id"]=accepted["run_id"]!.DeepClone()
+        };
+        var delivered=await Command(s,dispatchIdentity);
+        Assert.Equal("app.settings.apply",delivered["kind"]!.GetValue<string>());
+        Assert.Equal(changed["application_id"]!.ToString(),delivered["operation_id"]!.GetValue<string>());
+        state=await Json(await s.Owner.GetAsync(settingsPath));
+        Assert.Equal("delivered",state["pending_application"]!["delivery_state"]!.GetValue<string>());
+        var runState=await Json(await s.Owner.GetAsync($"/v1/app-runs/{accepted["run_id"]}"));
+        var observedAt=AppProtocol.Timestamp(DateTimeOffset.UtcNow.AddSeconds(1));
+        var resultReport=new JsonObject
+        {
+            ["app_protocol_version"]=1,["deployment_namespace"]=s.Namespace.ToString(),["report_id"]=Guid.NewGuid().ToString(),["report_sequence"]=++s.Sequence,
+            ["installations"]=new JsonArray(),
+            ["operations"]=new JsonArray(new JsonObject
+            {
+                ["operation_id"]=changed["application_id"]!.DeepClone(),["installation_id"]=accepted["installation_id"]!.DeepClone(),
+                ["run_id"]=accepted["run_id"]!.DeepClone(),["kind"]="settings.apply",["state"]="succeeded",["phase"]="applied",
+                ["observed_at"]=observedAt,["failure"]=null,
+                ["settings_application"]=new JsonObject { ["application_id"]=changed["application_id"]!.DeepClone(),
+                    ["settings_revision_id"]=changed["settings_revision_id"]!.DeepClone(),["outcome"]="applied",["reason"]=null }
+            }),
+            ["runs"]=new JsonArray(new JsonObject
+            {
+                ["run_id"]=accepted["run_id"]!.DeepClone(),["installation_id"]=accepted["installation_id"]!.DeepClone(),["state"]="running",
+                ["started_at"]=runState["started_at"]!.DeepClone(),["ended_at"]=null,["observed_at"]=observedAt,["exit_code"]=null,["failure"]=null
+            })
+        };
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",resultReport));
+        state=await Json(await s.Owner.GetAsync(settingsPath));
+        Assert.Equal(changed["settings_revision_id"]!.ToString(),state["selected_for_next_start"]!["id"]!.ToString());
+        Assert.Equal(changed["settings_revision_id"]!.ToString(),state["last_applied"]!["id"]!.ToString());
+        history=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?run_id={accepted["run_id"]}"));
+        Assert.Contains(history["items"]!.AsArray(),x=>x!["type"]!.GetValue<string>()=="app.settings.applied" && x["payload"]!["application_id"]!.GetValue<string>()==changed["application_id"]!.GetValue<string>());
+        var rejectedRequest=new JsonObject
+        {
+            ["values"]=new JsonObject { ["interval_ms"]=1000 },["expected_selected_revision_id"]=changed["settings_revision_id"]!.DeepClone(),
+            ["expected_applied_revision_id"]=changed["settings_revision_id"]!.DeepClone(),["expected_run_id"]=accepted["run_id"]!.DeepClone()
+        };
+        var rejected=await Json(await Post(s.Owner,settingsPath,rejectedRequest));
+        var rejectedDispatch=new JsonObject { ["operation_id"]=rejected["application_id"]!.DeepClone(),
+            ["installation_id"]=accepted["installation_id"]!.DeepClone(),["run_id"]=accepted["run_id"]!.DeepClone() };
+        await Command(s,rejectedDispatch);
+        var rejectReason="App cannot use this interval while sampling.";
+        var rejectedAt=AppProtocol.Timestamp(DateTimeOffset.UtcNow.AddSeconds(2));
+        var rejectionReport=new JsonObject
+        {
+            ["app_protocol_version"]=1,["deployment_namespace"]=s.Namespace.ToString(),["report_id"]=Guid.NewGuid().ToString(),["report_sequence"]=++s.Sequence,
+            ["installations"]=new JsonArray(),
+            ["operations"]=new JsonArray(new JsonObject
+            {
+                ["operation_id"]=rejected["application_id"]!.DeepClone(),["installation_id"]=accepted["installation_id"]!.DeepClone(),
+                ["run_id"]=accepted["run_id"]!.DeepClone(),["kind"]="settings.apply",["state"]="failed",["phase"]="failed",
+                ["observed_at"]=rejectedAt,["failure"]=new JsonObject { ["code"]="settings_rejected",["message"]=rejectReason,["details"]=new JsonObject { ["retryable"]=false } },
+                ["settings_application"]=new JsonObject { ["application_id"]=rejected["application_id"]!.DeepClone(),
+                    ["settings_revision_id"]=rejected["settings_revision_id"]!.DeepClone(),["outcome"]="rejected",["reason"]=rejectReason }
+            }),
+            ["runs"]=new JsonArray(new JsonObject
+            {
+                ["run_id"]=accepted["run_id"]!.DeepClone(),["installation_id"]=accepted["installation_id"]!.DeepClone(),["state"]="running",
+                ["started_at"]=runState["started_at"]!.DeepClone(),["ended_at"]=null,["observed_at"]=rejectedAt,["exit_code"]=null,["failure"]=null
+            })
+        };
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",rejectionReport));
+        state=await Json(await s.Owner.GetAsync(settingsPath));
+        Assert.Equal(changed["settings_revision_id"]!.ToString(),state["selected_for_next_start"]!["id"]!.ToString());
+        Assert.Equal(changed["settings_revision_id"]!.ToString(),state["last_applied"]!["id"]!.ToString());
+        Assert.Null(state["pending_application"]);
+        history=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?run_id={accepted["run_id"]}"));
+        Assert.Contains(history["items"]!.AsArray(),x=>x!["type"]!.GetValue<string>()=="app.settings.rejected" && x["payload"]!["application_id"]!.GetValue<string>()==rejected["application_id"]!.GetValue<string>());
+    }
+    [Fact]
+    public async Task Run_ending_with_pending_initial_settings_marks_exact_application_unconfirmed()
+    {
+        await using var s=await Setup(manifestV2:true,liveSettings:true);
+        var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var path=$"/v1/app-installations/{install["installation_id"]}";
+        var binding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        var accepted=await Json(await Post(s.Owner,path+"/start",StartInput(binding)));
+        var starting=RunReport(s,accepted,"running");
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",starting));
+        var terminal=RunReport(s,accepted,"stopped",false);
+        terminal["runs"]![0]!["started_at"]=starting["runs"]![0]!["started_at"]!.DeepClone();
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",terminal));
+        var state=await Json(await s.Owner.GetAsync(path+"/settings"));
+        Assert.Null(state["active_run_id"]);Assert.Null(state["pending_application"]);
+        var run=await Json(await s.Owner.GetAsync($"/v1/app-runs/{accepted["run_id"]}"));
+        var applicationId=Guid.Parse(run["snapshot"]!["initial_settings_application_id"]!.GetValue<string>());
+        Assert.Equal("ended_before_confirmation",(string)(await postgres.QueryAsync("SELECT state FROM app_settings_applications WHERE application_id=@id",("id",applicationId)))[0][0]!);
+        var history=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?run_id={accepted["run_id"]}"));
+        Assert.Contains(history["items"]!.AsArray(),x=>x!["type"]!.GetValue<string>()=="app.settings.ended_before_confirmation" && x["payload"]!["application_id"]!.GetValue<string>()==applicationId.ToString());
+    }
+    [Fact]
+    public async Task Release_update_requires_valid_settings_and_rollback_restores_target_release_values()
+    {
+        await using var s=await Setup(manifestV2:true,liveSettings:true);
+        var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));
+        var installCommand=await Command(s,install);
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,installCommand)));
+        var path=$"/v1/app-installations/{install["installation_id"]}";
+        var originalBinding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        var originalConfiguration=installCommand["payload"]!["release"]!["configuration_revision_id"]!.GetValue<string>();
+        var originalSettings=await Json(await Post(s.Owner,path+"/settings",new JsonObject
+        {
+            ["values"]=new JsonObject { ["interval_ms"]=750 },["expected_selected_revision_id"]=null,
+            ["expected_applied_revision_id"]=null,["expected_run_id"]=null
+        }));
+        var targetManifest=s.Revision["manifest"]!.DeepClone().AsObject();
+        targetManifest["release"]="0.2.0";
+        targetManifest["runtime_settings"]!["schema"]=JsonNode.Parse("{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"period_seconds\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":10}},\"required\":[\"period_seconds\"]}");
+        targetManifest["runtime_settings"]!["defaults"]=JsonNode.Parse("{\"period_seconds\":1}");
+        var nextRevision=await Json(await Post(s.Owner,$"/v1/organizations/{s.Organization}/app-revisions",new JsonObject { ["manifest"]=targetManifest,["visibility"]="listed" }));
+        var updateBody=new JsonObject { ["expected_revision_id"]=originalBinding["revision_id"]!.DeepClone(),
+            ["expected_configuration_revision_id"]=originalBinding["configuration_revision_id"]!.DeepClone(),
+            ["revision_id"]=nextRevision["id"]!.DeepClone(),["share_id"]=null,
+            ["configuration"]=targetManifest["configuration"]!["defaults"]!.DeepClone() };
+        await Error(await Post(s.Owner,path+"/update",updateBody),409,"stale_settings_selection");
+        updateBody["runtime_settings"]=new JsonObject { ["period_seconds"]=5 };
+        var updated=await Json(await Post(s.Owner,path+"/update",updateBody));
+        var updateCommand=await Command(s,updated);
+        var updatedSettingsId=updateCommand["payload"]!["release"]!["runtime_settings_revision_id"]!.GetValue<string>();
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,updateCommand)));
+        var changedBinding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        Assert.Equal(nextRevision["id"]!.ToString(),changedBinding["revision_id"]!.ToString());
+        var changedSettings=await Json(await s.Owner.GetAsync(path+"/settings"));
+        Assert.Equal(updatedSettingsId,changedSettings["selected_for_next_start"]!["id"]!.ToString());
+        Assert.Equal(5,changedSettings["selected_for_next_start"]!["values"]!["period_seconds"]!.GetValue<int>());
+        var rollback=await Json(await Post(s.Owner,path+"/rollback",new JsonObject
+        {
+            ["expected_revision_id"]=changedBinding["revision_id"]!.DeepClone(),
+            ["expected_configuration_revision_id"]=changedBinding["configuration_revision_id"]!.DeepClone(),
+            ["revision_id"]=originalBinding["revision_id"]!.DeepClone(),
+            ["configuration_revision_id"]=originalConfiguration
+        }));
+        var rollbackCommand=await Command(s,rollback);
+        Assert.Equal(originalSettings["settings_revision_id"]!.ToString(),rollbackCommand["payload"]!["release"]!["runtime_settings_revision_id"]!.ToString());
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,rollbackCommand)));
+        var restoredSettings=await Json(await s.Owner.GetAsync(path+"/settings"));
+        Assert.Equal(originalSettings["settings_revision_id"]!.ToString(),restoredSettings["selected_for_next_start"]!["id"]!.ToString());
+        Assert.Equal(750,restoredSettings["selected_for_next_start"]!["values"]!["interval_ms"]!.GetValue<int>());
+        var noSettingsManifest=s.Revision["manifest"]!.DeepClone().AsObject();
+        noSettingsManifest["release"]="0.3.0";noSettingsManifest.Remove("runtime_settings");
+        var noSettingsRevision=await Json(await Post(s.Owner,$"/v1/organizations/{s.Organization}/app-revisions",new JsonObject { ["manifest"]=noSettingsManifest,["visibility"]="listed" }));
+        var restoredBinding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        var unsupportedUpdate=new JsonObject { ["expected_revision_id"]=restoredBinding["revision_id"]!.DeepClone(),
+            ["expected_configuration_revision_id"]=restoredBinding["configuration_revision_id"]!.DeepClone(),
+            ["revision_id"]=noSettingsRevision["id"]!.DeepClone(),["share_id"]=null,
+            ["configuration"]=noSettingsManifest["configuration"]!["defaults"]!.DeepClone() };
+        await Error(await Post(s.Owner,path+"/update",unsupportedUpdate),409,"stale_settings_selection");
+        unsupportedUpdate["runtime_settings"]=null;
+        var unsupported=await Json(await Post(s.Owner,path+"/update",unsupportedUpdate));
+        var unsupportedCommand=await Command(s,unsupported);
+        Assert.Null(unsupportedCommand["payload"]!["release"]!["runtime_settings_revision_id"]);
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,unsupportedCommand)));
+        var unsupportedState=await Json(await s.Owner.GetAsync(path+"/settings"));
+        Assert.Equal("unsupported",unsupportedState["support"]!.GetValue<string>());Assert.Null(unsupportedState["selected_for_next_start"]);
+        var unsupportedBinding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
+        var restore=await Json(await Post(s.Owner,path+"/rollback",new JsonObject
+        {
+            ["expected_revision_id"]=unsupportedBinding["revision_id"]!.DeepClone(),
+            ["expected_configuration_revision_id"]=unsupportedBinding["configuration_revision_id"]!.DeepClone(),
+            ["revision_id"]=originalBinding["revision_id"]!.DeepClone(),["configuration_revision_id"]=originalConfiguration
+        }));
+        var restoreCommand=await Command(s,restore);
+        Assert.Equal(originalSettings["settings_revision_id"]!.ToString(),restoreCommand["payload"]!["release"]!["runtime_settings_revision_id"]!.ToString());
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,restoreCommand)));
+    }
     [Fact]
     public async Task Stop_can_queue_before_start_observation_and_undispatched_start_expiry_releases_slot()
     {
@@ -198,6 +476,51 @@ public sealed class AppInstallationTests(PostgresFixture postgres)
         using var stranger=s.Factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());await Error(await stranger.GetAsync(runPath+$"/artifacts/{id}/content"),404,"not_found");
         var global=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook"));var scoped=await Json(await s.Owner.GetAsync($"/v1/organizations/{s.Organization}/app-logbook?run_id={accepted["run_id"]}"));
         Assert.Contains(scoped["items"]!.AsArray(),x=>x!["type"]!.ToString()=="app.run.failed");Assert.All(scoped["items"]!.AsArray(),x=>Assert.Contains(global["items"]!.AsArray(),g=>g!["event_id"]!.ToString()==x!["event_id"]!.ToString()));
+    }
+    [Fact]
+    public async Task App_artifacts_are_workspace_scoped_filter_bound_paginated_and_keep_repeated_paths_across_runs()
+    {
+        await using var s=await Setup();
+        var install=await Json(await Post(s.Owner,$"/v1/robots/{s.Robot}/app-installations",s.Input));
+        await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",Applied(s,await Command(s,install))));
+        var installationPath=$"/v1/app-installations/{install["installation_id"]}";
+        var binding=(await Json(await s.Owner.GetAsync(installationPath)))["installed"]!;
+        var runIds=new List<Guid>();
+        foreach(var content in new[]{"first proof"u8.ToArray(),"second proof"u8.ToArray()})
+        {
+            var run=await Json(await Post(s.Owner,installationPath+"/start",StartInput(binding)));
+            await Command(s,run);
+            await Json(await s.Device.PutAsJsonAsync("/v1/device/app-observations",RunReport(s,run,"failed")));
+            var hash=Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
+            var machinePath=$"/v1/device/app-runs/{run["run_id"]}";
+            var artifact=machinePath+$"/artifacts/{Guid.NewGuid()}?path=proof.bin&sha256={hash}&content_type=application/octet-stream";
+            Assert.Equal(HttpStatusCode.NoContent,(await s.Device.PutAsync(artifact,new ByteArrayContent(content))).StatusCode);
+            runIds.Add(Guid.Parse(run["run_id"]!.GetValue<string>()));
+            await Task.Delay(5);
+        }
+
+        var basePath=$"/v1/apps/{s.Revision["app_id"]}/artifacts?organization_id={s.Organization}";
+        var first=await Json(await s.Owner.GetAsync(basePath+"&limit=1"));
+        ContractSchema.AssertValid("artifacts/v3/app-artifact-page.schema.json",first.ToJsonString());
+        Assert.Single(first["items"]!.AsArray());
+        Assert.Equal(runIds[1].ToString(),first["items"]![0]!["run_id"]!.ToString());
+        Assert.Equal("proof.bin",first["items"]![0]!["path"]!.ToString());
+        Assert.NotNull(first["items"]![0]!["published_at"]);
+        var cursor=first["next_cursor"]!.GetValue<string>();
+        var second=await Json(await s.Owner.GetAsync(basePath+"&limit=1&cursor="+Uri.EscapeDataString(cursor)));
+        ContractSchema.AssertValid("artifacts/v3/app-artifact-page.schema.json",second.ToJsonString());
+        Assert.Equal(runIds[0].ToString(),second["items"]![0]!["run_id"]!.ToString());
+        Assert.Null(second["next_cursor"]);
+        await Error(await s.Owner.GetAsync(basePath+"&limit=1&cursor="+Uri.EscapeDataString(cursor)+"&path_prefix=proof"),400,"invalid_input");
+
+        var byRun=await Json(await s.Owner.GetAsync(basePath+"&run_id="+runIds[0]));
+        Assert.Single(byRun["items"]!.AsArray());
+        Assert.Equal(install["installation_id"]!.ToString(),byRun["items"]![0]!["installation_id"]!.ToString());
+        Assert.Equal(s.Robot.ToString(),byRun["items"]![0]!["robot_id"]!.ToString());
+        Assert.Equal(2,(await Json(await s.Owner.GetAsync(basePath+"&path_prefix=proof")))["items"]!.AsArray().Count);
+        await Error(await s.Owner.GetAsync($"/v1/apps/{Guid.NewGuid()}/artifacts?organization_id={s.Organization}"),404,"not_found");
+        using var stranger=s.Factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());
+        await Error(await stranger.GetAsync(basePath),404,"not_found");
     }
     [Fact]
     public async Task App_HITL_is_run_bound_and_submitted_response_requires_device_confirmation()

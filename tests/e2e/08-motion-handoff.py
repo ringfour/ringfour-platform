@@ -37,7 +37,7 @@ async def daemon_copy(db_path, socket_path, acknowledge):
     if acknowledge:
         from ringfour_daemon.main import create_app
 
-        settings = Settings(db_path=db_path, runner_url='http://127.0.0.1:1',
+        settings = Settings(db_path=db_path,
                             credential_path=db_path + '.credential', agent_motion_socket=socket_path)
         app = create_app(settings)
         async with app.router.lifespan_context(app):

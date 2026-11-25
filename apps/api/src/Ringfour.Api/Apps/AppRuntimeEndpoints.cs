@@ -35,7 +35,7 @@ public static class AppRuntimeEndpoints
     {
         var run = await Machine(c, db, runId, ct);
         if (stream is not ("stdout" or "stderr") || offset is < 0 or > 65536) throw ApiException.InvalidInput("Invalid stream/offset.");
-        var bytes = await ScriptRevisionEndpoints.ReadLimited(c.Request.Body, 16384, ct);
+        var bytes = await RequestBody.ReadLimited(c.Request.Body, 16384, ct);
         if (offset + bytes.Length > 65536) throw ApiException.InvalidInput("Output limit exceeded.");
         await using var tx = await db.Database.BeginTransactionAsync(ct); await Lock(c, db, run, ct);
         var output = await db.AppRunOutputs.SingleOrDefaultAsync(x => x.RunId == runId, ct);
@@ -79,7 +79,7 @@ public static class AppRuntimeEndpoints
         }
         if (await db.AppArtifacts.CountAsync(x => x.RunId == runId,ct) >= 16) throw new ApiException(413,"storage_unavailable","Artifact retention capacity reached.");
         await store.PutFileAsync(Key(runId,artifactId),data.Path,ct);
-        db.AppArtifacts.Add(new AppArtifact { Id=artifactId,RunId=runId,Path=path,Size=data.Length,Sha256=sha256,ContentType=content_type });
+        db.AppArtifacts.Add(new AppArtifact { Id=artifactId,RunId=runId,Path=path,Size=data.Length,Sha256=sha256,ContentType=content_type,PublishedAt=DateTimeOffset.UtcNow });
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Results.NoContent();
     }
     internal static object ArtifactJson(AppArtifact a) => new { artifact_id=a.Id,run_id=a.RunId,path=a.Path,size=a.Size,sha256=a.Sha256,content_type=a.ContentType,state="available" };

@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -173,7 +174,30 @@ def verify_bundle(bundle, document):
     release = read_json(bundle / "release.json")
     if release["bundle_version"] != document["wheel_bundle"]["version"]:
         raise ValueError("Wheel bundle version mismatch")
+    if document.get("runtime_settings"):
+        runtime = next(
+            (
+                package
+                for package in release.get("packages", [])
+                if package.get("name") == "ringfour-platform-runtime"
+            ),
+            None,
+        )
+        if runtime is None or _runtime_version(runtime.get("version")) < (0, 1, 1, 0, 0):
+            raise ValueError(
+                "This App declares live settings but its wheel bundle does not include "
+                "ringfour_runtime.settings; use ringfour-platform-runtime 0.1.1.dev0 or newer"
+            )
     return paths
+
+
+def _runtime_version(value):
+    text = value if isinstance(value, str) else ""
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.dev(\d+))?", text)
+    if match is None:
+        return (0, 0, 0, 0, 0)
+    major, minor, patch, dev = match.groups()
+    return (int(major), int(minor), int(patch), 0 if dev is not None else 1, int(dev or 0))
 
 
 def build_project(root, bundle=None):
@@ -183,7 +207,7 @@ def build_project(root, bundle=None):
     frozen = state / "releases" / (document["release"] + ".json")
     if frozen.exists():
         raise ValueError(
-            "This release is frozen; retry publish or bump the release before rebuilding"
+            "This App release is immutable. Retry its frozen publish request, or increment `release` in app.json before changing the name or other manifest/source inputs. A metadata-only release can reuse the same OCI image digest."
         )
     bundle = bundle or Path(
         os.environ.get(
@@ -288,7 +312,7 @@ def prepare_publication(root):
         frozen = read_json(path)
         if frozen["source_fingerprint"] != source_hash:
             raise ValueError(
-                "Frozen release content changed; bump the release before publishing"
+                "Frozen App release content changed. Increment `release` in app.json before changing the name or other manifest/source inputs; an unchanged OCI image digest may be reused by the new release."
             )
         manifest = validate_manifest(frozen["manifest"])
         # Retry the exact previously verified request; AP-05 replays committed

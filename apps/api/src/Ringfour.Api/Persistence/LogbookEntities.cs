@@ -17,7 +17,6 @@ public sealed class LogbookEvent
     public Guid? ActorUserId { get; set; }
     public string? Payload { get; set; }
     public Robot Robot { get; set; } = null!;
-    public Operation? Operation { get; set; }
 }
 
 public sealed class LogbookCheckpoint

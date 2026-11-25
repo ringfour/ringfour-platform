@@ -96,6 +96,25 @@ def begin(settings, executor, operation):
                 None if code is None else utc_now(),
             ),
         )
+        if snapshot.get("initial_settings_application_id") is not None:
+            settings_revision = snapshot.get("runtime_settings_revision_id")
+            settings_values = snapshot.get("runtime_settings")
+            if (
+                not isinstance(settings_revision, str)
+                or not isinstance(settings_values, dict)
+                or not isinstance(snapshot.get("initial_settings_application_id"), str)
+            ):
+                raise EngineError("revision_unavailable")
+            conn.execute(
+                "INSERT INTO app_settings_applications(application_id,run_id,installation_id,settings_revision_id,values_json,initial) VALUES (?,?,?,?,?,1) ON CONFLICT(application_id) DO NOTHING",
+                (
+                    snapshot["initial_settings_application_id"],
+                    command["run_id"],
+                    command["installation_id"],
+                    settings_revision,
+                    app_validation.canonical(settings_values),
+                ),
+            )
 
 
 def fail(settings, executor, run_id, code, details=None):
@@ -142,7 +161,10 @@ def stop(settings, executor, operation):
                     (utc_now(), utc_now(), row["run_id"]),
                 )
                 return
-        executor.stop(c["expected_run_id"])
+    # Executor.stop deliberately releases its mutex while Docker waits for the
+    # process. Keep this call outside the validation lock for the same reason:
+    # runtime artifact snapshots must be able to use that mutex during shutdown.
+    executor.stop(c["expected_run_id"])
 
 
 def publish(settings, executor, run_id):
@@ -177,7 +199,7 @@ def publish(settings, executor, run_id):
         observation["observed_at"] = now
         reports = []
         for record in conn.execute(
-            "SELECT * FROM device_operations WHERE kind IN ('app.start','app.stop') ORDER BY rowid"
+            "SELECT * FROM device_operations WHERE kind IN ('app.start','app.stop','app.settings.apply') ORDER BY rowid"
         ).fetchall():
             payload = json.loads(record["payload"])
             if (
@@ -189,14 +211,24 @@ def publish(settings, executor, run_id):
             ):
                 continue
             is_start = record["kind"] == "app.start"
+            is_settings = record["kind"] == "app.settings.apply"
+            if is_settings:
+                application = conn.execute(
+                    "SELECT * FROM app_settings_applications WHERE application_id=? AND run_id=?",
+                    (record["operation_id"], run_id),
+                ).fetchone()
+                if application is None or application["outcome"] is None:
+                    continue
             if (is_start and row["started_at"] is None and row["state"] in ACTIVE) or (
-                not is_start and row["state"] in ACTIVE
+                not is_start and not is_settings and row["state"] in ACTIVE
             ):
                 continue
-            success = not is_start or row["started_at"] is not None
+            success = (application["outcome"] == "applied") if is_settings else (not is_start or row["started_at"] is not None)
             failure = (
                 None
                 if success
+                else {"code": "settings_rejected", "message": application["reason"] or "The App rejected the settings.", "details": {"retryable": False}}
+                if is_settings
                 else observation["failure"]
                 or {
                     "code": "execution_conflict",
@@ -208,14 +240,23 @@ def publish(settings, executor, run_id):
                 "operation_id": record["operation_id"],
                 "installation_id": row["installation_id"],
                 "run_id": run_id,
-                "kind": "start" if is_start else "stop",
+                "kind": "settings.apply" if is_settings else "start" if is_start else "stop",
                 "state": "succeeded" if success else "failed",
-                "phase": ("observed_running" if is_start else "stopped")
+                "phase": ("applied" if success else "failed")
+                if is_settings
+                else ("observed_running" if is_start else "stopped")
                 if success
                 else "failed",
                 "observed_at": now,
                 "failure": failure,
             }
+            if is_settings:
+                report["settings_application"] = {
+                    "application_id": application["application_id"],
+                    "settings_revision_id": application["settings_revision_id"],
+                    "outcome": application["outcome"],
+                    "reason": application["reason"],
+                }
             encoded = app_validation.canonical(report)
             conn.execute(
                 "INSERT INTO app_run_operation_reports VALUES (?,?)",
@@ -278,7 +319,7 @@ async def launch(settings, executor, operation, client):
         )
         response.raise_for_status()
         revision = response.json()
-        manifest = app_validation.validate(revision["manifest"], "manifest")
+        manifest = app_validation.validate_manifest(revision["manifest"])
         if (
             revision["id"] != snapshot["revision_id"]
             or revision["app_id"] != snapshot["app_id"]
@@ -286,6 +327,8 @@ async def launch(settings, executor, operation, client):
         ):
             raise EngineError("revision_unavailable")
         app_validation.validate_configuration(manifest, snapshot["configuration"])
+        if app_validation.configuration_environment(manifest, snapshot["configuration"]) != snapshot.get("configuration_environment", {}):
+            raise EngineError("revision_unavailable")
         checked = await agent_inventory.check_fresh(settings, manifest)
         if checked["status"] != "compatible":
             for key in ("missing_required", "missing_native"):
@@ -300,7 +343,6 @@ async def launch(settings, executor, operation, client):
             raise EngineError(checked["status"])
         if checked["target"]["image"] != snapshot["image"]:
             raise EngineError("revision_unavailable")
-        await app_installations.diagnostic_idle(settings)
         # Stop may have arrived during the network/capability checks.
         with closing(connect(settings.db_path)) as conn:
             stopped = conn.execute(
@@ -360,6 +402,7 @@ async def tick(settings, executor, headers):
 
 async def run(settings, manager):
     while True:
+        manager.app_work.clear()
         if (
             manager.app_executor
             and manager.connected
@@ -371,4 +414,7 @@ async def run(settings, manager):
                 logger.warning(
                     "App run reconciliation/delivery pending; retaining intent."
                 )
-        await asyncio.sleep(0.5)
+        try:
+            await asyncio.wait_for(manager.app_work.wait(), timeout=0.5)
+        except TimeoutError:
+            pass

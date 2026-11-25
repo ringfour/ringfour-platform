@@ -22,6 +22,20 @@ test("App API rejected fixtures keep acknowledgement, identity and observation d
   }
 });
 
+test("AP17 settings and cross-run artifact contracts retain exact identities and bounds", () => {
+  const uuid = "10000000-0000-4000-8000-000000000001";
+  const revision = {id: uuid, installation_id: uuid, revision_id: uuid, values: {interval_ms: 250}, created_by: uuid, created_at: at};
+  const application = {application_id: uuid, run_id: uuid, settings_revision_id: uuid, values: {interval_ms: 250}, state: "pending", delivery_state: "queued", initial: true, requested_at: at, reason: null};
+  const state = {installation_id: uuid, support: "supported", runtime_settings: {schema: {}, defaults: {}}, selected_for_next_start: revision, active_run_id: uuid, last_applied: null, pending_application: application};
+  assert.ok(validateResource("apps/v2/settings.schema.json#/$defs/settings_state", state));
+  assert.ok(validateResource("apps/v2/settings.schema.json#/$defs/settings_write", {values: {interval_ms: 500}, expected_selected_revision_id: uuid, expected_applied_revision_id: null, expected_run_id: uuid}));
+  assert.ok(validateResource("apps/v2/settings.schema.json#/$defs/runtime_pending", {run_id: uuid, application}));
+  assert.ok(validateResource("apps/v2/settings.schema.json#/$defs/runtime_result", {outcome: "rejected", reason: "outside app limits"}));
+  const page = {items: [{artifact_id: uuid, run_id: uuid, installation_id: uuid, robot_id: uuid, path: "reports/summary.json", size: 10, sha256: "a".repeat(64), content_type: "application/octet-stream", published_at: at}], next_cursor: null};
+  assert.ok(validateResource("artifacts/v3/app-artifact-page.schema.json", page));
+  assert.throws(() => validateResource("apps/v2/settings.schema.json#/$defs/runtime_result", {outcome: "applied", reason: "bad\nreason"}), /invalid_resource/);
+});
+
 test("direct share provenance binds revision, publisher and destination", () => {
   const imported = example("consumer_import"), revision = example("unlisted_revision"), share = example("direct_share");
   assert.ok(validateImportProvenance(imported, revision, share));

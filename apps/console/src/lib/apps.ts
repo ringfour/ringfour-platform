@@ -32,6 +32,23 @@ export type AppManifest = {
       required?: string[];
     };
   };
+  runtime_settings?: {
+    defaults: Record<string, string | number | boolean>;
+    schema: {
+      properties: Record<
+        string,
+        {
+          type: "string" | "integer" | "boolean";
+          minimum?: number;
+          maximum?: number;
+          minLength?: number;
+          maxLength?: number;
+          enum?: (string | number | boolean)[];
+        }
+      >;
+      required?: string[];
+    };
+  };
 };
 export type App = {
   id: string;
@@ -175,6 +192,31 @@ export type AppConfiguration = {
 
 export const readPage = async <T>(token: Token, path: string) =>
   apiFetchAll<T>(token, path);
+export async function readFirstPage<T>(
+  token: Token,
+  path: string,
+  limit = 50,
+): Promise<T[]> {
+  const response = await apiFetch(
+    token,
+    withQuery(path, { limit: String(limit) }),
+  );
+  const page = (await response.json()) as { items: T[] };
+  return page.items;
+}
+
+export async function readLiveRuns(token: Token, path: string) {
+  const [active, recent] = await Promise.all([
+    readPage<AppRun>(token, withQuery(path, { active_only: "true" })),
+    readFirstPage<AppRun>(
+      token,
+      withQuery(path, { recent_first: "true" }),
+      50,
+    ),
+  ]);
+  return [...new Map([...recent, ...active].map((run) => [run.id, run])).values()];
+}
+
 export const readJson = async <T>(token: Token, path: string): Promise<T> =>
   (await apiFetch(token, path)).json() as Promise<T>;
 
@@ -185,7 +227,9 @@ export function withQuery(
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(values))
     if (value) query.set(key, value);
-  return query.size ? `${path}?${query}` : path;
+  if (!query.size) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${query}`;
 }
 
 export function mutateApp<T>(

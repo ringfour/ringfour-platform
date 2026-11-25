@@ -2,7 +2,6 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from ringfour_daemon import operations
 from ringfour_daemon.db import migrate
 
@@ -51,7 +50,7 @@ def test_record_command_commits_accepted_row(db_path):
     assert stored is not None
     assert stored.kind == "diagnostic.noop"
     assert stored.payload == {"flag": True}
-    assert operations.list_nonterminal(db_path) == [stored]
+    assert operations.get(db_path, stored.operation_id) == stored
 
 
 def test_identical_command_replays_without_duplicate(db_path):
@@ -92,33 +91,6 @@ def test_command_for_another_robot_is_an_error(db_path):
         )
 
 
-def test_status_transitions_and_terminal_immutability(db_path):
-    operations.record_command(db_path, ROBOT_ID, COMMAND)
-    operations.apply_status(db_path, COMMAND["operation_id"], "running")
-    succeeded = operations.apply_status(
-        db_path, COMMAND["operation_id"], "succeeded", {"noop": True}
-    )
-
-    assert succeeded.state == "succeeded"
-    assert succeeded.result == {"noop": True}
-    assert operations.list_nonterminal(db_path) == []
-
-    # Same terminal state is idempotent; a conflicting terminal is an error.
-    again = operations.apply_status(db_path, COMMAND["operation_id"], "succeeded")
-    assert again.state == "succeeded"
-    with pytest.raises(operations.OperationConflict):
-        operations.apply_status(db_path, COMMAND["operation_id"], "failed")
-
-    stored = operations.get(db_path, COMMAND["operation_id"])
-    assert stored is not None
-    assert stored.result == {"noop": True}
-
-
-def test_apply_status_unknown_operation(db_path):
-    with pytest.raises(operations.OperationNotFound):
-        operations.apply_status(db_path, COMMAND["operation_id"], "running")
-
-
 def test_deadline_expiry_uses_the_stored_deadline():
     now = datetime.now(UTC)
     expired = (now - timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
@@ -126,20 +98,3 @@ def test_deadline_expiry_uses_the_stored_deadline():
 
     assert operations.is_expired(expired, now)
     assert not operations.is_expired(pending, now)
-
-
-def test_reconcile_marks_absent_nonterminal_records_failed(db_path):
-    operations.record_command(db_path, ROBOT_ID, COMMAND)
-    other = dict(COMMAND, operation_id="5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d")
-    operations.record_command(db_path, ROBOT_ID, other)
-
-    # Only the second operation was replayed by the platform this session.
-    operations.mark_superseded(db_path, COMMAND["operation_id"])
-
-    gone = operations.get(db_path, COMMAND["operation_id"])
-    assert gone is not None
-    assert gone.state == "failed"
-    assert gone.result["error"]["code"] == "superseded"
-    active = operations.get(db_path, other["operation_id"])
-    assert active is not None
-    assert active.state == "accepted"

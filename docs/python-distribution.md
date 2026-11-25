@@ -44,6 +44,16 @@ version, wheel checksum, Agent protocol, base image digest and future App
 revision version are separate identifiers. This bundle is not an App image or
 Store release.
 
+AP-17 adds `ringfour_runtime.settings` in runtime package `0.1.1.dev0` and a
+new `0.1.1.dev0` bundle. The accepted `0.1.0.dev0` bundle remains unchanged;
+the CLI refuses to build an App declaring live settings with that older bundle.
+The new bundle pins runtime commit `5603da2e13703420182cb6c81a0a718c5b8fb3d9`,
+wheel SHA-256 `e89de0db1b503137377e47bd9e59996a1d6579b88042fb284c3d912dcdb6b919`,
+and checksum-manifest SHA-256
+`78301da6097376e69e024bb7254a1d5aa8a7e79615e622d872bab3e0676de7f5`. It is
+available locally at
+`/home/cdr/.local/share/ringfour/python-artifacts/0.1.1.dev0`.
+
 Locks and dependency wheels target CPython 3.13 on glibc Linux amd64/arm64.
 The SDK's pure Python wheel still declares Python >=3.10; that does not qualify
 these dependency locks on another interpreter/platform. amd64 consumer execution
@@ -64,7 +74,7 @@ docker build -t ringfour-sdk:ap04 .
 docker run --rm --network none ringfour-sdk:ap04
 docker build --build-arg INSTALL_RUNTIME=true -t ringfour-sdk-runtime:ap04 .
 docker run --rm --network none ringfour-sdk-runtime:ap04 python -c \
-  'from ringfour import Robot; from ringfour_runtime import artifacts, interactions, logbook; print(Robot.imu)'
+  'from ringfour import Robot; from ringfour_runtime import artifacts, interactions, logbook, settings; print(Robot.imu)'
 ```
 
 These are standalone artifact checks, not Platform/virtual stack operations.
@@ -75,4 +85,4 @@ to another build host; no private repository credentials need to travel with it.
 
 `packages/sdk-image/Dockerfile` is also usable directly with this bundle as its
 build context. It no longer accepts the Platform root/Runner wheelhouse as input.
-The legacy wheelhouse and launchers remain intact until their cutover gates.
+AP-15 removes the Runner wheelhouse and legacy launchers; App wheel distribution remains.

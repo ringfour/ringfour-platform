@@ -15,32 +15,18 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<DevicePairingRequest> DevicePairingRequests => Set<DevicePairingRequest>();
     public DbSet<RobotAuditEvent> RobotAuditEvents => Set<RobotAuditEvent>();
     public DbSet<RobotPresence> RobotPresences => Set<RobotPresence>();
-    public DbSet<Operation> Operations => Set<Operation>();
-    public DbSet<OperationIdempotencyRecord> OperationIdempotencyRecords => Set<OperationIdempotencyRecord>();
-    public DbSet<ScriptRevision> ScriptRevisions => Set<ScriptRevision>();
-    public DbSet<ScriptExecution> ScriptExecutions => Set<ScriptExecution>();
-    public DbSet<ScriptArtifact> ScriptArtifacts => Set<ScriptArtifact>();
-    public DbSet<ScriptExecutionEvent> ScriptExecutionEvents => Set<ScriptExecutionEvent>();
-    public DbSet<Mission> Missions => Set<Mission>();
-    public DbSet<MissionRevision> MissionRevisions => Set<MissionRevision>();
-    public DbSet<MissionDeployment> MissionDeployments => Set<MissionDeployment>();
-    public DbSet<DeploymentAction> DeploymentActions => Set<DeploymentAction>();
-    public DbSet<DevSession> DevSessions => Set<DevSession>();
-    public DbSet<DevSessionGeneration> DevSessionGenerations => Set<DevSessionGeneration>();
-    public DbSet<DevLocalEndpoint> DevLocalEndpoints => Set<DevLocalEndpoint>();
-    public DbSet<DevLocalGrant> DevLocalGrants => Set<DevLocalGrant>();
-    public DbSet<DevSessionRun> DevSessionRuns => Set<DevSessionRun>();
     public DbSet<LogbookEvent> LogbookEvents => Set<LogbookEvent>();
     public DbSet<LogbookCheckpoint> LogbookCheckpoints => Set<LogbookCheckpoint>();
     public DbSet<HumanInteraction> HumanInteractions => Set<HumanInteraction>();
     public DbSet<HumanInteractionResponse> HumanInteractionResponses => Set<HumanInteractionResponse>();
-    public DbSet<MissionUiSession> MissionUiSessions => Set<MissionUiSession>();
     public DbSet<AppRecord> Apps => Set<AppRecord>();
     public DbSet<AppRevision> AppRevisions => Set<AppRevision>();
     public DbSet<AppShare> AppShares => Set<AppShare>();
     public DbSet<AppImport> AppImports => Set<AppImport>();
     public DbSet<AppInstallation> AppInstallations => Set<AppInstallation>();
     public DbSet<AppConfigurationRevision> AppConfigurationRevisions => Set<AppConfigurationRevision>();
+    public DbSet<AppSettingsRevision> AppSettingsRevisions => Set<AppSettingsRevision>();
+    public DbSet<AppSettingsApplication> AppSettingsApplications => Set<AppSettingsApplication>();
     public DbSet<AppOperation> AppOperations => Set<AppOperation>();
     public DbSet<AppRun> AppRuns => Set<AppRun>();
     public DbSet<AppRunOutput> AppRunOutputs => Set<AppRunOutput>();
@@ -93,30 +79,6 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
             entity.ToTable(table => table.HasCheckConstraint("ck_human_response_status", "status IN ('submitted','applied','rejected_timed_out','rejected_cancelled')"));
         });
-        modelBuilder.Entity<MissionUiSession>(entity =>
-        {
-            entity.ToTable("mission_ui_sessions");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
-            entity.Property(item => item.OrganizationId).HasColumnName("organization_id");
-            entity.Property(item => item.UserId).HasColumnName("user_id");
-            entity.Property(item => item.BootstrapTokenHash).HasColumnName("bootstrap_token_hash");
-            entity.Property(item => item.SessionTokenHash).HasColumnName("session_token_hash");
-            entity.Property(item => item.BootstrapExpiresAt).HasColumnName("bootstrap_expires_at");
-            entity.Property(item => item.ExpiresAt).HasColumnName("expires_at");
-            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
-            entity.Property(item => item.ExchangedAt).HasColumnName("exchanged_at");
-            entity.Property(item => item.RevokedAt).HasColumnName("revoked_at");
-            entity.HasIndex(item => new { item.ExecutionId, item.UserId, item.ExpiresAt });
-            entity.HasIndex(item => item.OrganizationId);
-            entity.HasIndex(item => item.SessionTokenHash).IsUnique()
-                .HasFilter("session_token_hash IS NOT NULL");
-            entity.HasOne(item => item.Execution).WithMany().HasForeignKey(item => item.ExecutionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Organization).WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.User).WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_mission_ui_session_hashes", "octet_length(bootstrap_token_hash) = 32 AND (session_token_hash IS NULL OR octet_length(session_token_hash) = 32) AND ((session_token_hash IS NULL AND exchanged_at IS NULL) OR (session_token_hash IS NOT NULL AND exchanged_at IS NOT NULL))"));
-        });
         modelBuilder.Entity<LogbookEvent>(entity =>
         {
             entity.ToTable("logbook_events");
@@ -140,10 +102,9 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasIndex(item => new { item.RobotId, item.LocalSequence }).IsUnique();
             entity.HasIndex(item => new { item.RobotId, item.ReceivedAt, item.Id });
             entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Operation).WithMany().HasForeignKey(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted'))"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))"));
             entity.ToTable(table => table.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND app_operation_id IS NOT NULL AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted'))"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND (app_operation_id IS NOT NULL OR type = 'app.settings.selected' OR type = 'app.settings.ended_before_confirmation') AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))"));
         });
         modelBuilder.Entity<LogbookCheckpoint>(entity =>
         {
@@ -154,281 +115,19 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasOne(item => item.Robot).WithOne().HasForeignKey<LogbookCheckpoint>(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
             entity.ToTable(table => table.HasCheckConstraint("ck_logbook_checkpoint", "sequence BETWEEN 0 AND 9007199254740991"));
         });
-        modelBuilder.Entity<DevSessionRun>(entity =>
-        {
-            entity.ToTable("dev_session_runs");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.SessionId).HasColumnName("session_id");
-            entity.Property(item => item.RobotId).HasColumnName("robot_id");
-            entity.Property(item => item.ActorUserId).HasColumnName("actor_user_id");
-            entity.Property(item => item.OperationId).HasColumnName("operation_id");
-            entity.Property(item => item.Generation).HasColumnName("generation");
-            entity.Property(item => item.State).HasColumnName("state");
-            entity.Property(item => item.ExitCode).HasColumnName("exit_code");
-            entity.Property(item => item.Error).HasColumnName("error").HasColumnType("jsonb");
-            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
-            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
-            entity.HasIndex(item => item.OperationId).IsUnique();
-            entity.HasIndex(item => new { item.RobotId, item.State });
-            entity.HasOne(item => item.Session).WithMany().HasForeignKey(item => item.SessionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Operation).WithOne().HasForeignKey<DevSessionRun>(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_run_state", "state IN ('queued','preparing','running','succeeded','failed','cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_run_generation", "generation > 0"));
-        });
-        modelBuilder.Entity<DevLocalEndpoint>(entity =>
-        {
-            entity.ToTable("dev_local_endpoints");
-            entity.HasKey(item => item.RobotId);
-            entity.Property(item => item.RobotId).HasColumnName("robot_id");
-            entity.Property(item => item.CredentialId).HasColumnName("credential_id");
-            entity.Property(item => item.CertificateSha256).HasColumnName("certificate_sha256");
-            entity.Property(item => item.DaemonUrl).HasColumnName("daemon_url");
-            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
-            entity.HasOne(item => item.Robot).WithOne().HasForeignKey<DevLocalEndpoint>(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Credential).WithMany().HasForeignKey(item => item.CredentialId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_endpoint_fingerprint", "certificate_sha256 ~ '^[0-9a-f]{64}$'"));
-        });
-        modelBuilder.Entity<DevLocalGrant>(entity =>
-        {
-            entity.ToTable("dev_local_grants");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.SessionId).HasColumnName("session_id");
-            entity.Property(item => item.OperationId).HasColumnName("operation_id");
-            entity.Property(item => item.CertificateSha256).HasColumnName("certificate_sha256");
-            entity.Property(item => item.DaemonUrl).HasColumnName("daemon_url");
-            entity.Property(item => item.ExpiresAt).HasColumnName("expires_at");
-            entity.HasIndex(item => item.OperationId).IsUnique();
-            entity.HasOne(item => item.Session).WithMany().HasForeignKey(item => item.SessionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Operation).WithOne().HasForeignKey<DevLocalGrant>(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
-        });
-        modelBuilder.Entity<DevSession>(entity =>
-        {
-            entity.ToTable("dev_sessions");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.RobotId).HasColumnName("robot_id");
-            entity.Property(item => item.OwnerUserId).HasColumnName("owner_user_id");
-            entity.Property(item => item.State).HasColumnName("state");
-            entity.Property(item => item.Generation).HasColumnName("generation");
-            entity.Property(item => item.ActiveGeneration).HasColumnName("active_generation");
-            entity.Property(item => item.DependencyDigest).HasColumnName("dependency_digest");
-            entity.Property(item => item.LastOperationId).HasColumnName("last_operation_id");
-            entity.Property(item => item.LastExecutionId).HasColumnName("last_execution_id");
-            entity.Property(item => item.LastError).HasColumnName("last_error").HasColumnType("jsonb");
-            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
-            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
-            entity.Property(item => item.ExpiresAt).HasColumnName("expires_at");
-            entity.Property(item => item.ClosedAt).HasColumnName("closed_at");
-            entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(item => item.RobotId).IsUnique().HasFilter("state NOT IN ('closed', 'expired')");
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_state", "state IN ('creating', 'ready', 'syncing', 'starting', 'running', 'stopping', 'closing', 'closed', 'expired', 'failed')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_generations", "generation >= 0 AND (active_generation IS NULL OR (active_generation > 0 AND active_generation <= generation))"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_expiry", "expires_at > created_at"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_closed", "(state IN ('closed', 'expired')) = (closed_at IS NOT NULL)"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_session_digest", "dependency_digest IS NULL OR dependency_digest ~ '^[0-9a-f]{64}$'"));
-        });
-        modelBuilder.Entity<DevSessionGeneration>(entity =>
-        {
-            entity.ToTable("dev_session_generations");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.SessionId).HasColumnName("session_id");
-            entity.Property(item => item.OperationId).HasColumnName("operation_id");
-            entity.Property(item => item.Generation).HasColumnName("generation");
-            entity.Property(item => item.State).HasColumnName("state");
-            entity.Property(item => item.ArchiveSha256).HasColumnName("archive_sha256");
-            entity.Property(item => item.ArchiveSize).HasColumnName("archive_size");
-            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
-            entity.HasOne(item => item.Session).WithMany().HasForeignKey(item => item.SessionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Operation).WithMany().HasForeignKey(item => item.OperationId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(item => item.OperationId).IsUnique();
-            entity.HasIndex(item => new { item.SessionId, item.Generation }).IsUnique().HasFilter("state IN ('pending', 'committed')");
-            entity.HasIndex(item => item.SessionId).IsUnique().HasFilter("state = 'pending'");
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_generation_state", "state IN ('pending', 'committed', 'failed')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_generation_number", "generation > 0"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_dev_generation_archive", "archive_size BETWEEN 1 AND 1048576 AND archive_sha256 ~ '^[0-9a-f]{64}$'"));
-        });
-        modelBuilder.Entity<MissionDeployment>(entity =>
-        {
-            entity.ToTable("mission_deployments");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.RobotId).HasColumnName("robot_id");
-            entity.Property(item => item.SelectedRevisionId).HasColumnName("selected_revision_id");
-            entity.Property(item => item.CandidateRevisionId).HasColumnName("candidate_revision_id");
-            entity.Property(item => item.CandidateOperationId).HasColumnName("candidate_operation_id");
-            entity.Property(item => item.DesiredState).HasColumnName("desired_state");
-            entity.Property(item => item.ObservedState).HasColumnName("observed_state");
-            entity.Property(item => item.LastOperationId).HasColumnName("last_operation_id");
-            entity.Property(item => item.LastExecutionId).HasColumnName("last_execution_id");
-            entity.Property(item => item.LastError).HasColumnName("last_error").HasColumnType("jsonb");
-            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
-            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
-            entity.HasIndex(item => item.RobotId).IsUnique();
-            entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.SelectedRevision).WithMany().HasForeignKey(item => item.SelectedRevisionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.CandidateRevision).WithMany().HasForeignKey(item => item.CandidateRevisionId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_mission_desired", "desired_state IN ('stopped', 'running')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_mission_observed", "observed_state IN ('preparing', 'ready', 'starting', 'running', 'stopping', 'succeeded', 'failed', 'cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_mission_candidate", "(candidate_revision_id IS NULL) = (candidate_operation_id IS NULL)"));
-        });
-        modelBuilder.Entity<DeploymentAction>(entity =>
-        {
-            entity.ToTable("deployment_actions");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.DeploymentId).HasColumnName("deployment_id");
-            entity.Property(item => item.ActorUserId).HasColumnName("actor_user_id");
-            entity.Property(item => item.Kind).HasColumnName("kind");
-            entity.Property(item => item.State).HasColumnName("state");
-            entity.Property(item => item.IdempotencyKey).HasColumnName("idempotency_key");
-            entity.Property(item => item.RequestFingerprint).HasColumnName("request_fingerprint");
-            entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
-            entity.Property(item => item.TargetExecutionId).HasColumnName("target_execution_id");
-            entity.Property(item => item.StopOperationId).HasColumnName("stop_operation_id");
-            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
-            entity.Property(item => item.UpdatedAt).HasColumnName("updated_at");
-            entity.Property(item => item.ExpiresAt).HasColumnName("expires_at");
-            entity.HasIndex(item => new { item.DeploymentId, item.ActorUserId, item.Kind, item.IdempotencyKey }).IsUnique();
-            entity.HasOne(item => item.Deployment).WithMany().HasForeignKey(item => item.DeploymentId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Operation).WithOne().HasForeignKey<DeploymentAction>(item => item.Id).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_deployment_action_state", "state IN ('pending', 'starting', 'completed', 'failed')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_deployment_action_kind", "kind IN ('start', 'stop', 'restart')"));
-        });
-        modelBuilder.Entity<Mission>(entity =>
-        {
-            entity.ToTable("missions");
-            entity.HasKey(mission => mission.Id);
-            entity.Property(mission => mission.Id).HasColumnName("id");
-            entity.Property(mission => mission.OrganizationId).HasColumnName("organization_id");
-            entity.Property(mission => mission.CreatedByUserId).HasColumnName("created_by_user_id");
-            entity.Property(mission => mission.Name).HasColumnName("name");
-            entity.Property(mission => mission.IdempotencyKey).HasColumnName("idempotency_key");
-            entity.Property(mission => mission.RequestFingerprint).HasColumnName("request_fingerprint");
-            entity.Property(mission => mission.LatestVersion).HasColumnName("latest_version");
-            entity.Property(mission => mission.CreatedAt).HasColumnName("created_at");
-            entity.HasIndex(mission => new { mission.OrganizationId, mission.Name }).IsUnique();
-            entity.HasIndex(mission => new { mission.CreatedByUserId, mission.OrganizationId, mission.IdempotencyKey }).IsUnique();
-            entity.HasOne(mission => mission.Organization).WithMany().HasForeignKey(mission => mission.OrganizationId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(mission => mission.CreatedBy).WithMany().HasForeignKey(mission => mission.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_mission_version", "latest_version >= 0"));
-        });
-        modelBuilder.Entity<MissionRevision>(entity =>
-        {
-            entity.ToTable("mission_revisions");
-            entity.HasKey(revision => revision.Id);
-            entity.Property(revision => revision.Id).HasColumnName("id");
-            entity.Property(revision => revision.MissionId).HasColumnName("mission_id");
-            entity.Property(revision => revision.ScriptRevisionId).HasColumnName("script_revision_id");
-            entity.Property(revision => revision.CreatedByUserId).HasColumnName("created_by_user_id");
-            entity.Property(revision => revision.Version).HasColumnName("version");
-            entity.Property(revision => revision.Manifest).HasColumnName("manifest").HasColumnType("jsonb");
-            entity.Property(revision => revision.IdempotencyKey).HasColumnName("idempotency_key");
-            entity.Property(revision => revision.RequestFingerprint).HasColumnName("request_fingerprint");
-            entity.Property(revision => revision.CreatedAt).HasColumnName("created_at");
-            entity.HasIndex(revision => new { revision.MissionId, revision.Version }).IsUnique();
-            entity.HasIndex(revision => new { revision.MissionId, revision.CreatedByUserId, revision.IdempotencyKey }).IsUnique();
-            entity.HasOne(revision => revision.Mission).WithMany().HasForeignKey(revision => revision.MissionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(revision => revision.ScriptRevision).WithMany().HasForeignKey(revision => revision.ScriptRevisionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(revision => revision.CreatedBy).WithMany().HasForeignKey(revision => revision.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_mission_revision_version", "version > 0"));
-        });
-        modelBuilder.Entity<ScriptExecutionEvent>(entity =>
-        {
-            entity.ToTable("script_execution_events");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Id).HasColumnName("id");
-            entity.Property(item => item.ExecutionId).HasColumnName("execution_id");
-            entity.Property(item => item.ActorUserId).HasColumnName("actor_user_id");
-            entity.Property(item => item.State).HasColumnName("state");
-            entity.Property(item => item.OccurredAt).HasColumnName("occurred_at");
-            entity.HasIndex(item => new { item.ExecutionId, item.State }).IsUnique();
-            entity.HasOne(item => item.Execution).WithMany().HasForeignKey(item => item.ExecutionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(item => item.Actor).WithMany().HasForeignKey(item => item.ActorUserId).OnDelete(DeleteBehavior.Restrict);
-        });
-        modelBuilder.Entity<ScriptExecution>(entity =>
-        {
-            entity.ToTable("script_executions");
-            entity.HasKey(execution => execution.Id);
-            entity.Property(execution => execution.Id).HasColumnName("id");
-            entity.Property(execution => execution.RobotId).HasColumnName("robot_id");
-            entity.Property(execution => execution.RevisionId).HasColumnName("revision_id");
-            entity.Property(execution => execution.ActorUserId).HasColumnName("actor_user_id");
-            entity.Property(execution => execution.DeploymentId).HasColumnName("deployment_id");
-            entity.Property(execution => execution.MissionRevisionId).HasColumnName("mission_revision_id");
-            entity.Property(execution => execution.State).HasColumnName("state");
-            entity.Property(execution => execution.CreatedAt).HasColumnName("created_at");
-            entity.Property(execution => execution.UpdatedAt).HasColumnName("updated_at");
-            entity.Property(execution => execution.ExitCode).HasColumnName("exit_code");
-            entity.Property(execution => execution.Error).HasColumnName("error").HasColumnType("jsonb");
-            entity.Property(execution => execution.ArtifactState).HasColumnName("artifact_state");
-            entity.Property(execution => execution.ArtifactError).HasColumnName("artifact_error").HasColumnType("jsonb");
-            entity.Property(execution => execution.Stdout).HasColumnName("stdout");
-            entity.Property(execution => execution.Stderr).HasColumnName("stderr");
-            entity.Property(execution => execution.StdoutTruncated).HasColumnName("stdout_truncated");
-            entity.Property(execution => execution.StderrTruncated).HasColumnName("stderr_truncated");
-            entity.HasIndex(execution => execution.RobotId).IsUnique().HasFilter("state IN ('queued', 'preparing', 'running')");
-            entity.HasOne(execution => execution.Robot).WithMany().HasForeignKey(execution => execution.RobotId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(execution => execution.Revision).WithMany().HasForeignKey(execution => execution.RevisionId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(execution => execution.Actor).WithMany().HasForeignKey(execution => execution.ActorUserId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(execution => execution.Deployment).WithMany().HasForeignKey(execution => execution.DeploymentId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(execution => execution.MissionRevision).WithMany().HasForeignKey(execution => execution.MissionRevisionId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_execution_mission_attribution", "(deployment_id IS NULL) = (mission_revision_id IS NULL)"));
-            entity.HasOne(execution => execution.Operation).WithOne().HasForeignKey<ScriptExecution>(execution => execution.Id).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_state", "state IN ('queued', 'preparing', 'running', 'succeeded', 'failed', 'cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_artifact_state", "artifact_state IN ('unknown', 'pending', 'uploading', 'ready', 'failed')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_execution_output", "octet_length(stdout) <= 65536 AND octet_length(stderr) <= 65536"));
-        });
-        modelBuilder.Entity<ScriptArtifact>(entity =>
-        {
-            entity.ToTable("script_artifacts");
-            entity.HasKey(artifact => new { artifact.ExecutionId, artifact.Path });
-            entity.Property(artifact => artifact.Id).HasColumnName("id");
-            entity.Property(artifact => artifact.ExecutionId).HasColumnName("execution_id");
-            entity.Property(artifact => artifact.Path).HasColumnName("path");
-            entity.Property(artifact => artifact.Size).HasColumnName("size");
-            entity.Property(artifact => artifact.Sha256).HasColumnName("sha256");
-            entity.Property(artifact => artifact.ContentType).HasColumnName("content_type");
-            entity.Property(artifact => artifact.State).HasColumnName("state");
-            entity.HasIndex(artifact => artifact.Id).IsUnique();
-            entity.HasOne(artifact => artifact.Execution).WithMany().HasForeignKey(artifact => artifact.ExecutionId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_size", "size BETWEEN 0 AND 9007199254740991"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_content_type", "content_type IN ('image/jpeg', 'image/png', 'application/octet-stream')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_artifact_state", "state IN ('pending', 'uploading', 'available', 'failed')"));
-        });
-        modelBuilder.Entity<ScriptRevision>(entity =>
-        {
-            entity.ToTable("script_revisions");
-            entity.HasKey(revision => revision.Id);
-            entity.Property(revision => revision.Id).HasColumnName("id");
-            entity.Property(revision => revision.OrganizationId).HasColumnName("organization_id");
-            entity.Property(revision => revision.CreatedByUserId).HasColumnName("created_by_user_id");
-            entity.Property(revision => revision.State).HasColumnName("state");
-            entity.Property(revision => revision.ArchiveSha256).HasColumnName("archive_sha256");
-            entity.Property(revision => revision.ArchiveSize).HasColumnName("archive_size");
-            entity.Property(revision => revision.RevisionDigest).HasColumnName("revision_digest");
-            entity.Property(revision => revision.Entrypoint).HasColumnName("entrypoint");
-            entity.Property(revision => revision.PythonRequirement).HasColumnName("python_requirement");
-            entity.Property(revision => revision.LockSha256).HasColumnName("lock_sha256");
-            entity.Property(revision => revision.IdempotencyKey).HasColumnName("idempotency_key");
-            entity.Property(revision => revision.RequestFingerprint).HasColumnName("request_fingerprint");
-            entity.Property(revision => revision.CreatedAt).HasColumnName("created_at");
-            entity.Property(revision => revision.UploadExpiresAt).HasColumnName("upload_expires_at");
-            entity.Property(revision => revision.FinalizedAt).HasColumnName("finalized_at");
-            entity.Property(revision => revision.UploadCleanedAt).HasColumnName("upload_cleaned_at");
-            entity.HasIndex(revision => new { revision.CreatedByUserId, revision.OrganizationId, revision.IdempotencyKey }).IsUnique();
-            entity.HasIndex(revision => revision.OrganizationId);
-            entity.HasOne(revision => revision.Organization).WithMany().HasForeignKey(revision => revision.OrganizationId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(revision => revision.CreatedBy).WithMany().HasForeignKey(revision => revision.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_revision_state", "(state = 'uploading' AND finalized_at IS NULL) OR (state = 'ready' AND finalized_at IS NOT NULL)"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_script_revision_size", "archive_size BETWEEN 1 AND 9007199254740991"));
-        });
+
+
+
+
+
+
+
+
+
+
+
+
+
         modelBuilder.Entity<User>(entity =>
         {
             entity.ToTable("users");
@@ -620,67 +319,9 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
-        modelBuilder.Entity<Operation>(entity =>
-        {
-            entity.ToTable("operations");
-            entity.HasKey(operation => operation.Id);
-            entity.Property(operation => operation.Id).HasColumnName("id");
-            entity.Property(operation => operation.RobotId).HasColumnName("robot_id");
-            entity.Property(operation => operation.Kind).HasColumnName("kind");
-            entity.Property(operation => operation.PayloadVersion).HasColumnName("payload_version");
-            entity.Property(operation => operation.Payload)
-                .HasColumnName("payload")
-                .HasColumnType("jsonb");
-            entity.Property(operation => operation.State)
-                .HasColumnName("state")
-                .HasConversion<string>();
-            entity.Property(operation => operation.CreatedAt).HasColumnName("created_at");
-            entity.Property(operation => operation.UpdatedAt).HasColumnName("updated_at");
-            entity.Property(operation => operation.DeadlineAt).HasColumnName("deadline_at");
-            entity.Property(operation => operation.RequestedByUserId).HasColumnName("requested_by_user_id");
-            entity.Property(operation => operation.AcknowledgedAt).HasColumnName("acknowledged_at");
-            entity.Property(operation => operation.Result)
-                .HasColumnName("result")
-                .HasColumnType("jsonb");
-            entity.ToTable(table => table.HasCheckConstraint(
-                "ck_operations_state",
-                "state IN ('Queued', 'Accepted', 'Running', 'Succeeded', 'Failed', 'Cancelled')"));
-            entity.HasIndex(operation => new { operation.RobotId, operation.State, operation.CreatedAt, operation.Id });
-            entity.HasOne(operation => operation.Robot)
-                .WithMany()
-                .HasForeignKey(operation => operation.RobotId)
-                .OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(operation => operation.RequestedBy)
-                .WithMany()
-                .HasForeignKey(operation => operation.RequestedByUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-        });
 
-        modelBuilder.Entity<OperationIdempotencyRecord>(entity =>
-        {
-            entity.ToTable("operation_idempotency_records");
-            entity.HasKey(record => record.Id);
-            entity.Property(record => record.Id).HasColumnName("id");
-            entity.Property(record => record.PrincipalUserId).HasColumnName("principal_user_id");
-            entity.Property(record => record.Route).HasColumnName("route");
-            entity.Property(record => record.Target).HasColumnName("target");
-            entity.Property(record => record.Key).HasColumnName("key");
-            entity.Property(record => record.RequestFingerprint).HasColumnName("request_fingerprint");
-            entity.Property(record => record.OutcomeOperationId).HasColumnName("outcome_operation_id");
-            entity.Property(record => record.CreatedAt).HasColumnName("created_at");
-            entity.Property(record => record.ExpiresAt).HasColumnName("expires_at");
-            entity.HasIndex(record =>
-                    new { record.PrincipalUserId, record.Route, record.Target, record.Key })
-                .IsUnique();
-            entity.HasOne(record => record.Principal)
-                .WithMany()
-                .HasForeignKey(record => record.PrincipalUserId)
-                .OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(record => record.Outcome)
-                .WithMany()
-                .HasForeignKey(record => record.OutcomeOperationId)
-                .OnDelete(DeleteBehavior.Restrict);
-        });
+
+
 
         ConfigureApps(modelBuilder);
     }
@@ -691,6 +332,8 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
         {
             e.Property(x => x.RunsSupported).HasColumnName("runs_supported");
             e.Property(x => x.InstallationsSupported).HasColumnName("installations_supported");
+            e.Property(x => x.ManifestV2Supported).HasColumnName("manifest_v2_supported");
+            e.Property(x => x.LiveSettingsSupported).HasColumnName("live_settings_supported");
             e.ToTable("robot_app_inventory"); e.HasKey(x => x.RobotId);
             e.Property(x => x.RobotId).HasColumnName("robot_id");
             e.Property(x => x.DeploymentNamespace).HasColumnName("deployment_namespace");
@@ -789,6 +432,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.Property(x => x.RobotId).HasColumnName("robot_id"); e.Property(x => x.AppId).HasColumnName("app_id"); e.Property(x => x.ImportId).HasColumnName("import_id"); e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
             e.Property(x => x.CreatedAt).HasColumnName("created_at"); e.Property(x => x.AvailableRevisionId).HasColumnName("available_revision_id");
             e.Property(x => x.InstalledBinding).HasColumnName("installed_binding").HasColumnType("jsonb"); e.Property(x => x.Candidate).HasColumnName("candidate").HasColumnType("jsonb"); e.Property(x => x.LastObservedAt).HasColumnName("last_observed_at");
+            e.Property(x => x.SelectedSettingsRevisionId).HasColumnName("selected_settings_revision_id");
             e.HasIndex(x => new { x.RobotId, x.AppId }).IsUnique();
             e.HasAlternateKey(x => new { x.Id, x.RobotId, x.OrganizationId });
             e.HasAlternateKey(x => new { x.Id, x.AppId });
@@ -797,6 +441,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.HasOne<AppImport>().WithMany().HasForeignKey(x => new { x.ImportId, x.AppId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.AppId, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<AppRevision>().WithMany().HasForeignKey(x => new { x.AvailableRevisionId, x.AppId }).HasPrincipalKey(x => new { x.Id, x.AppId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppSettingsRevision>().WithMany().HasForeignKey(x => new { x.SelectedSettingsRevisionId, x.Id }).HasPrincipalKey(x => new { x.Id, x.InstallationId }).OnDelete(DeleteBehavior.Restrict);
             e.ToTable(t => t.HasCheckConstraint("ck_app_installation_json_objects", "(installed_binding IS NULL OR jsonb_typeof(installed_binding) = 'object') AND (candidate IS NULL OR jsonb_typeof(candidate) = 'object')"));
         });
         modelBuilder.Entity<AppConfigurationRevision>(e =>
@@ -808,6 +453,49 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.HasOne<AppRevision>().WithMany().HasForeignKey(x => new { x.RevisionId, x.AppId }).HasPrincipalKey(x => new { x.Id, x.AppId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
             e.ToTable(t => t.HasCheckConstraint("ck_app_configuration_values_object", "jsonb_typeof(values) = 'object'"));
+        });
+        modelBuilder.Entity<AppSettingsRevision>(e =>
+        {
+            e.ToTable("app_settings_revisions", t => t.HasCheckConstraint("ck_app_settings_values_object", "jsonb_typeof(values) = 'object' AND octet_length(values::text) <= 16384"));
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.InstallationId).HasColumnName("installation_id");
+            e.Property(x => x.AppId).HasColumnName("app_id"); e.Property(x => x.RevisionId).HasColumnName("revision_id");
+            e.Property(x => x.Values).HasColumnName("values").HasColumnType("jsonb");
+            e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id"); e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasAlternateKey(x => new { x.Id, x.InstallationId });
+            e.HasOne<AppInstallation>().WithMany().HasForeignKey(x => new { x.InstallationId, x.AppId }).HasPrincipalKey(x => new { x.Id, x.AppId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppRevision>().WithMany().HasForeignKey(x => new { x.RevisionId, x.AppId }).HasPrincipalKey(x => new { x.Id, x.AppId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.InstallationId, x.CreatedAt, x.Id });
+        });
+        modelBuilder.Entity<AppSettingsApplication>(e =>
+        {
+            e.ToTable("app_settings_applications", t =>
+            {
+                t.HasCheckConstraint("ck_app_settings_application_state", "state IN ('pending','applied','rejected','ended_before_confirmation')");
+                t.HasCheckConstraint("ck_app_settings_application_delivery", "delivery_state IN ('queued','delivered','locally_received','reported')");
+                t.HasCheckConstraint("ck_app_settings_application_outcome", "(state = 'pending' AND outcome IS NULL AND completed_at IS NULL) OR (state = 'applied' AND outcome = 'applied' AND reason IS NULL AND completed_at IS NOT NULL) OR (state = 'rejected' AND outcome = 'rejected' AND completed_at IS NOT NULL) OR (state = 'ended_before_confirmation' AND outcome IS NULL AND completed_at IS NOT NULL)");
+                t.HasCheckConstraint("ck_app_settings_application_reason", "reason IS NULL OR (length(reason) <= 512 AND reason !~ '[[:cntrl:]]')");
+            });
+            e.HasKey(x => x.ApplicationId); e.Property(x => x.ApplicationId).HasColumnName("application_id");
+            e.Property(x => x.InstallationId).HasColumnName("installation_id"); e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.SettingsRevisionId).HasColumnName("settings_revision_id");
+            e.Property(x => x.ExpectedAppliedRevisionId).HasColumnName("expected_applied_revision_id");
+            e.Property(x => x.ExpectedSelectedRevisionId).HasColumnName("expected_selected_revision_id");
+            e.Property(x => x.Initial).HasColumnName("initial"); e.Property(x => x.State).HasColumnName("state").HasMaxLength(32);
+            e.Property(x => x.DeliveryState).HasColumnName("delivery_state").HasMaxLength(24);
+            e.Property(x => x.Outcome).HasColumnName("outcome").HasMaxLength(16); e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id"); e.Property(x => x.RequestedAt).HasColumnName("requested_at");
+            e.Property(x => x.DeliveredAt).HasColumnName("delivered_at"); e.Property(x => x.LocallyReceivedAt).HasColumnName("locally_received_at");
+            e.Property(x => x.ReportedAt).HasColumnName("reported_at"); e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.HasOne<AppOperation>().WithMany().HasForeignKey(x => x.ApplicationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppRun>().WithMany().HasForeignKey(x => new { x.RunId, x.InstallationId }).HasPrincipalKey(x => new { x.Id, x.InstallationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppSettingsRevision>().WithMany().HasForeignKey(x => new { x.SettingsRevisionId, x.InstallationId }).HasPrincipalKey(x => new { x.Id, x.InstallationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppSettingsRevision>().WithMany().HasForeignKey(x => new { x.ExpectedAppliedRevisionId, x.InstallationId }).HasPrincipalKey(x => new { x.Id, x.InstallationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppSettingsRevision>().WithMany().HasForeignKey(x => new { x.ExpectedSelectedRevisionId, x.InstallationId }).HasPrincipalKey(x => new { x.Id, x.InstallationId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.RunId).IsUnique().HasFilter("state = 'pending'");
+            e.HasIndex(x => new { x.InstallationId, x.RequestedAt, x.ApplicationId });
         });
         modelBuilder.Entity<AppOperation>(e =>
         {
@@ -835,13 +523,19 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.Property(x => x.InstallationId).HasColumnName("installation_id"); e.Property(x => x.StartOperationId).HasColumnName("start_operation_id"); e.Property(x => x.Snapshot).HasColumnName("snapshot").HasColumnType("jsonb");
             e.Property(x => x.State).HasColumnName("state").HasMaxLength(16); e.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id"); e.Property(x => x.RequestedAt).HasColumnName("requested_at");
             e.Property(x => x.StartedAt).HasColumnName("started_at"); e.Property(x => x.EndedAt).HasColumnName("ended_at"); e.Property(x => x.ObservedAt).HasColumnName("observed_at"); e.Property(x => x.ReceivedAt).HasColumnName("received_at");
+            e.Property(x => x.AppliedSettingsRevisionId).HasColumnName("applied_settings_revision_id");
             e.Property(x => x.ExitCode).HasColumnName("exit_code"); e.Property(x => x.Failure).HasColumnName("failure").HasColumnType("jsonb"); e.Property(x => x.CompletedAt).HasColumnName("completed_at");
             e.HasIndex(x => x.StartOperationId).IsUnique(); e.HasIndex(x => new { x.RobotId, x.RequestedAt, x.Id });
+            e.HasIndex(x => new { x.OrganizationId, x.RequestedAt, x.Id }, "IX_app_runs_organization_recent");
+            e.HasIndex(x => new { x.OrganizationId, x.RequestedAt, x.Id }, "IX_app_runs_organization_active_recent")
+                .IsDescending(false, true, true).HasFilter("state IN ('accepted','running')");
             e.HasAlternateKey(x => new { x.Id, x.InstallationId, x.RobotId, x.OrganizationId });
+            e.HasAlternateKey(x => new { x.Id, x.InstallationId });
             e.HasOne<Robot>().WithMany().HasForeignKey(x => new { x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<AppInstallation>().WithMany().HasForeignKey(x => new { x.InstallationId, x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.RobotId, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<AppOperation>().WithMany().HasForeignKey(x => x.StartOperationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppSettingsRevision>().WithMany().HasForeignKey(x => new { x.AppliedSettingsRevisionId, x.InstallationId }).HasPrincipalKey(x => new { x.Id, x.InstallationId }).OnDelete(DeleteBehavior.Restrict);
             e.ToTable(t => t.HasCheckConstraint("ck_app_run_state", "state IN ('accepted','running','succeeded','failed','stopped','interrupted')"));
             e.ToTable(t => t.HasCheckConstraint("ck_app_run_completion", "(state IN ('accepted','running') AND completed_at IS NULL) OR (state IN ('succeeded','failed','stopped','interrupted') AND completed_at IS NOT NULL)"));
             e.ToTable(t => t.HasCheckConstraint("ck_app_run_snapshot_object", "jsonb_typeof(snapshot) = 'object'"));
@@ -861,7 +555,9 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.ToTable("app_artifacts"); e.HasKey(x => x.Id); e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.RunId).HasColumnName("run_id");
             e.Property(x => x.Path).HasColumnName("path").HasMaxLength(240); e.Property(x => x.Size).HasColumnName("size");
             e.Property(x => x.Sha256).HasColumnName("sha256").HasMaxLength(64); e.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(80);
+            e.Property(x => x.PublishedAt).HasColumnName("published_at");
             e.HasIndex(x => new { x.RunId, x.Path }).IsUnique(); e.HasOne<AppRun>().WithMany().HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.PublishedAt, x.Id }).HasDatabaseName("ix_app_artifacts_published_id");
         });
         modelBuilder.Entity<AppIdempotencyRecord>(e =>
         {

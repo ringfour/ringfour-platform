@@ -2,11 +2,10 @@ import json
 
 import httpx
 import pytest
-from typer.testing import CliRunner
-
 from ringfour_cli import auth
 from ringfour_cli.config import load_settings
 from ringfour_cli.main import app
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -320,17 +319,3 @@ def test_daemon_unreachable(monkeypatch, env):
     result = runner.invoke(app, ["daemon", "identity"])
     assert result.exit_code == 1
     assert "Daemon unreachable" in result.output
-
-
-def test_fixture_commands_use_hosted_operations(monkeypatch, keyring):
-    seen = []
-
-    def handler(request):
-        seen.append((request.url.path, json.loads(request.content) if request.content else None))
-        return httpx.Response(201, json={"id": CREDENTIAL_ID, "state": "queued"})
-
-    monkeypatch.setattr(httpx, "Client", _client_factory(handler))
-    assert runner.invoke(app, ["robot", "fixture-start", ROBOT_ID, "hello"]).exit_code == 0
-    assert seen[-1][1] == {"kind": "diagnostic.execution.start", "payload_version": 1, "payload": {"fixture": "hello"}}
-    assert runner.invoke(app, ["robot", "fixture-stop", ROBOT_ID, CREDENTIAL_ID]).exit_code == 0
-    assert seen[-1][1]["payload"] == {"execution_id": CREDENTIAL_ID}

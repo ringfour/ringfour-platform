@@ -1,4 +1,4 @@
-"""Independent CLI implementation of manifest/authoring v1 validation."""
+"""Independent CLI implementation of App manifest and authoring validation."""
 
 import copy
 import hashlib
@@ -63,8 +63,11 @@ def read_json(path):
 
 
 def _structure(value, name):
+    version_suffix = "-v2" if isinstance(value, dict) and value.get("schema_version") == 2 else ""
     schema = json.loads(
-        files("ringfour_cli").joinpath("data", name + ".schema.json").read_text()
+        files("ringfour_cli")
+        .joinpath("data", name + version_suffix + ".schema.json")
+        .read_text()
     )
     try:
         Draft202012Validator(schema).validate(value)
@@ -88,14 +91,21 @@ def validate_manifest(value):
         for predicate in value["capabilities"]["optional"]
     ):
         raise ValueError("Required and optional capabilities overlap")
-    schema = copy.deepcopy(value["configuration"]["schema"])
+    _validate_configuration(value["configuration"], "Configuration")
+    if value["schema_version"] == 2 and "runtime_settings" in value:
+        _validate_configuration(value["runtime_settings"], "Runtime settings")
+    return value
+
+
+def _validate_configuration(configuration, label):
+    schema = copy.deepcopy(configuration["schema"])
     if any(key not in schema["properties"] for key in schema["required"]):
-        raise ValueError("Required configuration key is not declared")
+        raise ValueError(f"Required {label.lower()} key is not declared")
     for rule in schema["properties"].values():
         if rule.get("minimum", -MAX_INTEGER) > rule.get(
             "maximum", MAX_INTEGER
         ) or rule.get("minLength", 0) > rule.get("maxLength", 4096):
-            raise ValueError("Configuration bounds are reversed")
+            raise ValueError(f"{label} bounds are reversed")
         if rule["type"] == "string":
             rule.setdefault("maxLength", 4096)
         if rule["type"] == "integer":
@@ -107,13 +117,12 @@ def validate_manifest(value):
                 not Draft202012Validator(bounds).is_valid(choice)
                 for choice in rule["enum"]
             ):
-                raise ValueError("Configuration enum violates its bounds/type")
-    defaults = value["configuration"]["defaults"]
+                raise ValueError(f"{label} enum violates its bounds/type")
+    defaults = configuration["defaults"]
     if len(canonical(defaults).encode()) > 16384 or not Draft202012Validator(
         schema
     ).is_valid(defaults):
-        raise ValueError("Configuration defaults violate schema or byte limits")
-    return value
+        raise ValueError(f"{label} defaults violate schema or byte limits")
 
 
 def safe_source_path(name):

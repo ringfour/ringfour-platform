@@ -229,6 +229,16 @@
         "supports_app_runs": {
           "type": "boolean",
           "default": false
+        },
+        "supports_manifest_v2": {
+          "type": "boolean",
+          "default": false,
+          "description": "Current-session support for App manifest schema v2; omitted means false."
+        },
+        "supports_live_settings": {
+          "type": "boolean",
+          "default": false,
+          "description": "Current-session support for run-scoped live settings; omitted means false."
         }
       }
     },
@@ -353,6 +363,12 @@
             "supported",
             "upgrade_required"
           ]
+        },
+        "supports_manifest_v2": {
+          "type": ["boolean", "null"]
+        },
+        "supports_live_settings": {
+          "type": ["boolean", "null"]
         },
         "negotiated_at": {
           "anyOf": [
@@ -708,6 +724,13 @@
         "configuration": {
           "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/configuration"
         },
+        "runtime_settings_revision_id": {
+          "anyOf": [
+            { "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid" },
+            { "type": "null" }
+          ],
+          "description": "Optional target-release settings selection committed with the installation binding."
+        },
         "target": {
           "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json#/$defs/imageTarget"
         }
@@ -924,7 +947,8 @@
             "update",
             "rollback",
             "start",
-            "stop"
+            "stop",
+            "settings.apply"
           ]
         },
         "state": {
@@ -961,6 +985,9 @@
               "type": "null"
             }
           ]
+        },
+        "settings_application": {
+          "$ref": "#/$defs/settings_application_result"
         }
       },
       "allOf": [
@@ -1266,6 +1293,43 @@
                   "stopped",
                   "failed",
                   "cancelled"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "settings.apply"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "settings_application"
+            ],
+            "properties": {
+              "settings_application": {
+                "$ref": "#/$defs/settings_application_result"
+              },
+              "run_id": {
+                "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+              },
+              "state": {
+                "enum": [
+                  "succeeded",
+                  "failed"
+                ]
+              },
+              "phase": {
+                "enum": [
+                  "applied",
+                  "failed"
                 ]
               }
             }
@@ -1743,7 +1807,8 @@
                 "app.update",
                 "app.rollback",
                 "app.start",
-                "app.stop"
+                "app.stop",
+                "app.settings.apply"
               ]
             },
             "payload_version": {
@@ -1822,8 +1887,114 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "app.settings.apply"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/settings_apply_command"
+              }
+            }
+          }
         }
       ]
+    },
+    "settings_apply_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_protocol_version",
+        "deployment_namespace",
+        "installation_id",
+        "run_id",
+        "application_id",
+        "settings_revision_id",
+        "expected_applied_revision_id",
+        "values",
+        "initial"
+      ],
+      "properties": {
+        "app_protocol_version": {
+          "const": 1
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "application_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid",
+          "description": "Must equal the device command operation_id."
+        },
+        "settings_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "expected_applied_revision_id": {
+          "anyOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "values": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "initial": {
+          "type": "boolean"
+        }
+      }
+    },
+    "settings_application_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "application_id",
+        "settings_revision_id",
+        "outcome",
+        "reason"
+      ],
+      "properties": {
+        "application_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "settings_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "outcome": {
+          "enum": [
+            "applied",
+            "rejected"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 240,
+          "pattern": "^[^\\r\\n\\u0000]*$"
+        }
+      }
     }
   }
 }

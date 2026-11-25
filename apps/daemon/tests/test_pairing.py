@@ -4,7 +4,6 @@ import os
 import stat
 
 import httpx
-
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import migrate
 from ringfour_daemon.enrollment import load_identity
@@ -13,7 +12,7 @@ from ringfour_daemon.pairing import pending_path, run_pairing
 
 def test_pending_pairing_survives_restart_and_commits_only_once(tmp_path, capsys):
     async def scenario():
-        settings = Settings(db_path=str(tmp_path / "daemon.db"), runner_url="http://runner",
+        settings = Settings(db_path=str(tmp_path / "daemon.db"),
                             platform_url="http://platform", credential_path=str(tmp_path / "secret"))
         migrate(settings.db_path)
         starts = []
@@ -63,7 +62,7 @@ def test_pending_pairing_survives_restart_and_commits_only_once(tmp_path, capsys
 
 def test_expired_code_is_replaced(tmp_path):
     async def scenario():
-        settings = Settings(db_path=str(tmp_path / "daemon.db"), runner_url="http://runner",
+        settings = Settings(db_path=str(tmp_path / "daemon.db"),
                             platform_url="http://platform", credential_path=str(tmp_path / "secret"))
         migrate(settings.db_path)
         starts = []
@@ -94,13 +93,13 @@ def test_expired_code_is_replaced(tmp_path):
 
 def test_url_change_replaces_only_unregistered_request(tmp_path):
     async def scenario():
-        old = Settings(db_path=str(tmp_path / "daemon.db"), runner_url="http://runner",
+        old = Settings(db_path=str(tmp_path / "daemon.db"),
                        platform_url="http://localhost:8080", credential_path=str(tmp_path / "secret"))
         migrate(old.db_path)
         from ringfour_daemon.pairing import create_pending
 
         previous = create_pending(old)
-        new = Settings(db_path=old.db_path, runner_url=old.runner_url,
+        new = Settings(db_path=old.db_path,
                        platform_url="http://platform", credential_path=old.credential_path)
         starts = []
 
@@ -139,7 +138,7 @@ def test_url_change_replaces_only_unregistered_request(tmp_path):
 
 def test_platform_connection_error_is_concise(tmp_path, caplog):
     async def scenario():
-        settings = Settings(db_path=str(tmp_path / "daemon.db"), runner_url="http://runner",
+        settings = Settings(db_path=str(tmp_path / "daemon.db"),
                             platform_url="http://platform", credential_path=str(tmp_path / "secret"))
         migrate(settings.db_path)
 

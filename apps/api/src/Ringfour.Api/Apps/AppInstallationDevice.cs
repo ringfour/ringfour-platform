@@ -53,8 +53,11 @@ public static class AppInstallationDevice
         {
             if (manager.Get(session.RobotId)?.SessionId != session.SessionId) return true;
             if (!await db.RobotAppInventories.AnyAsync(x => x.RobotId == session.RobotId && x.SessionId == session.SessionId && x.InstallationsSupported, ct)) return true;
+            var now = DateTimeOffset.UtcNow;
             await db.AppOperations.Where(x => x.Id == id && x.RobotId == session.RobotId && x.State == "queued")
-                .ExecuteUpdateAsync(set => set.SetProperty(x => x.State, "accepted").SetProperty(x => x.Phase, "accepted").SetProperty(x => x.AcknowledgedAt, DateTimeOffset.UtcNow), ct);
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.State, "accepted").SetProperty(x => x.Phase, "accepted").SetProperty(x => x.AcknowledgedAt, now), ct);
+            await db.AppSettingsApplications.Where(x => x.ApplicationId == id && x.State == "pending" && x.DeliveryState == "queued")
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.DeliveryState, "delivered").SetProperty(x => x.DeliveredAt, now), ct);
             return true;
         }
         finally { fence.Release(); }
@@ -91,8 +94,10 @@ public static class AppInstallationDevice
                 ops.Select(x => x!["operation_id"]!.ToString()).Distinct().Count() != ops.Count || installations.Select(x => x!["installation_id"]!.ToString()).Distinct().Count() != installations.Count) throw Invalid();
             var now = DateTimeOffset.UtcNow;
             if (body["runs"]!.AsArray().Count > 0 && !session.RunsSupported) throw ApiException.Conflict("daemon_upgrade_required", "Negotiate run support first.");
+            if (ops.Any(x => x!["kind"]!.GetValue<string>() == "settings.apply") && (!session.ManifestV2Supported || !session.LiveSettingsSupported))
+                throw ApiException.Conflict("daemon_upgrade_required", "Negotiate live-settings support first.");
             await AppRunDevice.Observe(db, robot.Id, body, now, ct);
-            foreach (var item in ops.Where(x => x!["kind"]!.GetValue<string>() is not ("start" or "stop")))
+            foreach (var item in ops.Where(x => x!["kind"]!.GetValue<string>() is "install" or "configure" or "update" or "rollback"))
             {
                 var operationId = Guid.Parse(item!["operation_id"]!.GetValue<string>());
                 var o = await db.AppOperations.SingleOrDefaultAsync(x => x.Id == operationId && x.RobotId == robot.Id, ct) ?? throw Invalid();
@@ -121,7 +126,9 @@ public static class AppInstallationDevice
                     await AppInstallationEndpoints.RequireIdle(db,robot.Id,ct);
                     var binding = incoming["installed"]!.DeepClone().AsObject(); binding["observed_at"] = incoming["observed_at"]!.DeepClone();
                     installation.InstalledBinding = binding.ToJsonString(); installation.Candidate = null;
-                    db.LogbookEvents.Add(new LogbookEvent { Id=o.Id,RobotId=robot.Id,AppOperationId=o.Id,AppInstallationId=installation.Id,ActorUserId=o.RequestedByUserId,Type="app.installation.changed",SchemaVersion=3,OccurredAt=observed,ReceivedAt=now,Payload=new JsonObject { ["revision_id"]=release["revision_id"]!.DeepClone(),["kind"]=o.Kind }.ToJsonString() });
+                    if (release.AsObject().ContainsKey("runtime_settings_revision_id"))
+                        installation.SelectedSettingsRevisionId = release["runtime_settings_revision_id"] is null ? null : Guid.Parse(release["runtime_settings_revision_id"]!.GetValue<string>());
+                    db.LogbookEvents.Add(new LogbookEvent { Id=o.Id,RobotId=robot.Id,AppOperationId=o.Id,AppInstallationId=installation.Id,ActorUserId=o.RequestedByUserId,Type="app.installation.changed",SchemaVersion=3,OccurredAt=observed,ReceivedAt=now,Payload=new JsonObject { ["revision_id"]=release["revision_id"]!.DeepClone(),["kind"]=o.Kind,["runtime_settings_revision_id"]=release["runtime_settings_revision_id"]?.DeepClone() }.ToJsonString() });
                 }
                 else
                 {
@@ -146,7 +153,21 @@ public static class AppInstallationDevice
     }
 }
 
-public sealed class AppInstallationWorker(IServiceScopeFactory scopes, DeviceConnectionManager manager, IConfiguration config, ILogger<AppInstallationWorker> logger) : BackgroundService
+// A bounded in-process wakeup; PostgreSQL remains the durable work queue.
+// Notifications may coalesce or be lost on process exit: the periodic scan recovers them.
+public sealed class AppDispatchSignal
+{
+    private readonly SemaphoreSlim pending = new(0, 1);
+    public void Notify()
+    {
+        try { pending.Release(); }
+        catch (SemaphoreFullException) { /* An earlier wakeup is already queued. */ }
+    }
+    public Task<bool> WaitAsync(TimeSpan fallback, CancellationToken cancellationToken) =>
+        pending.WaitAsync(fallback, cancellationToken);
+}
+
+public sealed class AppInstallationWorker(IServiceScopeFactory scopes, DeviceConnectionManager manager, IConfiguration config, ILogger<AppInstallationWorker> logger, AppDispatchSignal signal) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -163,7 +184,7 @@ public sealed class AppInstallationWorker(IServiceScopeFactory scopes, DeviceCon
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception error) { logger.LogError(error,"App installation reconciliation failed"); }
-            try { await Task.Delay(config.GetValue("Apps:InstallationSweepMilliseconds", 2000), stoppingToken); }
+            try { await signal.WaitAsync(TimeSpan.FromMilliseconds(Math.Max(10, config.GetValue("Apps:InstallationSweepMilliseconds", 2000))), stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }
@@ -208,8 +229,34 @@ public sealed class AppInstallationWorker(IServiceScopeFactory scopes, DeviceCon
                 !await db.RobotCredentials.AnyAsync(x => x.Id == session.CredentialId && x.RevokedAt == null && (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct) ||
                 !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.Supported && x.InstallationsSupported,ct)) return;
             if (o.RunId is not null && !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.RunsSupported, ct)) return;
+            if (o.Kind == "settings.apply" && !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.ManifestV2Supported && x.LiveSettingsSupported, ct)) return;
+            var command = JsonNode.Parse(o.Command)!;
+            var snapshot = command["snapshot"];
+            var release = command["release"];
+            // Stop and other run-scoped commands may not carry a release or
+            // startup snapshot. Only revision-bound commands need manifest
+            // capability checks.
+            var revisionNode = release ?? snapshot;
+            var revisionId = revisionNode?["revision_id"]?.GetValue<string>();
+            var manifestJson = revisionId is null ? null : await db.AppRevisions.AsNoTracking()
+                .Where(x => x.Id == Guid.Parse(revisionId)).Select(x => x.Manifest).SingleOrDefaultAsync(ct);
+            var schemaVersion = manifestJson is null ? 0 : JsonNode.Parse(manifestJson)!["schema_version"]!.GetValue<int>();
+            if (schemaVersion == 2 && !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.ManifestV2Supported, ct))
+            {
+                o.State = "failed"; o.Phase = "failed"; o.CompletedAt = DateTimeOffset.UtcNow;
+                o.Failure = new JsonObject { ["code"] = "daemon_upgrade_required", ["message"] = "The current Daemon session does not support App manifest v2.", ["details"] = new JsonObject { ["retryable"] = false } }.ToJsonString();
+                var installation = await db.AppInstallations.SingleAsync(x => x.Id == o.InstallationId, ct);
+                if (o.RunId is null) installation.Candidate = null;
+                else if (o.Kind == "start")
+                {
+                    var run = await db.AppRuns.SingleAsync(x => x.Id == o.RunId, ct);
+                    run.State = "failed"; run.Failure = o.Failure; run.CompletedAt = o.CompletedAt;
+                    AppHistoryEndpoints.Event(db, run, "app.run.failed", o.CompletedAt.Value, o.CompletedAt.Value);
+                }
+                await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return;
+            }
             var ns = await db.RobotAppInventories.Where(x => x.RobotId == robot).Select(x => x.DeploymentNamespace).SingleAsync(ct);
-            if (JsonNode.Parse(o.Command)!["deployment_namespace"]!.GetValue<string>() != ns.ToString()) return;
+            if (command["deployment_namespace"]!.GetValue<string>() != ns.ToString()) return;
             o.DispatchedAt ??= DateTimeOffset.UtcNow; await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
             await manager.SendAsync(session, RingfourJson.Options, "command", new JsonObject { ["operation_id"] = o.Id.ToString(), ["kind"] = "app." + o.Kind,
                 ["payload_version"] = 1, ["payload"] = JsonNode.Parse(o.Command), ["deadline_at"] = AppProtocol.Timestamp(o.DeadlineAt) });

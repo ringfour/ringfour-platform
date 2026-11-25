@@ -33,9 +33,7 @@ public static class AppInstallationEndpoints
 
     internal static async Task RequireIdle(RingfourDbContext db, Guid robot, CancellationToken ct)
     {
-        if (await db.RobotExecutionSlots.AnyAsync(x => x.RobotId == robot, ct) ||
-            await db.DevSessionRuns.AnyAsync(x => x.RobotId == robot && (x.State == "queued" || x.State == "preparing" || x.State == "running"), ct) ||
-            await db.Operations.AnyAsync(x => x.RobotId == robot && x.Kind == "diagnostic.execution.start" && (x.State == OperationState.Queued || x.State == OperationState.Accepted || x.State == OperationState.Running), ct))
+        if (await db.RobotExecutionSlots.AnyAsync(x => x.RobotId == robot, ct))
             throw ApiException.Conflict("execution_conflict", "The robot must be idle to change an installed binding.");
     }
 
@@ -51,6 +49,7 @@ public static class AppInstallationEndpoints
         if (AppProtocol.Canonical(value).Length > 16384) throw ApiException.InvalidInput("Configuration exceeds 16384 bytes.");
         try { AppManifest.Evaluate(manifest["configuration"]!["schema"]!.AsObject(), value); }
         catch (ApiException) { throw new ApiException(400, "invalid_config", "Configuration violates this release schema."); }
+        AppManifest.ValidateEnvironmentValues(manifest, value);
         return value.DeepClone().AsObject();
     }
 
@@ -96,6 +95,8 @@ public static class AppInstallationEndpoints
                 ?? throw ApiException.NotFound("Revision is not accessible.");
             if (kind == "update") await AppCatalogEndpoints.EnsureImport(db, user, robot.OrganizationId, body, ct);
             var manifest = AppManifest.Validate(revision.Manifest);
+            if (manifest["schema_version"]!.GetValue<int>() == 2 && !inventory.ManifestV2Supported)
+                throw ApiException.Conflict("daemon_upgrade_required", "The current Daemon session does not support App manifest v2.");
             var platform = JsonNode.Parse(inventory.Platform)!;
             var target = manifest["targets"]!.AsArray().SingleOrDefault(x => JsonNode.DeepEquals(x!["os"], platform["os"]) && JsonNode.DeepEquals(x["architecture"], platform["architecture"]));
             if (target is null) throw new ApiException(409, "no_matching_image", "No release image matches the engine target.") {
@@ -118,12 +119,65 @@ public static class AppInstallationEndpoints
                     RevisionId = revision.Id, Values = values.ToJsonString(), CreatedByUserId = user.Id, CreatedAt = now };
                 db.AppConfigurationRevisions.Add(configuration);
             }
+            Guid? runtimeSettingsRevisionId = installation.SelectedSettingsRevisionId;
+            if (kind is "update" or "rollback")
+            {
+                var selected = runtimeSettingsRevisionId is Guid selectedId
+                    ? await db.AppSettingsRevisions.SingleAsync(x => x.Id == selectedId && x.InstallationId == installation.Id, ct)
+                    : null;
+                AppSettingsRevision? targetSettings = null;
+                if (body.ContainsKey("runtime_settings"))
+                {
+                    if (body["runtime_settings"] is not null)
+                    {
+                        var values = AppManifest.ValidateRuntimeSettings(manifest, body["runtime_settings"]!);
+                        targetSettings = new AppSettingsRevision { Id = Guid.NewGuid(), InstallationId = installation.Id,
+                            AppId = installation.AppId, RevisionId = revision.Id, Values = values.ToJsonString(),
+                            CreatedByUserId = user.Id, CreatedAt = now };
+                        db.AppSettingsRevisions.Add(targetSettings);
+                    }
+                }
+                else if (manifest["runtime_settings"] is JsonObject)
+                {
+                    if (kind == "rollback")
+                        targetSettings = await db.AppSettingsRevisions.Where(x => x.InstallationId == installation.Id && x.RevisionId == revision.Id)
+                            .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).FirstOrDefaultAsync(ct);
+                    targetSettings ??= selected;
+                    if (targetSettings is not null)
+                    {
+                        JsonObject values;
+                        try { values = AppManifest.ValidateRuntimeSettings(manifest, JsonNode.Parse(targetSettings.Values)!); }
+                        catch (ApiException)
+                        {
+                            throw ApiException.Conflict("stale_settings_selection", "Current settings do not satisfy the target release. Supply corrected runtime_settings values.");
+                        }
+                        if (targetSettings.RevisionId != revision.Id)
+                        {
+                            targetSettings = new AppSettingsRevision { Id = Guid.NewGuid(), InstallationId = installation.Id,
+                                AppId = installation.AppId, RevisionId = revision.Id, Values = values.ToJsonString(),
+                                CreatedByUserId = user.Id, CreatedAt = now };
+                            db.AppSettingsRevisions.Add(targetSettings);
+                        }
+                    }
+                }
+                else if (selected is not null)
+                {
+                    throw ApiException.Conflict("stale_settings_selection", "The target release does not support live settings. Supply runtime_settings: null to clear the current selection.");
+                }
+                runtimeSettingsRevisionId = targetSettings?.Id;
+            }
+            var releaseCommand = new JsonObject { ["app_id"] = installation.AppId.ToString(), ["revision_id"] = revision.Id.ToString(),
+                ["manifest_digest"] = revision.ManifestDigest, ["configuration_revision_id"] = configuration.Id.ToString(),
+                ["configuration"] = JsonNode.Parse(configuration.Values), ["target"] = target.DeepClone() };
+            if (inventory.ManifestV2Supported)
+                releaseCommand["runtime_settings_revision_id"] = runtimeSettingsRevisionId?.ToString();
+            else if (runtimeSettingsRevisionId != installation.SelectedSettingsRevisionId)
+                throw ApiException.Conflict("daemon_upgrade_required", "The current Daemon must negotiate manifest v2 before changing this settings selection.");
             var operation = new AppOperation { Id = Guid.NewGuid(), OrganizationId = robot.OrganizationId, RobotId = robot.Id, InstallationId = installation.Id,
                 Kind = kind, State = "queued", Phase = "queued", RequestedByUserId = user.Id, RequestedAt = now, DeadlineAt = now.AddMinutes(10) };
             var command = new JsonObject { ["app_protocol_version"] = 1, ["deployment_namespace"] = inventory.DeploymentNamespace.ToString(), ["installation_id"] = installation.Id.ToString(),
                 ["expected_revision_id"] = installed?["revision_id"]?.DeepClone(), ["expected_configuration_revision_id"] = installed?["configuration_revision_id"]?.DeepClone(),
-                ["release"] = new JsonObject { ["app_id"] = installation.AppId.ToString(), ["revision_id"] = revision.Id.ToString(), ["manifest_digest"] = revision.ManifestDigest,
-                    ["configuration_revision_id"] = configuration.Id.ToString(), ["configuration"] = JsonNode.Parse(configuration.Values), ["target"] = target.DeepClone() } };
+                ["release"] = releaseCommand };
             AppProtocol.Validate(command.ToJsonString(), "apply_command");
             operation.Command = command.ToJsonString(); db.AppOperations.Add(operation);
             installation.AvailableRevisionId = revision.Id;

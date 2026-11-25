@@ -3,18 +3,12 @@ info:
   title: Ringfour API
   version: "0.1.0"
   description: |
-    Ringfour hosted API. Current scope: health endpoints (milestone 00),
-    identity/organization membership (milestone 01), robot enrollment
-    (milestone 02) and device connectivity with durable operations
-    (milestone 03), private Runner diagnostics (milestone 04) and script
-    revisions and executions (milestone 05).
-    App endpoints added by AP-01 are contract-only until their implementation milestones.
+    Ringfour hosted App API: identity, organizations, robots, OCI App publication,
+    installation, execution, settings, output, artifacts, Logbook and interactions.
     All /v1 endpoints require an Auth0 RS256 access token for audience
     https://api.ringfour.eu and share the error envelope referenced below,
     except the /v1/device/* endpoints which authenticate by possession of an
-    enrollment token or robot credential instead. Mission UI bootstrap
-    endpoints are unauthenticated but restricted to one-use tokens and the
-    execution-specific UI host.
+    enrollment token or robot credential instead.
   license:
     name: Proprietary
 servers:
@@ -22,7 +16,7 @@ servers:
     description: Local Compose stack
 tags:
   - name: apps
-    description: Proposed Apps pivot contracts; no App endpoints implemented yet.
+    description: App catalog, installation, execution and runtime integration.
   - name: health
     description: Infrastructure health; no authentication, no product data.
   - name: identity
@@ -31,18 +25,10 @@ tags:
     description: Robot records and credential lifecycle (Auth0 JWT required).
   - name: device
     description: Local-daemon-facing enrollment, credential verification and the authenticated WebSocket connection; no human token.
-  - name: scripts
-    description: Script revisions, runs, output and artifacts (new Ringfour design).
-  - name: dev-sessions
-    description: Proposed milestone 07 development sessions (new Ringfour design; not implemented).
-  - name: missions
-    description: Proposed milestone 06 mission revisions and robot deployments (new Ringfour design).
   - name: logbook
     description: Milestone 08 event ingestion and organization history (new Ringfour design).
   - name: interactions
     description: Milestone 09 durable human interactions; hosted submissions remain provisional until device confirmation.
-  - name: mission-ui
-    description: Execution-scoped mission UI sessions and isolated-origin bootstrap.
 paths:
   /v1/device/app-protocol/negotiate:
     post:
@@ -500,6 +486,62 @@ paths:
         '409': *id006
         '413': *id007
         '503': *id008
+  /v1/app-installations/{installation_id}/settings:
+    get:
+      tags: [apps]
+      operationId: getAppInstallationSettings
+      x-implementation-status: contract-only
+      description: Read selected next-start settings and exact-run application state. Values remain workspace scoped; see docs/apps-ap17-contract.md.
+      parameters:
+      - {name: installation_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Authorized startup/live settings state, content: {application/json: {schema: {$ref: ../schemas/apps/v2/settings.schema.json#/$defs/settings_state}}}}
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '503': *id008
+    post:
+      tags: [apps]
+      operationId: saveAppInstallationSettings
+      x-implementation-status: contract-only
+      description: Compare-and-set a complete live settings object for next start or one exact active run. Requires idempotency and current feature support; see docs/apps-ap17-contract.md.
+      parameters:
+      - {name: installation_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '200': {description: Saved for next start, content: {application/json: {schema: {$ref: ../schemas/apps/v2/settings.schema.json#/$defs/saved_for_next_start}}}}
+        '202': {description: Active run application pending, content: {application/json: {schema: {$ref: ../schemas/apps/v2/settings.schema.json#/$defs/pending_application}}}}
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: ../schemas/apps/v2/settings.schema.json#/$defs/settings_write}
+  /v1/app-installations/{installation_id}/settings/revisions/{revision_id}:
+    get:
+      tags: [apps]
+      operationId: getAppInstallationSettingsRevision
+      x-implementation-status: contract-only
+      description: Read one immutable settings revision within its installation and workspace.
+      parameters:
+      - {name: installation_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: revision_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Authorized immutable settings revision, content: {application/json: {schema: {$ref: ../schemas/apps/v2/settings.schema.json#/$defs/revision}}}}
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '503': *id008
   /v1/apps/{app_id}:
     get:
       tags:
@@ -864,8 +906,10 @@ paths:
       - apps
       operationId: updateAppInstallation
       x-implementation-status: implemented
-      description: Owner/developer stages a candidate while retaining the installed binding; apply when idle. No run
-        is created. New Ringfour design; see docs/apps-api-contract.md.
+      description: Owner/developer stages a candidate while retaining the installed binding; apply when idle. Optional
+        complete runtime_settings values are validated against the target release. Null explicitly resets to its defaults;
+        valid current values are rebound to the new release, while invalid values require correction. No run is created.
+        New Ringfour design; see docs/apps-api-contract.md and docs/apps-ap17-contract.md.
       parameters:
       - name: installation_id
         in: path
@@ -901,7 +945,9 @@ paths:
       operationId: rollbackAppInstallation
       x-implementation-status: implemented
       description: Owner/developer selects a previously installed binding and config for this installation; apply
-        when idle without replaying a run. New Ringfour design; see docs/apps-api-contract.md.
+        when idle without replaying a run. Target-release settings are restored from retained values when valid;
+        optional complete runtime_settings values correct them, and null explicitly resets to defaults. New Ringfour
+        design; see docs/apps-api-contract.md and docs/apps-ap17-contract.md.
       parameters:
       - name: installation_id
         in: path
@@ -1066,6 +1112,20 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: active_only
+        in: query
+        required: false
+        description: Return only runs currently accepted by or running on the device.
+        schema:
+          type: boolean
+          default: false
+      - name: recent_first
+        in: query
+        required: false
+        description: Order newest first and interpret cursors in that direction.
+        schema:
+          type: boolean
+          default: false
       responses:
         '200':
           description: Authorized scoped result
@@ -1193,6 +1253,13 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: recent_first
+        in: query
+        required: false
+        description: Order newest first and interpret cursors in that direction.
+        schema:
+          type: boolean
+          default: false
       responses:
         '200':
           description: Authorized scoped result
@@ -1443,32 +1510,7 @@ paths:
         '404': { description: Interaction inaccessible }
         '409': { description: Already answered, timed out, cancelled, or won by another response }
         '410': { description: Hosted deadline has passed }
-  /v1/organizations/{org_id}/events:
-    get:
-      tags: [logbook]
-      operationId: listLogbookEvents
-      description: Organization-scoped history query ordered by receipt time; includes daemon-replicated records and hosted human interaction requests, responses, timeouts and cancellations. Preserve filters when continuing a cursor.
-      parameters:
-        - { name: org_id, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: robot_id, in: query, schema: { type: string, format: uuid } }
-        - { name: execution_id, in: query, schema: { type: string, format: uuid } }
-        - { name: operation_id, in: query, schema: { type: string, format: uuid } }
-        - { name: actor_user_id, in: query, schema: { type: string, format: uuid } }
-        - { name: event_id, in: query, schema: { type: string, format: uuid } }
-        - { name: type, in: query, schema: { type: string } }
-        - { name: from, in: query, schema: { type: string, format: date-time } }
-        - { name: to, in: query, schema: { type: string, format: date-time } }
-        - { name: cursor, in: query, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
-      responses:
-        '200':
-          description: Organization-scoped Logbook entries
-          content:
-            application/json:
-              schema: { $ref: ../schemas/logbook/v1/history-page.schema.json }
-        '400': { description: Invalid filter or cursor }
-        '401': { description: Authentication required }
-        '404': { description: Organization inaccessible }
+
   /v1/device/logbook/events:
     post:
       tags: [logbook, device]
@@ -1494,715 +1536,6 @@ paths:
         '409': { description: Sequence gap, conflicting replay, or mismatched robot or operation }
         '413': { description: Batch exceeds the request size limit }
         '503': { description: Durable storage unavailable }
-  /v1/robots/{robot_id}/dev-sessions:
-    parameters:
-      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
-    post:
-      tags: [dev-sessions]
-      operationId: createDevSession
-      description: Proposed milestone 07 interface; accepted is not ready.
-      parameters:
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/dev-sessions/v1/create-request.schema.json }
-      responses:
-        '202':
-          description: Session and durable creation operation accepted
-          content:
-            application/json:
-              schema: { $ref: ../schemas/dev-sessions/v1/accepted.schema.json }
-        '400': { description: Invalid request }
-        '403': { description: Insufficient role }
-        '404': { description: Robot inaccessible }
-        '409': { description: Active session, execution, or conflicting key }
-        '503': { description: Robot or storage unavailable }
-  /v1/dev-sessions/{session_id}:
-    parameters:
-      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [dev-sessions]
-      operationId: getDevSession
-      responses:
-        '200':
-          description: Session state and current generation
-          content:
-            application/json:
-              schema: { $ref: ../schemas/dev-sessions/v1/session.schema.json }
-        '403': { description: Insufficient role }
-        '404': { description: Session inaccessible }
-    delete:
-      tags: [dev-sessions]
-      operationId: closeDevSession
-      parameters:
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-      responses:
-        '202':
-          description: Closure accepted; process stop and cleanup may still be pending
-          content:
-            application/json:
-              schema: { $ref: ../schemas/dev-sessions/v1/accepted.schema.json }
-        '403': { description: Not the owner or a privileged member }
-        '404': { description: Session inaccessible }
-        '409': { description: Conflicting key }
-  /v1/device/dev-sessions/{session_id}/runs/{execution_id}:
-    parameters:
-      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
-      - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
-    put:
-      tags: [device]
-      operationId: reportDevRunStatus
-      description: Reports state metadata only; output and artifacts remain on the robot.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/dev-sessions/v1/device-run-status.schema.json }
-      responses:
-        '204': { description: Status recorded or identical replay }
-        '400': { description: Invalid status }
-        '401': { description: Invalid machine credential }
-        '404': { description: Run inaccessible to this robot }
-        '409': { description: Invalid state transition }
-  /v1/device/dev-sessions/{session_id}/generations:
-    parameters:
-      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
-      - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
-    post:
-      tags: [device]
-      operationId: reportDevSessionGeneration
-      description: Machine-authenticated durable local commit report; never receives source files or filenames.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/dev-sessions/v1/device-source-report.schema.json }
-      responses:
-        '204': { description: Commit recorded or identical replay }
-        '400': { description: Invalid report }
-        '401': { description: Invalid device credential }
-        '404': { description: Session inaccessible to this robot }
-        '409': { description: Stale generation or conflicting report }
-  /v1/device/local-dev-endpoint:
-    put:
-      tags: [device]
-      operationId: publishLocalDevEndpoint
-      description: Device-authenticated fingerprint advertisement; robot identity comes from the machine credential.
-      security: []  # Uses machine credentials, not a human access token.
-      parameters:
-        - { name: x-ringfour-credential-id, in: header, required: true, schema: { type: string, format: uuid } }
-        - { name: x-ringfour-credential-secret, in: header, required: true, schema: { type: string, minLength: 1 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/dev-sessions/v1/device-endpoint.schema.json }
-      responses:
-        '204': { description: Endpoint advertisement recorded }
-        '400': { description: Invalid fingerprint or daemon URL }
-        '401': { description: Invalid device credential }
-  /v1/dev-sessions/{session_id}/local-grants:
-    parameters:
-      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
-    post:
-      tags: [dev-sessions]
-      operationId: createDevSessionLocalGrant
-      description: Proposed only. Submit a hash of a CLI-generated secret; the secret never reaches the Platform.
-      parameters:
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/dev-sessions/v1/grant-request.schema.json }
-      responses:
-        '202':
-          description: Grant installation accepted; wait for operation success before local access.
-          content:
-            application/json:
-              schema: { $ref: ../schemas/dev-sessions/v1/grant-accepted.schema.json }
-        '400': { description: Invalid grant }
-        '403': { description: Insufficient role }
-        '404': { description: Session inaccessible }
-        '409': { description: Session unavailable or conflicting key }
-        '503': { description: Robot offline or local endpoint unavailable }
-  /v1/dev-sessions/{session_id}/restart:
-    parameters:
-      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
-    post:
-      tags: [dev-sessions]
-      operationId: restartDevSession
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/dev-sessions/v1/restart-request.schema.json }
-      parameters:
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-      responses:
-        '202':
-          description: Restart accepted with reserved execution ID
-          content:
-            application/json:
-              schema: { $ref: ../schemas/dev-sessions/v1/accepted.schema.json }
-        '403': { description: Insufficient role }
-        '404': { description: Session inaccessible }
-        '409': { description: Missing generation, active sync or conflicting execution }
-        '503': { description: Robot unavailable }
-  /v1/missions:
-    post:
-      tags: [missions]
-      operationId: createMission
-      parameters:
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/missions/v1/create-mission-request.schema.json }
-      responses:
-        '201':
-          description: Mission created
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/mission.schema.json }
-        '200': { description: Matching idempotent replay }
-        '400': { description: Invalid request }
-        '403': { description: Insufficient role }
-        '404': { description: Organization inaccessible }
-        '409': { description: Duplicate name or conflicting key }
-  /v1/organizations/{organization_id}/missions:
-    parameters:
-      - { name: organization_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: cursor, in: query, required: false, schema: { type: string } }
-      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
-    get:
-      tags: [missions]
-      operationId: listMissions
-      responses:
-        '200':
-          description: Organization-scoped mission page
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/mission-page.schema.json }
-        '404': { description: Organization inaccessible }
-  /v1/missions/{mission_id}/revisions:
-    parameters:
-      - { name: mission_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [missions]
-      operationId: listMissionRevisions
-      parameters:
-        - { name: cursor, in: query, required: false, schema: { type: string } }
-        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
-      responses:
-        '200':
-          description: Immutable revision page in version order
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/revision-page.schema.json }
-        '404': { description: Mission inaccessible }
-    post:
-      tags: [missions]
-      operationId: publishMissionRevision
-      parameters:
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/missions/v1/create-revision-request.schema.json }
-      responses:
-        '201':
-          description: Immutable revision published
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/revision.schema.json }
-        '200': { description: Matching idempotent replay }
-        '400': { description: Invalid manifest or mismatched source }
-        '403': { description: Insufficient role }
-        '404': { description: Mission or source revision inaccessible }
-        '409': { description: Version or idempotency conflict }
-  /v1/organizations/{organization_id}/deployments:
-    parameters:
-      - { name: organization_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: cursor, in: query, required: false, schema: { type: string } }
-      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
-    get:
-      tags: [missions]
-      operationId: listDeployments
-      description: Read-only organization deployment records. New Ringfour design.
-      responses:
-        '200':
-          description: Organization-scoped deployment page
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/deployment-page.schema.json }
-        '404': { description: Organization inaccessible }
-  /v1/missions/{mission_id}/revisions/{revision_id}/source:
-    parameters:
-      - { name: mission_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: revision_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [missions]
-      operationId: downloadMissionSource
-      description: Download the verified immutable source archive for a revision. New Ringfour design.
-      responses:
-        '200':
-          description: Verified source ZIP
-          content:
-            application/zip:
-              schema: { type: string, format: binary }
-        '404': { description: Mission or revision inaccessible }
-        '503': { description: Source storage unavailable or invalid }
-  /v1/robots/{robot_id}/deployments:
-    parameters:
-      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-    post:
-      tags: [missions]
-      operationId: prepareMissionDeployment
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/missions/v1/create-deployment-request.schema.json }
-      responses:
-        '202':
-          description: Candidate preparation accepted or replayed
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/deployment-accepted.schema.json }
-        '403': { description: Insufficient role }
-        '404': { description: Robot or revision inaccessible }
-        '409': { description: Active execution, pending candidate or conflicting key }
-        '503': { description: Robot unavailable }
-  /v1/deployments/{deployment_id}:
-    parameters:
-      - { name: deployment_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [missions]
-      operationId: getDeployment
-      responses:
-        '200':
-          description: Desired and observed deployment state
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/deployment.schema.json }
-        '404': { description: Deployment inaccessible }
-  /v1/deployments/{deployment_id}/{action}:
-    parameters:
-      - { name: deployment_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: action, in: path, required: true, schema: { enum: [start, stop, restart] } }
-      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-    post:
-      tags: [missions]
-      operationId: controlDeployment
-      responses:
-        '202':
-          description: Durable lifecycle action accepted or replayed
-          content:
-            application/json:
-              schema: { $ref: ../schemas/missions/v1/action-accepted.schema.json }
-        '403': { description: Insufficient role }
-        '404': { description: Deployment inaccessible }
-        '409': { description: State or idempotency conflict }
-        '503': { description: Robot unavailable for start or restart }
-  /v1/device/deployments/{deployment_id}/candidate:
-    parameters:
-      - { name: deployment_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: operation_id, in: query, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [device, missions]
-      operationId: getDeviceMissionCandidate
-      security:
-        - deviceCredentialId: []
-          deviceCredentialSecret: []
-      responses:
-        '200':
-          description: Candidate ZIP bytes for the assigned pending operation
-          content:
-            application/zip:
-              schema: { type: string, format: binary }
-        '401': { description: Invalid machine credential }
-        '404': { description: Candidate inaccessible or no longer pending }
-        '503': { description: Storage unavailable }
-  /v1/script-revisions:
-    post:
-      tags: [scripts]
-      operationId: createScriptRevision
-      summary: Initiate an immutable script revision upload
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema: { type: string, minLength: 1, maxLength: 200 }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/scripts/v1/create-revision-request.schema.json }
-      responses:
-        '201':
-          description: New upload request
-          content:
-            application/json:
-              schema: { $ref: ../schemas/scripts/v1/revision.schema.json }
-        '200':
-          description: Idempotent replay
-          content:
-            application/json:
-              schema: { $ref: ../schemas/scripts/v1/revision.schema.json }
-        '400': { description: Invalid request }
-        '401': { description: Invalid authentication }
-        '403': { description: Insufficient role }
-        '404': { description: Organization is inaccessible }
-        '409': { description: Idempotency key reused for different input }
-  /v1/robots/{robot_id}/executions:
-    parameters:
-      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: cursor, in: query, required: false, schema: { type: string } }
-      - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
-    get:
-      tags: [scripts]
-      operationId: listRobotExecutions
-      description: Robot-scoped execution history. New Ringfour design.
-      responses:
-        '200':
-          description: Execution page
-          content:
-            application/json:
-              schema: { $ref: ../schemas/scripts/v1/execution-page.schema.json }
-        '400': { description: Invalid cursor }
-        '404': { description: Robot inaccessible }
-  /v1/robots/{robot_id}/script-runs:
-    parameters:
-      - { name: robot_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-    post:
-      tags: [scripts]
-      operationId: startScriptRun
-      summary: Start an immutable script revision on an online robot
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/scripts/v1/create-run-request.schema.json }
-      responses:
-        '202':
-          description: Accepted or idempotently replayed
-          content:
-            application/json:
-              schema: { $ref: ../schemas/scripts/v1/create-run-response.schema.json }
-        '400': { description: Invalid request }
-        '401': { description: Invalid authentication }
-        '403': { description: Insufficient role }
-        '404': { description: Robot or revision is inaccessible }
-        '409': { description: Conflicting idempotency key or active execution }
-        '503': { description: Robot is offline }
-  /v1/executions/{execution_id}:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [scripts]
-      operationId: getScriptExecution
-      responses:
-        '200':
-          description: Durable execution state and requesting actor
-          content:
-            application/json:
-              schema: { $ref: ../schemas/scripts/v1/execution.schema.json }
-        '401': { description: Invalid authentication }
-        '404': { description: Execution is inaccessible }
-  /v1/executions/{execution_id}/output:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: stream, in: query, required: true, schema: { enum: [stdout, stderr] } }
-      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 65536 } }
-      - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 16384 } }
-    get:
-      tags: [scripts]
-      operationId: getScriptOutput
-      responses:
-        '200':
-          description: Byte-offset output chunk
-          content:
-            application/json:
-              schema: { $ref: ../schemas/runner/v1/output.schema.json }
-        '400': { description: Invalid range or stream }
-        '401': { description: Invalid authentication }
-        '404': { description: Execution is inaccessible }
-  /v1/executions/{execution_id}/artifacts:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [scripts]
-      operationId: listScriptArtifacts
-      responses:
-        '200':
-          description: Uploaded, verified artifact metadata
-          content:
-            application/json:
-              schema: { $ref: ../schemas/runner/v1/artifact-list.schema.json }
-        '401': { description: Invalid authentication }
-        '404': { description: Execution is inaccessible }
-  /v1/executions/{execution_id}/artifacts/content:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
-    get:
-      tags: [scripts]
-      operationId: downloadScriptArtifact
-      responses:
-        '200':
-          description: Verified artifact bytes
-          content:
-            application/octet-stream:
-              schema: { type: string, format: binary }
-        '401': { description: Invalid authentication }
-        '404': { description: Execution or artifact is inaccessible }
-  /v1/executions/{execution_id}/stop:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-    post:
-      tags: [scripts]
-      operationId: stopScriptExecution
-      responses:
-        '202':
-          description: Stop operation accepted, not yet necessarily complete
-          content:
-            application/json:
-              schema: { $ref: ../schemas/scripts/v1/create-run-response.schema.json }
-        '401': { description: Invalid authentication }
-        '404': { description: Execution is inaccessible }
-        '409': { description: Conflicting idempotency key }
-        '503': { description: Robot is offline }
-  /v1/executions/{execution_id}/ui-sessions:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-    post:
-      tags: [mission-ui]
-      operationId: createMissionUiSession
-      summary: Create a short-lived bootstrap for a running execution's UI
-      responses:
-        '201':
-          description: One-use bootstrap token and execution-specific UI origin
-          content:
-            application/json:
-              schema: { $ref: ../schemas/mission-ui/v1/create-session-response.schema.json }
-        '401': { description: Invalid authentication }
-        '403': { description: Operator role is required }
-        '404': { description: Execution is inaccessible }
-        '409': { description: Execution is not running }
-        '503': { description: Mission UI origin is not configured }
-  /ui/bootstrap/{session_id}:
-    parameters:
-      - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [mission-ui]
-      security: []
-      operationId: getMissionUiBootstrapPage
-      summary: Serve the bootstrap page on the execution-specific UI origin
-      responses:
-        '200':
-          description: Isolated session bootstrap HTML
-          content:
-            text/html:
-              schema: { type: string }
-        '404': { description: Session or execution-specific host is unknown }
-  /v1/ui-sessions/exchange:
-    post:
-      tags: [mission-ui]
-      security: []
-      operationId: exchangeMissionUiBootstrap
-      summary: Exchange a one-use bootstrap for a host-only HttpOnly cookie
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/mission-ui/v1/exchange-session-request.schema.json }
-      responses:
-        '204': { description: Cookie issued on the execution-specific UI origin }
-        '400': { description: Invalid bootstrap request }
-        '403': { description: Session host or origin is incorrect }
-        '404': { description: Bootstrap session is unknown }
-        '409': { description: Bootstrap is expired, used, or execution ended }
-  /v1/device/executions/{execution_id}/revision:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-    get:
-      tags: [device, scripts]
-      security:
-        - deviceCredentialId: []
-          deviceCredentialSecret: []
-      operationId: downloadDeviceRevision
-      description: Authenticated by robot credential headers; scoped to the assigned execution.
-      responses:
-        '200':
-          description: Verified immutable ZIP archive
-          content:
-            application/zip:
-              schema: { type: string, format: binary }
-        '401': { description: Invalid machine credential }
-        '404': { description: Execution is inaccessible }
-        '409': { description: Execution is terminal }
-        '503': { description: Storage is unavailable }
-  /v1/device/executions/{execution_id}/output/{stream}:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: stream, in: path, required: true, schema: { enum: [stdout, stderr] } }
-      - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 65536 } }
-    put:
-      tags: [device, scripts]
-      security:
-        - deviceCredentialId: []
-          deviceCredentialSecret: []
-      operationId: putDeviceOutput
-      description: Authenticated by robot credential headers; exact-byte replay is idempotent.
-      requestBody:
-        required: true
-        content:
-          application/octet-stream:
-            schema: { type: string, format: binary }
-      responses:
-        '204': { description: Chunk durably stored or identical replay }
-        '400': { description: Invalid stream or offset }
-        '401': { description: Invalid machine credential }
-        '404': { description: Execution is inaccessible }
-        '409': { description: Gap, conflicting replay or new bytes after terminal state }
-        '413': { description: Chunk or total output limit exceeded }
-  /v1/device/executions/{execution_id}/artifacts:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-      - { name: path, in: query, required: true, schema: { type: string, maxLength: 240 } }
-      - { name: sha256, in: query, required: true, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
-      - { name: artifact_id, in: query, required: false, schema: { type: string, format: uuid } }
-      - { name: content_type, in: query, required: false, schema: { enum: [image/jpeg, image/png, application/octet-stream] } }
-    put:
-      tags: [device, scripts]
-      security:
-        - deviceCredentialId: []
-          deviceCredentialSecret: []
-      operationId: putDeviceArtifact
-      description: Authenticated by robot credential headers; identical artifact replay is idempotent. artifact_id and content_type identify live publications; omission preserves the completed-execution v1 upload behavior.
-      requestBody:
-        required: true
-        content:
-          application/octet-stream:
-            schema: { type: string, format: binary }
-      responses:
-        '204': { description: Artifact verified and durably stored, or identical replay }
-        '400': { description: Invalid path or digest }
-        '401': { description: Invalid machine credential }
-        '404': { description: Execution is inaccessible }
-        '409': { description: Conflicting replay or new artifact after artifact delivery is ready }
-        '413': { description: Artifact count or representable size exceeded }
-        '503': { description: Storage is unavailable }
-  /v1/device/executions/{execution_id}/artifact-status:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-    put:
-      tags: [device, scripts]
-      security:
-        - deviceCredentialId: []
-          deviceCredentialSecret: []
-      operationId: putDeviceArtifactStatus
-      description: Records artifact delivery independently of process status. Ready is immutable; failed delivery may be retried.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [state, error]
-              properties:
-                state: { type: string, enum: [uploading, ready, failed] }
-                error:
-                  oneOf:
-                    - { type: 'null' }
-                    - type: object
-                      additionalProperties: false
-                      required: [code, message]
-                      properties:
-                        code: { type: string, maxLength: 100 }
-                        message: { type: string, maxLength: 500 }
-      responses:
-        '204': { description: State recorded or matching replay }
-        '400': { description: Invalid status }
-        '401': { description: Invalid machine credential }
-        '404': { description: Execution is inaccessible }
-        '409': { description: Conflicting transition }
-  /v1/device/executions/{execution_id}/status:
-    parameters:
-      - { name: execution_id, in: path, required: true, schema: { type: string, format: uuid } }
-    put:
-      tags: [device, scripts]
-      security:
-        - deviceCredentialId: []
-          deviceCredentialSecret: []
-      operationId: putDeviceExecutionStatus
-      description: Authenticated by robot credential headers; terminal status follows output synchronization and is independent of artifact delivery.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: ../schemas/scripts/v1/device-status.schema.json }
-      responses:
-        '204': { description: State recorded or matching replay }
-        '400': { description: Invalid status }
-        '401': { description: Invalid machine credential }
-        '404': { description: Execution is inaccessible }
-        '409': { description: Invalid state transition or conflicting terminal replay }
-        '413': { description: Status request exceeds the byte limit }
-  /v1/script-revisions/{revision_id}/content:
-    parameters:
-      - { name: revision_id, in: path, required: true, schema: { type: string, format: uuid } }
-    put:
-      tags: [scripts]
-      operationId: uploadScriptRevision
-      summary: Upload bounded ZIP bytes before the revision upload deadline
-      requestBody:
-        required: true
-        content:
-          application/zip:
-            schema: { type: string, format: binary }
-      responses:
-        '204': { description: Upload stored for verification }
-        '400': { description: Invalid bytes or mismatched declared size or digest }
-        '401': { description: Invalid authentication }
-        '403': { description: Insufficient role }
-        '404': { description: Revision is inaccessible }
-        '409': { description: Revision is finalized or upload has expired }
-        '413': { description: Upload exceeds the byte limit }
-        '503': { description: Storage is unavailable }
-  /v1/script-revisions/{revision_id}/finalize:
-    parameters:
-      - { name: revision_id, in: path, required: true, schema: { type: string, format: uuid } }
-    post:
-      tags: [scripts]
-      operationId: finalizeScriptRevision
-      summary: Verify stored bytes and promote the revision
-      responses:
-        '200':
-          description: Immutable ready revision, including idempotent replay
-          content:
-            application/json:
-              schema: { $ref: ../schemas/scripts/v1/revision.schema.json }
-        '400': { description: Archive validation or digest failed }
-        '401': { description: Invalid authentication }
-        '403': { description: Insufficient role }
-        '404': { description: Revision is inaccessible }
-        '409': { description: Upload is missing or expired }
-        '503': { description: Storage is unavailable }
   /health/live:
     get:
       tags: [health]
@@ -2846,84 +2179,6 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
-  /v1/robots/{robot_id}/operations:
-    post:
-      tags: [robots]
-      operationId: createRobotOperation
-      summary: Create a durable operation
-      description: |
-        Developer role or higher. Commits the operation (state queued,
-        deadline from configuration) before dispatching it over the device's
-        WebSocket; an offline robot simply keeps the operation queued until a
-        connection arrives. v1 includes diagnostic.noop and fixed-fixture diagnostic.execution.start,
-        diagnostic.execution.inspect and diagnostic.execution.stop operations.
-        Start and inspect require developer; stop requires operator. See
-        docs/runner-contract.md for payloads, results and recovery semantics.
-        Retries: an Idempotency-Key header scoped to the caller, route and
-        robot makes a repeated request with an identical body return the
-        original operation (200); the same key with a different body is a 409
-        conflict. Records expire after 24 hours.
-      parameters:
-        - $ref: "#/components/parameters/RobotId"
-        - $ref: "#/components/parameters/IdempotencyKey"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../schemas/robots/v1/create-operation-request.schema.json"
-      responses:
-        "201":
-          description: Operation committed and queued for dispatch.
-          content:
-            application/json:
-              schema:
-                $ref: "../schemas/robots/v1/operation.schema.json"
-              examples:
-                queued:
-                  $ref: "../fixtures/robots/v1/operation-queued.json"
-        "200":
-          description: Idempotency replay; the original operation is returned unchanged.
-          content:
-            application/json:
-              schema:
-                $ref: "../schemas/robots/v1/operation.schema.json"
-        "400":
-          $ref: "#/components/responses/InvalidInput"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-  /v1/robots/{robot_id}/operations/{operation_id}:
-    get:
-      tags: [robots]
-      operationId: getRobotOperation
-      summary: Get an operation
-      description: |
-        Any member may read. Poll this endpoint while waiting for a terminal
-        state; terminal states (succeeded, failed, cancelled) are immutable.
-        Non-members receive 404, not 403.
-      parameters:
-        - $ref: "#/components/parameters/RobotId"
-        - $ref: "#/components/parameters/OperationId"
-      responses:
-        "200":
-          description: The operation.
-          content:
-            application/json:
-              schema:
-                $ref: "../schemas/robots/v1/operation.schema.json"
-              examples:
-                succeeded:
-                  $ref: "../fixtures/robots/v1/operation-succeeded.json"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "404":
-          $ref: "#/components/responses/NotFound"
   /v1/device/pairing-requests:
     post:
       tags: [device]
@@ -3026,37 +2281,6 @@ paths:
           $ref: "#/components/responses/InvalidInput"
         "401":
           $ref: "#/components/responses/InvalidToken"
-  /v1/device/ui-connect:
-    get:
-      tags: [device]
-      operationId: connectMissionUiDeviceTunnel
-      summary: Separate authenticated mission UI WebSocket (RFC 6455)
-      description: |
-        This is an independent daemon-to-Platform WebSocket; it never carries
-        command or operation frames. Authenticate before upgrade with the same
-        enrolled robot credential headers as /v1/device/connect. Frames follow
-        schemas/mission-ui/v1/device-frame.schema.json. The daemon begins with
-        hello (sequence 1); Platform answers welcome. This initial transport
-        slice accepts heartbeat and execution-scoped ui_status frames only.
-        HTTP request/response streaming is not implemented yet.
-      security: []
-      parameters:
-        - name: x-ringfour-credential-id
-          in: header
-          required: true
-          schema:
-            type: string
-            pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-        - name: x-ringfour-credential-secret
-          in: header
-          required: true
-          schema:
-            type: string
-            minLength: 1
-      responses:
-        "101": { description: WebSocket upgrade accepted. }
-        "400": { $ref: "#/components/responses/InvalidInput" }
-        "401": { $ref: "#/components/responses/InvalidToken" }
   /v1/device/enroll:
     post:
       tags: [device]
@@ -3211,6 +2435,30 @@ paths:
         '401': *id003
         '403': *id004
         '404': *id005
+  /v1/apps/{app_id}/artifacts:
+    get:
+      tags: [apps]
+      operationId: listAppArtifacts
+      x-implementation-status: implemented
+      description: List only confirmed App artifact publications in one authorized workspace. Cursor is bound to all filters; see docs/apps-ap17-contract.md.
+      parameters:
+      - {name: app_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: organization_id, in: query, required: true, schema: {type: string, format: uuid}}
+      - {name: installation_id, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: robot_id, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: run_id, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: path_prefix, in: query, required: false, schema: {type: string, maxLength: 240}}
+      - {name: cursor, in: query, required: false, schema: {type: string, maxLength: 1024}}
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200': {description: Authorized artifact page, content: {application/json: {schema: {$ref: ../schemas/artifacts/v3/app-artifact-page.schema.json}}}}
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
 components:
   securitySchemes:
     deviceCredentialId:

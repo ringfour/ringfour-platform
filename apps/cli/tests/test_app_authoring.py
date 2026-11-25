@@ -1,3 +1,4 @@
+import copy
 import gzip
 import hashlib
 import io
@@ -112,6 +113,35 @@ def test_independent_validator_matches_manifest_semantics_and_canonical_digest()
         ).read_bytes() == (
             CONTRACTS / f"schemas/apps/v1/{name}.schema.json"
         ).read_bytes()
+        assert (
+            Path(main.__file__).parent / f"data/{name}-v2.schema.json"
+        ).read_bytes() == (
+            CONTRACTS / f"schemas/apps/v2/{name}.schema.json"
+        ).read_bytes()
+
+
+def test_v2_authoring_and_manifest_validate_with_environment_and_live_settings():
+    authoring = json.loads(
+        (CONTRACTS / "fixtures/apps/v2/authoring.json").read_text()
+    )
+    manifest = json.loads(
+        (CONTRACTS / "fixtures/apps/v2/manifest.json").read_text()
+    )
+    assert validate_authoring(authoring) == authoring
+    assert validate_manifest(manifest) == manifest
+
+    invalid = copy.deepcopy(authoring)
+    invalid["runtime_settings"]["defaults"]["interval_ms"] = "250"
+    with pytest.raises(ValueError):
+        validate_authoring(invalid)
+
+
+def test_live_settings_build_refuses_bundle_without_settings_runtime(project):
+    root, bundle, _calls, _state = project
+    document = read_json(root / "app.json")
+    document["runtime_settings"] = {"schema": {}, "defaults": {}}
+    with pytest.raises(ValueError, match="does not include ringfour_runtime.settings"):
+        app_project.verify_bundle(bundle, document)
 
 
 @pytest.mark.parametrize(
@@ -215,7 +245,7 @@ def test_replaced_local_image_index_and_wrong_digest_are_refused(project):
         )
 
 
-def test_cli_publication_retry_uses_same_request_key_and_keeps_legacy_group(
+def test_cli_publication_retry_uses_same_request_key_and_retires_legacy_group(
     project, monkeypatch, tmp_path
 ):
     root, bundle, _calls, _state = project
@@ -250,7 +280,7 @@ def test_cli_publication_retry_uses_same_request_key_and_keeps_legacy_group(
         assert json.loads(result.output)["id"] == "revision"
     assert requests[0][2]["headers"] == requests[1][2]["headers"]
     assert requests[0][2]["json"] == requests[1][2]["json"]
-    assert CliRunner().invoke(main.app, ["mission", "--help"]).exit_code == 0
+    assert CliRunner().invoke(main.app, ["mission", "--help"]).exit_code == 2
 
 
 def test_template_initialization_checks_hash_and_refuses_present_destination(

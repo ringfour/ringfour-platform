@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "bundle_version": "0.1.0.dev0",
+  "bundle_version": "0.1.1.dev0",
   "distribution": "local-wheels",
   "python": "3.13",
   "build_python": "3.13.18",
@@ -21,13 +21,13 @@
     },
     {
       "name": "ringfour-platform-runtime",
-      "version": "0.1.0.dev0",
+      "version": "0.1.1.dev0",
       "repository": "ringfour-platform",
-      "commit": "bc1d252d7dd3913b462d8f5f5890cc79abed0e7a",
+      "commit": "5603da2e13703420182cb6c81a0a718c5b8fb3d9",
       "path": "packages/python-runtime",
-      "source_date_epoch": 1795457023,
-      "filename": "ringfour_platform_runtime-0.1.0.dev0-py3-none-any.whl",
-      "sha256": "0265a1c70a1f2259d8821a3f6d57c488eed62acfc8c7074657109586900594f5"
+      "source_date_epoch": 1795552709,
+      "filename": "ringfour_platform_runtime-0.1.1.dev0-py3-none-any.whl",
+      "sha256": "e89de0db1b503137377e47bd9e59996a1d6579b88042fb284c3d912dcdb6b919"
     }
   ],
   "targets": {

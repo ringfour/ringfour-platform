@@ -17,11 +17,8 @@ from . import (
     __version__,
     app_installations,
     app_inventory,
-    local_execution,
-    local_grants,
     operations,
-    runner,
-    scripts,
+    runtime_settings,
 )
 from .enrollment import credential_error, load_identity
 
@@ -83,14 +80,12 @@ class ConnectionManager:
         self,
         settings,
         *,
-        execute: Callable[[operations.DeviceOperation], dict] | None = None,
         sleep: Callable[[float], Coroutine[Any, Any, None]] = asyncio.sleep,
         ws_connect: Callable[..., Any] = websockets.connect,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         uuid: Callable[[], str] | None = None,
     ) -> None:
         self._settings = settings
-        self._execute = execute or (lambda operation: {"noop": True})
         self._sleep = sleep
         self._ws_connect = ws_connect
         self._now = now
@@ -98,8 +93,7 @@ class ConnectionManager:
         self._stopped = False
         self.connected = False
         self.app_executor = None
-        # Total effect executions across reconnects; exposed for tests.
-        self.effects = 0
+        self.app_work = asyncio.Event()
 
     def stop(self) -> None:
         self._stopped = True
@@ -165,11 +159,6 @@ class ConnectionManager:
                 if self._settings.agent_uri:
                     tasks.append(asyncio.create_task(app_inventory.run_session(
                         self._settings, identity, state.session_id, headers)))
-                tasks.append(
-                    asyncio.create_task(
-                        self._reconcile_later(replayed_ids)
-                    )
-                )
                 tasks.append(
                     asyncio.create_task(self._heartbeat_loop(outbound, state, heartbeat_seconds))
                 )
@@ -259,8 +248,22 @@ class ConnectionManager:
             operation, _ = operations.record_command(self._settings.db_path, state.robot_id, command)
             replayed_ids.add(operation.operation_id)
             await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
+            self.app_work.set()
             return
         if command.get("kind", "").startswith("app."):
+            if command["kind"] == "app.settings.apply":
+                if not self._settings.apps_enabled or self.app_executor is None:
+                    raise ProtocolError("App settings consumer is not enabled")
+                app_installations.app_validation.validate(command["payload"], "device", "settings_apply_command")
+                operation, _ = operations.record_command(self._settings.db_path, state.robot_id, command)
+                try:
+                    runtime_settings.accept_command(self._settings.db_path, state.robot_id, command)
+                except (sqlite3.Error, ValueError):
+                    raise ProtocolError("App settings command could not be durably recorded") from None
+                replayed_ids.add(operation.operation_id)
+                await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
+                self.app_work.set()
+                return
             if command["kind"] not in ("app.install", "app.configure", "app.update", "app.rollback") or not self._settings.apps_enabled or self.app_executor is None:
                 raise ProtocolError("App installation consumer is not enabled")
             app_installations.app_validation.validate(command["payload"], "device", "apply_command")
@@ -272,139 +275,7 @@ class ConnectionManager:
             except (httpx.HTTPError, app_installations.PreparationError, sqlite3.Error, ValueError):
                 raise ProtocolError("App preparation/report delivery unavailable; reconcile on reconnect") from None
             return
-        replayed_ids.add(command["operation_id"])
-        try:
-            operation, created = operations.record_command(
-                self._settings.db_path, state.robot_id, command
-            )
-        except operations.OperationConflict:
-            logger.error("conflicting reuse of operation %s", command["operation_id"])
-            raise ProtocolError("conflicting operation id") from None
-
-        # The local record is committed before this ack goes out.
-        await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
-        if not created:
-            if operation.state in operations.TERMINAL_STATES:
-                logger.info("operation %s replaying terminal state %s", operation.operation_id, operation.state)
-                await self._report(outbound, state, operation)
-                return
-            if operation.state == "running" and not operation.kind.startswith(("diagnostic.execution.", "script.execution.")) and operation.kind != "mission.prepare" and operation.kind not in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.grants.revoke", "dev.session.restart"):
-                # The effect may have happened before a crash. Never repeat it.
-                finished = operations.apply_status(
-                    self._settings.db_path,
-                    operation.operation_id,
-                    "failed",
-                    {"error": {
-                        "code": "interrupted_unknown_outcome",
-                        "message": "The daemon restarted while the operation outcome was unknown.",
-                    }},
-                )
-                await self._report(outbound, state, finished)
-                return
-            # accepted is committed before execution starts, so it is safe to
-            # resume after an interruption at the acknowledgement boundary.
-
-        if not created and operation.state == "running" and operation.kind == "script.execution.start":
-            try:
-                recovered = await scripts.reconcile_start(self._settings, operation)
-            except httpx.HTTPError:
-                raise ProtocolError("Runner unreachable; reconcile on reconnect") from None
-            except runner.RunnerRejected:
-                raise ProtocolError("Runner rejected reconciliation; reconnecting") from None
-            if recovered is not None:
-                finished = operations.apply_status(self._settings.db_path, operation.operation_id, "succeeded", recovered)
-                await self._report(outbound, state, finished)
-                return
-
-        if operations.is_expired(operation.deadline_at, self._now()) and not (not created and operation.state == "running" and (operation.kind == "mission.prepare" or operation.kind in ("dev.session.create", "dev.session.close", "dev.session.expire", "dev.session.grant", "dev.session.grants.revoke", "dev.session.restart"))):
-            if operation.kind == "script.execution.start":
-                scripts.complete_sync(self._settings.db_path, operation.operation_id)
-            finished = operations.apply_status(
-                self._settings.db_path,
-                operation.operation_id,
-                "failed",
-                {
-                    "error": {
-                        "code": "deadline_exceeded",
-                        "message": "The operation deadline passed before execution.",
-                    }
-                },
-            )
-            await self._report(outbound, state, finished)
-            return
-
-        operations.apply_status(self._settings.db_path, operation.operation_id, "running")
-        logger.info("operation %s started for robot %s", operation.operation_id, state.robot_id)
-        try:
-            if operation.kind == "diagnostic.execution.start" and self._settings.apps_enabled:
-                from .db import connect
-                with connect(self._settings.db_path) as guard:
-                    if guard.execute("SELECT 1 FROM app_installations").fetchone():
-                        raise runner.RunnerRejected("execution_conflict", "Diagnostic starts are disabled on App-enabled robots.")
-            if operation.kind.startswith("diagnostic.execution."):
-                result = await runner.execute(self._settings, operation)
-            elif operation.kind == "script.execution.start":
-                result = await scripts.start(self._settings, operation)
-            elif operation.kind == "script.execution.stop":
-                result = await scripts.stop(self._settings, operation)
-            elif operation.kind == "dev.session.restart":
-                result = await local_execution.restart(self._settings, operation)
-            elif operation.kind == "dev.session.grant":
-                if operation.payload.get("operation_id") != operation.operation_id:
-                    raise local_grants.GrantRejected("Operation ID mismatch.")
-                result = local_grants.install(self._settings.db_path, operation.payload, now=self._now())
-            elif operation.kind == "dev.session.grants.revoke":
-                if operation.payload.get("operation_id") != operation.operation_id:
-                    raise local_grants.GrantRejected("Operation ID mismatch.")
-                result = local_grants.revoke(self._settings.db_path, operation.payload)
-            elif operation.kind in ("dev.session.create", "dev.session.close", "dev.session.expire"):
-                if (operation.payload.get("reason") != operation.kind.removeprefix("dev.session.")
-                        or operation.payload.get("operation_id") != operation.operation_id
-                        or set(operation.payload) != {"operation_id", "session_id", "expires_at", "reason"}):
-                    raise local_grants.GrantRejected("Invalid lifecycle operation.")
-                if operation.kind != "dev.session.create":
-                    local_grants.record_session(self._settings.db_path, operation.payload["session_id"], operation.payload["expires_at"], operation.payload["reason"])
-                result = await runner.dev_session_lifecycle(self._settings, operation)
-                if operation.kind == "dev.session.create":
-                    local_grants.record_session(self._settings.db_path, operation.payload["session_id"], operation.payload["expires_at"], operation.payload["reason"])
-            elif operation.kind == "mission.prepare":
-                result = await scripts.prepare_mission(self._settings, operation)
-            else:
-                result = self._execute(operation)
-            self.effects += 1
-            finished = operations.apply_status(
-                self._settings.db_path, operation.operation_id, "succeeded", result
-            )
-        except (httpx.HTTPError, sqlite3.Error):
-            # Runner may have received the request; replay with the same ID.
-            raise ProtocolError("Runner unreachable; reconcile on reconnect") from None
-        except local_grants.GrantRejected:
-            finished = operations.apply_status(
-                self._settings.db_path, operation.operation_id, "failed",
-                {"error": {"code": "invalid_grant", "message": "Local session or grant is invalid."}},
-            )
-        except runner.RunnerRejected as failure:
-            if operation.kind == "dev.session.restart":
-                local_execution.fail_unstarted(self._settings.db_path, operation.operation_id)
-            finished = operations.apply_status(
-                self._settings.db_path, operation.operation_id, "failed",
-                {"error": {"code": failure.code, "message": failure.message}},
-            )
-        except Exception:
-            logger.exception("operation %s failed", operation.operation_id)
-            finished = operations.apply_status(
-                self._settings.db_path,
-                operation.operation_id,
-                "failed",
-                {
-                    "error": {
-                        "code": "execution_failed",
-                        "message": "The operation raised an exception.",
-                    }
-                },
-            )
-        await self._report(outbound, state, finished)
-        logger.info("operation %s finished with state %s", operation.operation_id, finished.state)
+        raise ProtocolError("Unsupported command kind; only App commands are accepted")
 
     def _handle_error(self, error: dict) -> None:
         code = error.get("code")
@@ -415,22 +286,6 @@ class ConnectionManager:
             raise ProtocolError(f"protocol violation: {code}")
         # unknown_operation / state_conflict are per-operation; the platform
         # stays authoritative and reconciles on the next replay.
-
-    async def _reconcile_later(self, replayed_ids: set[str]) -> None:
-        # The platform replays every nonterminal operation right after
-        # welcome, so any local nonterminal record absent from this session's
-        # replay is terminal-or-gone upstream.
-        await self._sleep(self._settings.reconcile_delay_seconds)
-        for operation in operations.list_nonterminal(self._settings.db_path):
-            if operation.kind.startswith("app.") or operation.operation_id in replayed_ids:
-                continue
-            logger.info(
-                "operation %s no longer active on the platform; marking superseded",
-                operation.operation_id,
-            )
-            operations.mark_superseded(self._settings.db_path, operation.operation_id)
-            if operation.kind == "script.execution.start":
-                scripts.complete_sync(self._settings.db_path, operation.operation_id)
 
     async def _heartbeat_loop(
         self, outbound: asyncio.Queue, state: _SessionState, heartbeat_seconds: int
@@ -475,14 +330,3 @@ class ConnectionManager:
             # The platform replays unacknowledged work after reconnect; a full
             # outbound queue is a backpressure signal, not data loss.
             raise ProtocolError("outbound queue full; reconnecting") from None
-
-    async def _report(
-        self, outbound: asyncio.Queue, state: _SessionState, operation: operations.DeviceOperation
-    ) -> None:
-        payload: dict = {
-            "operation_id": operation.operation_id,
-            "state": operation.state,
-        }
-        if operation.result is not None:
-            payload["result"] = operation.result
-        await self._queue(outbound, state, "operation_status", payload)

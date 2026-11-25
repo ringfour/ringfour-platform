@@ -61,6 +61,8 @@ class ProtocolModel(BaseModel):
 class NegotiationRequest(ProtocolModel):
     supports_app_installations: bool = False
     supports_app_runs: bool = False
+    supports_manifest_v2: bool = False
+    supports_live_settings: bool = False
     session_id: Id
     deployment_namespace: Id
     supported_app_protocol_versions: list[Annotated[int, Field(ge=1, le=65535)]] = (
@@ -178,6 +180,8 @@ class RobotAppStatus(ProtocolModel):
     received_at: Timestamp | None
     platform: Platform | None
     inventory: Inventory | None
+    supports_manifest_v2: bool | None = None
+    supports_live_settings: bool | None = None
 
     @model_validator(mode="after")
     def validate_projection(self):

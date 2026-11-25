@@ -2,12 +2,12 @@ import { apiFetch } from "@/lib/api";
 import {
   type App,
   type AppImport,
-  type AppLogbookEvent,
   type AppRun,
   type Installation,
   type Revision,
   type Robot,
   readPage,
+  readLiveRuns,
   type Token,
 } from "@/lib/apps";
 
@@ -74,6 +74,7 @@ type Issue = {
 export type OverviewData = {
   machines: Machine[];
   robots: Robot[];
+  importedApps: { id: string; name: string }[];
   runs: Row[];
   recent: Row[];
   active: Row[];
@@ -83,9 +84,9 @@ export type OverviewData = {
 
 async function limited<T, R>(items: T[], read: (item: T) => Promise<R>) {
   const values: R[] = [];
-  for (let index = 0; index < items.length; index += 6)
+  for (let index = 0; index < items.length; index += 24)
     values.push(
-      ...(await Promise.all(items.slice(index, index + 6).map(read))),
+      ...(await Promise.all(items.slice(index, index + 24).map(read))),
     );
   return values;
 }
@@ -102,7 +103,7 @@ export async function loadOverview(organizationId: string, token: Token) {
   const organization = `/v1/organizations/${encodeURIComponent(organizationId)}`;
   const [robots, runs, imports, members, me] = await Promise.all([
     readPage<Robot>(token, `${organization}/robots`),
-    readPage<AppRun>(token, `${organization}/app-runs`),
+    readLiveRuns(token, `${organization}/app-runs`),
     readPage<AppImport>(token, `${organization}/app-imports`),
     optional(readPage<Member>(token, `${organization}/members`)),
     optional(
@@ -111,29 +112,7 @@ export async function loadOverview(organizationId: string, token: Token) {
       ),
     ),
   ]);
-  const appIds = [
-    ...new Set([
-      ...imports.map((item) => item.app_id),
-      ...runs.map((run) => run.snapshot.app_id),
-    ]),
-  ];
-  const apps = new Map<string, App>();
-  const revisions = new Map<string, Revision>();
-  await limited(appIds, async (appId) => {
-    const [app, appRevisions] = await Promise.all([
-      optional(
-        apiFetch(token, `/v1/apps/${appId}`).then(
-          (response) => response.json() as Promise<App>,
-        ),
-      ),
-      optional(readPage<Revision>(token, `/v1/apps/${appId}/revisions`)),
-    ]);
-    if (app) apps.set(appId, app);
-    for (const revision of appRevisions ?? [])
-      revisions.set(revision.id, revision);
-  });
-
-  const [statuses, installations, events] = await Promise.all([
+  const [statuses, installations] = await Promise.all([
     limited(robots, (robot) =>
       optional(
         apiFetch(token, `/v1/robots/${robot.id}/app-status`).then(
@@ -149,15 +128,42 @@ export async function loadOverview(organizationId: string, token: Token) {
         ),
       ),
     ),
-    optional(readPage<AppLogbookEvent>(token, `${organization}/app-logbook`)),
   ]);
-  const history = new Map<string, AppLogbookEvent[]>();
-  for (const event of events ?? []) {
-    if (!event.run_id) continue;
-    const entries = history.get(event.run_id) ?? [];
-    entries.push(event);
-    history.set(event.run_id, entries);
-  }
+  const appIds = [
+    ...new Set([
+      ...imports.map((item) => item.app_id),
+      ...runs.map((run) => run.snapshot.app_id),
+      ...installations.flatMap((items) => items?.map((item) => item.app_id) ?? []),
+    ]),
+  ];
+  const apps = new Map<string, App>();
+  const revisions = new Map<string, Revision>();
+  const revisionIds = [
+    ...new Set([
+      ...runs.map((run) => run.snapshot.revision_id),
+      ...installations.flatMap(
+        (items) => items?.flatMap((item) => item.installed ? [item.installed.revision_id] : []) ?? [],
+      ),
+    ]),
+  ];
+  await Promise.all([
+    ...appIds.map(async (appId) => {
+      const app = await optional(
+        apiFetch(token, `/v1/apps/${appId}`).then(
+          (response) => response.json() as Promise<App>,
+        ),
+      );
+      if (app) apps.set(appId, app);
+    }),
+    ...revisionIds.map(async (revisionId) => {
+      const revision = await optional(
+        apiFetch(token, `/v1/app-revisions/${revisionId}`).then(
+          (response) => response.json() as Promise<Revision>,
+        ),
+      );
+      if (revision) revisions.set(revision.id, revision);
+    }),
+  ]);
 
   const machines: Machine[] = robots.map((robot, index) => {
     const presence = statuses[index];
@@ -185,10 +191,6 @@ export async function loadOverview(organizationId: string, token: Token) {
         .map((run) => {
           const app = apps.get(run.snapshot.app_id);
           const revision = revisions.get(run.snapshot.revision_id);
-          const runEvents = history.get(run.id) ?? [];
-          const latest = [...runEvents]
-            .filter((event) => typeof event.payload.message === "string")
-            .sort((a, b) => b.received_at.localeCompare(a.received_at))[0];
           const member = members?.find(
             (item) => item.user_id === run.requested_by,
           );
@@ -202,10 +204,7 @@ export async function loadOverview(organizationId: string, token: Token) {
               run.requested_by === me?.user.id
                 ? "You"
                 : (member?.name ?? undefined),
-            activity:
-              typeof latest?.payload.message === "string"
-                ? latest.payload.message
-                : undefined,
+            activity: undefined,
             created_at: run.requested_at,
             updated_at:
               run.completed_at ??
@@ -274,6 +273,10 @@ export async function loadOverview(organizationId: string, token: Token) {
   return {
     machines,
     robots,
+    importedApps: imports.map((item) => ({
+      id: item.app_id,
+      name: apps.get(item.app_id)?.name ?? "App",
+    })),
     runs: rows,
     recent,
     active,

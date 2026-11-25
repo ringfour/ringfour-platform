@@ -54,7 +54,11 @@
             "interaction_conflict",
             "interaction_already_answered",
             "interaction_terminal",
-            "interaction_expired"
+            "interaction_expired",
+            "stale_settings_selection",
+            "settings_pending",
+            "settings_unsupported",
+            "settings_rejected"
           ]
         },
         "message": {
@@ -349,7 +353,11 @@
             "interaction_conflict",
             "interaction_already_answered",
             "interaction_terminal",
-            "interaction_expired"
+            "interaction_expired",
+            "stale_settings_selection",
+            "settings_pending",
+            "settings_unsupported",
+            "settings_rejected"
           ]
         },
         "message": {

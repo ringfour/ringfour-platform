@@ -322,7 +322,7 @@
     "name": "unknown version",
     "error": "invalid_manifest",
     "manifest": {
-      "schema_version": 2,
+      "schema_version": 3,
       "app_key": "robot-check",
       "release": "0.1.0",
       "display": {

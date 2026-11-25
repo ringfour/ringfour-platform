@@ -62,7 +62,7 @@ def check_generation(current, command):
 def check_idle(conn):
     if (
         conn.execute("SELECT 1 FROM device_execution_slots").fetchone()
-        or conn.execute("SELECT 1 FROM local_dev_runs WHERE completed=0").fetchone()
+
     ):
         raise PreparationError("execution_conflict")
 
@@ -323,29 +323,12 @@ async def _deliver(settings, client):
                     report["report_id"],
                 ),
             )
-
-
-async def diagnostic_idle(settings):
-    with closing(connect(settings.db_path)) as conn:
-        pending = conn.execute(
-            "SELECT 1 FROM device_operations WHERE kind='diagnostic.execution.start' AND state IN ('accepted','running')"
-        ).fetchone()
-        latest = conn.execute(
-            "SELECT operation_id FROM device_operations WHERE kind='diagnostic.execution.start' AND state='succeeded' ORDER BY rowid DESC LIMIT 1"
-        ).fetchone()
-    if pending:
-        raise PreparationError("execution_conflict")
-    if latest:
-        async with httpx.AsyncClient(
-            base_url=settings.runner_url,
-            headers={"authorization": "Bearer " + (settings.runner_auth_token or "")},
-            timeout=3,
-        ) as client:
-            response = await client.get("/v1/executions/" + latest[0])
-            if response.status_code != 404:
-                response.raise_for_status()
-                if response.json()["state"] in ("queued", "preparing", "running"):
-                    raise PreparationError("execution_conflict")
+            for operation in report["operations"]:
+                if operation["kind"] == "settings.apply" and operation.get("settings_application"):
+                    conn.execute(
+                        "UPDATE app_settings_applications SET delivered_at=? WHERE application_id=? AND delivered_at IS NULL",
+                        (receipt["received_at"], operation["settings_application"]["application_id"]),
+                    )
 
 
 async def process(settings, executor, operation, headers):
@@ -370,7 +353,7 @@ async def process(settings, executor, operation, headers):
             response.raise_for_status()
             revision = app_validation.raw_json(response.text)
             try:
-                manifest = app_validation.validate(revision["manifest"], "manifest")
+                manifest = app_validation.validate_manifest(revision["manifest"])
             except (ValidationError, ValueError, KeyError) as error:
                 raise PreparationError("revision_unavailable") from error
             if (
@@ -406,7 +389,6 @@ async def process(settings, executor, operation, headers):
                         ),
                     },
                 )
-            await diagnostic_idle(settings)
             if state != "staged" and operation.kind != "app.configure":
                 response = await client.post(
                     "/v1/device/app-registry-grants",

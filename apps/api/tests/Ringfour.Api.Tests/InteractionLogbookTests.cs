@@ -5,42 +5,25 @@ using Ringfour.Api.Persistence;
 
 namespace Ringfour.Api.Tests;
 
-[Collection(PostgresCollection.Name)]
-public sealed class InteractionLogbookTests(PostgresFixture postgres)
+public sealed partial class AppInstallationTests
 {
     [Fact]
     public async Task RequestAndAppliedResponseAppearWithTheirActualActors()
     {
-        await using var factory = new ApiFactory(postgres.ConnectionString);
-        using var owner = factory.CreateAuthenticatedClient($"auth0|{Guid.NewGuid():N}");
+        await using var s = await Setup();
+        var factory = s.Factory; var owner = s.Owner; var device = s.Device;
+        var organization = s.Organization; var robot = s.Robot;
         using var operatorClient = factory.CreateAuthenticatedClient($"auth0|{Guid.NewGuid():N}");
-        var organization = await OrganizationTests.CreateOrganization(owner, "interaction logbook");
-        var robot = await RobotTests.CreateRobot(owner, organization, "interaction robot");
         var ownerId = await RobotTests.UserId(owner);
         var operatorId = await RobotTests.UserId(operatorClient);
-        var member = await owner.PostAsJsonAsync($"/v1/organizations/{organization}/members",
-            new { user_id = operatorId, role = "operator" }, RingfourJson.Options);
+        var member = await owner.PostAsJsonAsync($"/v1/organizations/{organization}/members", new { user_id = operatorId, role = "operator" }, RingfourJson.Options);
         Assert.Equal(HttpStatusCode.Created, member.StatusCode);
-
-        var (_, pairingToken) = await RobotTests.IssueToken(owner, robot);
-        var (credentialId, credentialSecret) = await DeviceEnrollmentTests.Enroll(factory, pairingToken);
-        using var device = factory.CreateClient();
-        device.DefaultRequestHeaders.Add("x-ringfour-credential-id", credentialId.ToString());
-        device.DefaultRequestHeaders.Add("x-ringfour-credential-secret", credentialSecret);
-
-        var session = Guid.NewGuid();
-        var execution = Guid.NewGuid();
-        var operation = Guid.NewGuid();
-        await postgres.ExecuteAsync("""
-            INSERT INTO operations (id, robot_id, kind, payload_version, payload, state, created_at, updated_at, deadline_at)
-            VALUES (@operation, @robot, 'fixture.test', 1, '{}', 'Queued', now(), now(), now() + interval '1 hour');
-            INSERT INTO dev_sessions (id, robot_id, owner_user_id, state, generation, created_at, updated_at, expires_at)
-            VALUES (@session, @robot, @owner, 'running', 1, now(), now(), now() + interval '1 hour');
-            INSERT INTO dev_session_runs (id, session_id, robot_id, actor_user_id, operation_id, generation, state, created_at, updated_at)
-            VALUES (@execution, @session, @robot, @owner, @operation, 1, 'running', now(), now());
-            """, ("operation", operation), ("robot", robot), ("session", session),
-            ("owner", ownerId), ("execution", execution));
-
+        var install = await Json(await Post(owner, $"/v1/robots/{robot}/app-installations", s.Input));
+        await Json(await device.PutAsJsonAsync("/v1/device/app-observations", Applied(s, await Command(s, install))));
+        var path = $"/v1/app-installations/{install["installation_id"]}";
+        var binding = (await Json(await owner.GetAsync(path)))["installed"]!;
+        var started = await Json(await Post(owner, path + "/start", StartInput(binding)));
+        var execution = Guid.Parse(started["run_id"]!.GetValue<string>());
         var requestId = Guid.NewGuid();
         var created = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 2000);
         var syncBody = new
@@ -62,7 +45,7 @@ public sealed class InteractionLogbookTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         var responseId = (await response.Content.ReadFromJsonAsync<JsonObject>())!["response_id"]!.GetValue<Guid>();
         var pendingHistory = await owner.GetFromJsonAsync<JsonObject>(
-            $"/v1/organizations/{organization}/events?execution_id={execution}");
+            $"/v1/organizations/{organization}/app-logbook?run_id={execution}");
         Assert.Single(pendingHistory!["items"]!.AsArray());
 
         var answered = new
@@ -77,7 +60,7 @@ public sealed class InteractionLogbookTests(PostgresFixture postgres)
             $"Expected applied interaction sync to succeed; received {(int)sync.StatusCode}: {await sync.Content.ReadAsStringAsync()}");
 
         var history = await owner.GetFromJsonAsync<JsonObject>(
-            $"/v1/organizations/{organization}/events?execution_id={execution}");
+            $"/v1/organizations/{organization}/app-logbook?run_id={execution}");
         var events = history!["items"]!.AsArray();
         Assert.Equal(2, events.Count);
         var requested = events.Single(item => item!["type"]!.GetValue<string>() == "human.interaction.requested")!;
@@ -101,13 +84,9 @@ public sealed class InteractionLogbookTests(PostgresFixture postgres)
         sync = await device.PutAsJsonAsync($"/v1/device/interactions/{timeoutId}", timeoutSync, RingfourJson.Options);
         Assert.Equal(HttpStatusCode.OK, sync.StatusCode);
         var finalHistory = await owner.GetFromJsonAsync<JsonObject>(
-            $"/v1/organizations/{organization}/events?execution_id={execution}");
+            $"/v1/organizations/{organization}/app-logbook?run_id={execution}");
         var timedOut = finalHistory!["items"]!.AsArray()
             .Single(item => item!["type"]!.GetValue<string>() == "human.interaction.timed_out")!;
         Assert.Null(timedOut["actor_user_id"]);
-        var actorFiltered = await owner.GetFromJsonAsync<JsonObject>(
-            $"/v1/organizations/{organization}/events?execution_id={execution}&actor_user_id={ownerId}");
-        Assert.DoesNotContain(actorFiltered!["items"]!.AsArray(), item =>
-            item!["type"]!.GetValue<string>() == "human.interaction.timed_out");
     }
 }

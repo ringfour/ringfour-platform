@@ -59,9 +59,8 @@ uv run --project apps/daemon ringfour-daemon --help
 
 The Daemon's App runtime and engine configuration are described in
 [engine operations](apps-engine.md), [hosted runs](apps-runs.md), and
-[runtime evidence](apps-runtime.md). The opt-in virtual deployment guide is
-[AP-08V](human-testing/AP-08V.md). The default Runner deployment remains a
-migration path until AP-14/AP-15 acceptance retires it.
+[runtime evidence](apps-runtime.md). The App virtual deployment is the default. See the sibling virtual README
+and [combined acceptance](human-testing/AP-14-15.md).
 
 ## Database migrations
 
@@ -90,7 +89,15 @@ virtual stacks. Current operator checks are collected in
 
 ## Legacy compatibility
 
-The fixed Runner, mission, and development-session interfaces remain in the
+The fixed Runner, mission, and development-session interfaces formerly remained in the
 repository for legacy callers and regression coverage until cutover. Their
 historical specifications and setup walkthroughs are in
 [`docs/archive/legacy-mission-workflows`](archive/legacy-mission-workflows/README.md).
+
+## AP-14/AP-15 reduction
+
+Apps are the supported execution workflow. Runner, script/mission deployments,
+local source development sessions and managed Gradio UI are retired, including
+their routes and background workers. The virtual stack defaults to Agent and
+daemon with Docker App execution. Use compose.yaml; --apps remains an optional
+launcher spelling. See [the reduction and acceptance guide](human-testing/AP-14-15.md).

@@ -747,8 +747,7 @@ button:disabled {
   gap: 13.75px;
   white-space: nowrap;
 }
-.robot-avatar,
-.mission-icon {
+.robot-avatar{
   width: 34px;
   height: 34px;
   display: grid;
@@ -762,19 +761,15 @@ button:disabled {
   flex: none;
 }
 .robot-cell strong,
-.robot-cell small,
-.mission-info strong,
-.mission-info small {
+.robot-cell small{
   display: block;
 }
-.robot-cell strong,
-.mission-info strong {
+.robot-cell strong{
   color: #f2f2f2;
   font-size: 1rem;
   font-weight: 500;
 }
-.robot-cell small,
-.mission-info small {
+.robot-cell small{
   margin-top: 5px;
   color: #a0a0a0;
   font: 0.8125rem var(--font-mono);
@@ -823,60 +818,6 @@ button:disabled {
 .missions-panel {
   display: flex;
   flex-direction: column;
-}
-.mission-list {
-  list-style: none;
-  margin: 0;
-  padding: 0 24px 16px;
-  flex: 1;
-}
-.mission-list li {
-  display: flex;
-  align-items: center;
-  gap: 13.75px;
-  padding: 16px 0;
-  border-top: 1px solid #292929;
-}
-.mission-icon {
-  width: 32px;
-  height: 32px;
-  background: #191919;
-  border-color: #333;
-  color: #aaa;
-  font-size: 1rem;
-}
-.mission-info {
-  min-width: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-.mission-version {
-  font: 0.8125rem monospace;
-  color: #bdbdbd;
-  white-space: nowrap;
-}
-.mission-empty {
-  flex: 1;
-  padding: 26px 24px 42px;
-  color: #aaa;
-  font-size: 0.875rem;
-}
-.mission-empty strong {
-  display: block;
-  margin-top: 20px;
-  color: #e5e5e5;
-}
-.mission-empty p {
-  margin: 6px 0 0;
-}
-.mission-empty-icon {
-  display: grid;
-  place-items: center;
-  width: 39px;
-  height: 39px;
-  border: 1px solid #3a3a3a;
-  color: #aaa;
-  font-size: 1.40625rem;
 }
 .panel-footer {
   border-top: 1px solid #292929;
@@ -1532,18 +1473,6 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
-.mission-controls {
-  border-top: 1px solid #333;
-  margin-top: 1.875rem;
-  padding-top: 0.25rem;
-}
-.mission-controls p {
-  margin: 0.75rem 0;
-  color: #bbb;
-}
-.mission-controls button {
-  margin-top: 0.625rem;
-}
 .robot-detail-page > section,
 .robot-detail-grid {
   margin-top: 1.25rem;
@@ -1676,130 +1605,9 @@ button:disabled {
     padding: 32px var(--rf-space-5) 40px;
   }
 }
-
-.mission-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: 30px;
-  margin-bottom: 35px;
-}
-.mission-header h1 {
-  margin-bottom: 10px;
-}
-.mission-header p,
-.mission-panel-header p {
-  color: #a4a4a4;
-  font-size: 0.9375rem;
-}
-.mission-version-select label,
-.mission-panel-header label {
-  display: flex;
-  align-items: center;
-  gap: 12.5px;
-  color: #aaa;
-  font-size: 0.9375rem;
-}
-.mission-version-select select {
-  min-width: 74px;
-}
-.mission-primary-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
-  gap: 20px;
-  align-items: stretch;
-}
-.mission-panel {
-  min-width: 0;
-  background: #111;
-  border: 1px solid #303030;
-}
-.mission-panel h2 {
-  font:
-    600 1.26562rem / 1.3 "Space Grotesk",
-    sans-serif;
-  margin: 0;
-}
-.mission-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 15px;
-  padding: 20px 22px;
-  border-bottom: 1px solid #303030;
-}
-.mission-panel-header p {
-  margin-top: 5px;
-}
-.mission-source .source-code {
-  border: 0;
-  margin: 0;
-  min-height: 240px;
-  max-height: 32rem;
-  padding: 22px;
-  line-height: 1.7;
-}
-.mission-source-message {
-  padding: 22px;
-  color: #aaa;
-}
-.mission-run-panel {
-  padding: 20px 22px;
-}
-.mission-run-panel .mission-controls {
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-.mission-run-panel .mission-controls h3 {
-  font:
-    600 1.26562rem / 1.3 "Space Grotesk",
-    sans-serif;
-  margin: 0 0 20px;
-}
-.mission-run-panel .mission-controls label {
-  display: grid;
-  gap: 10px;
-  color: #aaa;
-  font-size: 0.9375rem;
-}
-.mission-run-panel .mission-controls select {
-  width: 100%;
-}
-.mission-run-panel .mission-controls button {
-  width: 100%;
-}
-.mission-run-panel .mission-controls p {
-  font-size: 0.9375rem;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.mission-metadata-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  margin-top: 20px;
-}
-.mission-metadata {
-  padding: 20px 22px;
-}
-.mission-metadata .record-fields {
-  margin: 18px 0 0;
-  grid-template-columns: minmax(90px, 115px) minmax(0, 1fr);
-  font-size: 0.9375rem;
-}
 @media (max-width: 1100px) {
-  .mission-primary-grid,
-  .mission-metadata-grid {
-    grid-template-columns: 1fr;
-  }
 }
 @media (max-width: 700px) {
-  .mission-header {
-    align-items: start;
-    flex-direction: column;
-  }
 }
 @media (min-width: 701px) {
   .console-sidebar {
@@ -2668,9 +2476,6 @@ button:disabled {
     font-size: 1.26562rem;
   }
   .fleet-toolbar {
-    padding-inline: 16px;
-  }
-  .mission-list {
     padding-inline: 16px;
   }
   .hitl-overview--empty {

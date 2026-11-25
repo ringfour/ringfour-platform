@@ -14,9 +14,9 @@ if [ "${1:-}" = "--integration" ]; then
   bash tests/e2e/01-identity.sh
   bash tests/e2e/02-enrollment.sh
   bash tests/e2e/02-pairing.sh
-  bash tests/e2e/03-connectivity.sh
-  bash tests/e2e/03-pre-ack.sh
-  bash tests/e2e/04-runner.sh
+  for scenario in ap05-catalog ap06-publish ap08-engine ap07-install ap09-runs ap10-runtime; do
+    uv run --project apps/daemon python "tests/e2e/$scenario.py"
+  done
 else
   echo 'Integration and external device gates not run; see docs/development.md.'
 fi

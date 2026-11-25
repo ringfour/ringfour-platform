@@ -64,8 +64,12 @@ ringfour-cli app operation <operation-id> --wait
 ringfour-cli app installations --robot <robot-id>
 ringfour-cli app start <installation-id>
 ringfour-cli app start <app-id> --robot <robot-id>
+ringfour-cli app settings show <installation-id>
+ringfour-cli app settings set <installation-id> --file settings.json
 ringfour-cli app logs <run-id> --follow
 ringfour-cli app stop <installation-id> --run <run-id>
+ringfour-cli app artifacts --app <app-id> --org <workspace-id>
+ringfour-cli app artifacts --app <app-id> --robot <robot-id> --path-prefix reports/
 ```
 
 `app configure <installation-id> --config values.json` and
@@ -77,12 +81,36 @@ release defaults when `--config` is omitted. Direct shares require
 run ID and operation ID. Stop requires the exact run ID so an old stop request
 cannot stop a later run.
 
+To return an idle installation to a previously installed release and
+configuration, use `app rollback <installation-id> --revision <revision-id>
+--configuration-revision <configuration-revision-id>`. Take both IDs from the
+installation history; rollback creates an installation operation and does not
+start a run.
+
 Use `app run`, `app artifacts`, `app artifact`, and `app logbook` to inspect
 durable run state, output, artifacts, and attributed events. `app interaction`
 and `app respond` inspect or submit run-scoped human interactions; submitted
 responses remain pending until the device confirms application. `robot
 capabilities <robot>` shows observed inventory; add `--revision <id>` for the
 server's compatibility assessment.
+
+`app settings show` reports the settings selected for the next start, the last
+App-confirmed values, and any unresolved exact-run application. `app settings
+set --file settings.json` submits one complete settings object. While the App
+is idle, the CLI reports that values were saved for the next start; while it is
+running, it returns a pending application ID and run ID. A pending response is
+not an applied acknowledgement. The command uses the current selected/applied
+revision IDs as compare-and-set preconditions; reload with `show` and review
+before retrying a conflict. These values are retained configuration data, not
+secret storage.
+
+`app artifacts <run-id>` keeps the existing exact-run listing. Add `--app
+<app-id>` to list across runs and installations; optional `--org`, `--robot`,
+`--installation`, `--run`, and `--path-prefix` filters narrow the workspace
+result. JSON output includes every fetched page and keeps each artifact's run
+and robot IDs so duplicate relative paths remain distinct. Download a listed
+item with `app artifact <run-id> <artifact-id> --output <path>`; existing
+no-overwrite and size/hash verification remain in effect.
 
 The local example uses the Platform's development registry. See
 [App authoring](../../docs/apps-authoring.md) for the manifest, pinned template,
@@ -98,6 +126,6 @@ role checks as Studio. Follow the [Apps milestone plan](../../docs/milestones/ap
 and [AP-12 acceptance guide](../../docs/human-testing/AP-12.md) for current
 implementation and acceptance status.
 
-Mission push/deploy, script execution and mutable development-session commands
-remain in the CLI for legacy callers during migration. Their former walkthrough
-is preserved in the [mission-era CLI archive](../../docs/archive/legacy-mission-workflows/applications/cli-legacy-README.md).
+The mission, dev, script execution, legacy artifact and diagnostic fixture commands
+were retired in AP-14/AP-15. Use the `app` command group for App lifecycle,
+logs, files and interactions. Historical instructions remain in the archive.

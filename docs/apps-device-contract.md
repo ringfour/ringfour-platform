@@ -36,7 +36,7 @@ explicitly; do not collapse this into missing capability or offline state.
 
 Filter replay as well as fresh dispatch: hold all `app.*` commands until current
 session negotiation succeeds. Replayed operation content, ID, payload version
-and deadline remain unchanged across sessions. Existing legacy commands continue
+and deadline remain unchanged across sessions. Before AP-15, legacy commands continued
 on the original v1 path. The server and device implementation milestones must
 change their dispatch/replay consumers together before this gate is enabled.
 
@@ -218,3 +218,6 @@ has a selected target, known observation time and empty hard-blocker lists.
 CLI/Studio use the same status/code/observation fields; the typed summary readers
 share fixtures with the API contract tests. No first-party UI session or Gradio
 replacement is added.
+
+AP-15 retires non-App commands and legacy operation_status frames. App commands
+are acknowledged through ack and their durable outcomes use App observations.

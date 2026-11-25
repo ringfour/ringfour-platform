@@ -4,16 +4,17 @@ Governed by [specification](../../../app-pivot.md) and
 [implementation backlog](../../../apps-pivot-backlog.md). Work sequentially.
 The earlier 00–10 milestones describe legacy behavior and regression evidence.
 
-## Current execution agreement · 24 November 2026
+## Current execution agreement · 25 November 2026
 
-The user authorized completing AP-08, AP-09 and AP-10 before one combined human
-acceptance pass. On 24 November, after setting up the second Unix account, the
-user directed AP-08V to be the next implementation milestone. After the user
-restarted the virtual stack, they explicitly directed AP-11 to proceed before
-the combined AP-08/09/10/08V operator confidence pass. Keep that live pass
-pending and complete it before AP-13; it does not block AP-11 implementation.
-Record unperformed checks as pending. Stack reloads/rebuilds remain
-operator-controlled.
+AP-14/AP-15 reductions and their combined acceptance are complete. The user
+directed AP-17's existing settings/files scope and AP-19 API/Daemon performance
+measurements next; AP-17.F1 floating-point support and AP-19 UI/browser
+acceptance are deferred. AP-17 isolated settings/files integration passed.
+AP-19 backend wakeups and before/after benchmark are recorded below and in the
+evidence file. Live stacks have not loaded the new wakeup code. The workspace
+rule reserves all Platform and `ringfour-virtual` reload/rebuild operations for
+the operator. Continue to distinguish isolated benchmark results from live
+acceptance and leave browser/UI checks pending.
 
 ## AP-01 — contracts and authority (contract acceptance complete)
 
@@ -259,7 +260,7 @@ Implementation notes and the manual review checklist: [AP-11 guide](../human-tes
 - [x] Add run/output/artifact and scoped App Logbook/HITL inspection, plus
   observed robot capabilities and optional compatibility assessment.
 - [x] Add focused CLI tests for workspace-scoped install, App-to-installation
-  resolution, ambiguity refusal and exact-run stop; all 3 pass.
+  resolution, ambiguity refusal, exact-run stop and rollback; all 4 pass.
 - [x] Verify nested command help, Python compilation, Ruff and documented CLI
   command names.
 - [ ] Complete clean CLI-to-API/Daemon real-protocol acceptance.
@@ -267,3 +268,208 @@ Implementation notes and the manual review checklist: [AP-11 guide](../human-tes
 
 Operator steps: [AP-12 guide](../human-testing/AP-12.md).
 Automated evidence: [AP-12](../evidence/AP-12.md).
+The live two-user workflow remains pending: [AP-13 guide](../human-testing/AP-13.md).
+
+## AP-17 — App settings, Files and Studio (implementation complete; live artifact and browser follow-up open)
+
+AP17.01 contract baseline is drafted and validated. It adds strict App manifest
+v2 schemas while preserving v1, bounded environment mappings and reserved-name
+rules, revisioned settings/application resources, negotiated device command and
+observation shapes, local runtime routes, and workspace-scoped cross-run Files
+pagination. The API/runtime OpenAPI operations are marked contract-only until
+their implementations land. Design decisions and exact transitions are in
+[AP17 contract decisions](../apps-ap17-contract.md); the project-root
+[AP17 specification](../../../AP17.md) remains the acceptance source.
+
+- [x] AP17.01: reconcile Platform, SDK, runtime package, App examples, design
+  system, and virtual-stack ownership; freeze contracts, schemas, fixtures, and
+  route authentication/error shapes. Preserve AP12/AP13 as separate gates.
+- [x] AP17.02: production v2 manifest validation, literal startup environment
+  mapping, negotiated feature persistence, and an additive migration are
+  implemented. The Daemon advertises live settings when Apps are enabled; the
+  API remains gated by `APPS_LIVE_SETTINGS_ENABLED`. The operator has reloaded
+  the API and virtual Apps stack.
+- [x] AP17.03: additive settings persistence, immutable revisions, API reads and
+  writes, idempotency/CAS conflicts, and selected/application-requested
+  Logbook events are implemented. Idle save, active exact-run candidate,
+  schema rejection, stale selection, pending conflict, replay, and event
+  visibility tests pass, including applied/rejected outcomes from device
+  observations. Release update/rollback validate or explicitly reset settings;
+  selection changes only after observed installation success.
+- [x] AP17.04: the Daemon has a durable SQLite settings queue, run-scoped
+  pending/result routes, exact-run result observations, and negotiated dispatch.
+  Automated recovery coverage now checks a replacement runtime instance reading
+  the same durable SQLite command, idempotent result retry, and isolation from a
+  subsequent run. A separate test replays the unchanged observation report
+  after API recovery. These exercise retained SQLite/outbox state;
+  isolated API/Daemon process replacement and delayed-result integration passed
+  in [the AP-17 process evidence](../evidence/ap17-process.json). A live virt2
+  run also confirmed initial and updated settings.
+- [x] AP17.05: the dependency-free `ringfour_runtime.settings` client and
+  Robot Check v2 settings/summary-artifact source are implemented and covered
+  by prior package/example checks. CLI v2 authoring validation was pulled
+  forward as a prerequisite. Runtime `0.1.1.dev0` and Robot Check template
+  `0.2.0` now have immutable source pins; the local wheel bundle and template
+  archive are checksum verified. A clean amd64 example image built from the
+  pinned inputs. Isolated integrated artifact publication passed. The live
+  reference app exposed a relative-path mistake in its summary artifact call;
+  fix and republish that example before claiming live artifact acceptance.
+- [x] AP17.06: workspace-scoped cross-run App artifact listing now supports
+  installation, robot, run, and path-prefix filters with filter-bound cursors,
+  deterministic publication-time ordering, and a prospective receipt timestamp.
+  Existing run-scoped downloads remain the content path. Integration coverage
+  proves duplicate paths across runs, pagination, filter binding, and workspace
+  isolation.
+- [ ] AP17.07: App detail routes, installation selection, Home grouping, and
+  Studio navigation are implemented. The Apps library now has searchable App
+  rows with concise robot assignments, and Overview keeps its App identity,
+  selected-target prompt, execution state and actions together. Home has one
+  setup path for a workspace without robots and directs to Apps when an App is
+  already imported, otherwise to App Store. Typecheck passes; browser,
+  keyboard, narrow viewport, and stale-state acceptance remain.
+- [ ] AP17.08: Studio startup/live settings, cross-run Files, and App Activity
+  are wired to the hosted API. Pending/rejection display and verified downloads
+  are implemented. Settings now separates next-start selection from current
+  process confirmation, disables unresolved edits, and guards unsaved changes
+  during navigation. Files now has synthesized folder browsing, breadcrumbs,
+  and explicit incremental discovery labels. Activity uses readable event
+  titles, expandable technical IDs, and distinct error/empty states. Browser,
+  component and integrated API/device acceptance remain.
+- [x] AP17.09: CLI settings show/set, aggregate artifact filters, and manifest
+  v2/runtime/working-data documentation are implemented. Ruff and CLI help
+  checks pass; the full CLI suite passes 67 tests. Install now sends nullable
+  `share_id` explicitly, as required by the request schema.
+- [x] AP17.10: automated integrated settings/files acceptance passed using the
+  immutable runtime wheel and template pins, built image, live settings
+  application/rejection, process replacement, verified artifact download, and
+  cursor/filter isolation. Human browser checks and the reference example's
+  live summary-artifact path correction remain separate follow-ups in
+  [the AP-17 guide](../human-testing/AP-17.md).
+
+Studio implementation is in progress: `/apps/{appId}/{overview|settings|files|activity}`
+routes preserve workspace and optional installation selection. Overview groups
+release, selected robot connectivity, compatibility, execution and actions;
+Home groups active App assignments and deep-links each robot target, with a
+single onboarding path for empty workspaces. Settings reads and writes the
+existing revisioned API with pending-versus-confirmed state;
+Files uses the cross-run listing and verifies downloaded bytes; Activity reads
+the same App Logbook records. Console TypeScript checking and Biome on the
+changed TSX files pass; browser/component acceptance remains pending. CLI now
+has `app settings show/set` and cross-run `app artifacts --app` filters. Ruff
+passes for the CLI entrypoint; its component tests and integrated acceptance
+remain pending. AP17.07–AP17.10 stay unchecked until their full acceptance gates
+and human guide are complete. AP17.05 pinned build evidence is recorded in
+[`AP-17 evidence`](../evidence/AP-17.md).
+
+AP17.01 checks: 191 Node tests, 5 OpenAPI checks, 9 API fixture tests, and 25
+Daemon protocol tests passed. The full API suite passes 176 tests and the full
+Daemon suite passes 162 tests. Runtime helper tests pass 14, CLI authoring
+tests pass 21, and Robot Check tests pass 7. AP17 settings migrations were exercised on
+disposable test databases. Source
+reconciliation found the SDK is an independent Agent client, while the optional
+runtime is Platform-owned; the Robot Check repository now includes simple
+workflow examples; the virtual project owns Daemon deployment/topology only;
+and `/home/cdr/ringfour/design_system` is the interface token source. These sibling repositories had existing local
+changes and were inspected without editing them. The operator reloaded the
+Platform API and virtual Apps stacks; no data volumes were recreated.
+
+## AP-19 — Responsive, consistent App state (backend implementation complete; broader acceptance in progress)
+
+**Backend performance update · 25 November 2026:** added post-commit API and
+Daemon wake signals while retaining the durable operation journal and periodic
+recovery sweeps. In a 20-cycle isolated benchmark, command-dispatch p95 fell
+from 1802 to 45 ms for start and 1992 to 22 ms for stop. Device-observed p95
+fell from 3597 to 1558 ms for start and 2263 to 264 ms for stop. API projection
+reads remained in the 3–7 ms p95 range at 100 catalog Apps; live read-only API
+samples were 3–5 ms except `/v1/me` (~203 ms p95 due to Auth0 `/userinfo`).
+Start remains slightly above the 1.5 s target in the nested-vfs fixture, where
+container creation is the largest measured residual. Full results and limits
+are in [AP-19 evidence](../evidence/AP-19.md). API and Daemon test suites pass
+(150 and 110 tests); runtime and Robot Check pass (14 and 7).
+
+The running stacks have not loaded these wakeup changes yet. Workspace
+instructions reserve stack reload/rebuild operations for the operator. After
+the operator reloads the Platform API and `ringfour-virtual`, rerun live
+start/stop measurements. This does not complete the ten-robot UI, browser
+flicker, or cross-view human acceptance gates below.
+
+**Post-reload confirmation · 25 November 2026:** the operator reloaded both
+stacks. Live reads were sampled again, and a real virt2 start/stop verified
+34 ms start and 19 ms stop dispatch acknowledgements. Device-observed start
+was 565 ms and stop 979 ms in this single cycle. The operator had the Console
+open and confirmed the state updated live in place. The App process then
+reported exit code 1 while publishing its summary because the reference
+Robot Check template uses a relative artifact path; the operation itself
+reached stopped successfully. This does not invalidate the API/Daemon wakeup
+check, but it leaves that example's live artifact check open. The isolated
+20-cycle benchmark's observed-start p95 is 1.56 s, narrowly above the 1.5 s
+target; the ten-robot percentile and wider browser matrix remain unmeasured.
+
+- [x] Implement and load commit-triggered API and Daemon wakeups while keeping
+  durable operation state and periodic recovery. API/Daemon/runtime suites pass
+  150/110/14; CLI passes 67. Isolated before/after benchmark and post-reload
+  live lifecycle evidence are recorded in [AP-19 evidence](../evidence/AP-19.md).
+
+**Implementation update · 25 November 2026:** bounded current/recent run reads,
+in-place Console refresh, faster operation polling, AppRun timeline indexes,
+immutable metadata conflict wording and terminal-operation projection refresh
+have been implemented. App detail tabs now use client-side history navigation
+instead of reloading the whole Console. Console build and AP-19 API migration succeeded. Direct
+Docker Engine calls measured 4–44 ms; the prior ~11.5 s stop was a daemon lock
+deadlock exposed by Docker's 10 s graceful-stop wait. Releasing the executor
+and operation-handler mutexes before Docker waits reduced live stop to 0.833 s,
+with exit code 0 and the summary artifact uploaded. A separate Console defect
+left the App Overview stale after an operation reached terminal; a once-per-
+operation callback now refreshes Apps and Robot detail. See measured evidence
+in [AP-19 evidence](../evidence/AP-19.md).
+
+The evidence does not yet establish why the general UI sometimes takes 3–5 s.
+Warm API reads measured p95 2–5 ms except `/v1/me` at ~193 ms due to an Auth0
+`/userinfo` call. Browser action-to-visible-state used a stable mocked Auth0
+token and measured ~1.8 s, so real Auth0 token latency, rendering, database
+contention and loaded behavior still require a correlated browser trace. The
+live run discrepancy and visual refresh behavior need final real-browser
+acceptance after the terminal refresh fix.
+
+- [x] Capture single-run API/device timings, direct Docker request timings and
+  a concrete stop deadlock trace. Browser render, SQL/lock profiling and
+  loaded percentile baselines remain pending; see the evidence table.
+- [ ] Capture a correlated latency baseline across browser, API, PostgreSQL,
+  WebSocket command delivery, Daemon/engine, observation and render.
+- [ ] Reproduce the run discrepancy for
+  `66ac710b-cec1-460d-91be-8675436c9d98`; identify the authoritative state and
+  repair/test its owning projection or refresh path.
+- [x] Bound Home/Apps reads to current and recent data; remove per-record
+  request growth and support recent-first cursor history with workspace/robot
+  scoping and verified query plans.
+- [x] Update views in place, protect against overlapping/stale refreshes, and
+  refresh projections on terminal App operations.
+- [ ] Confirm Home, Robots, Apps, Overview, Activity and Logbook agree on exact
+  run IDs and observed-state freshness in a real-browser lifecycle acceptance.
+- [x] Define and test source fingerprint, OCI image digest and manifest digest
+  separately. Verify a display-name-only release reuses image bytes safely,
+  updates listed metadata, and keeps immutable manifest/release conflict rules.
+- [ ] Meet the AP-19 latency and request-scaling budgets in
+  [the human acceptance guide](../human-testing/AP-19.md); save measurement and
+  query-plan evidence in [AP-19 evidence](../evidence/AP-19.md).
+
+Stack reload/rebuild remains operator-controlled by the workspace rule. If
+implementation requires one, identify the affected stack and ask the operator
+to reload it; do not perform that operation.
+
+## AP-14/AP-15 reduction — 2026-11-25
+
+The user approved [the full reduction inventory](../../../reduction.md): remove
+non-App functionality, including active legacy commands/routes/workers. Legacy
+data/callers need no migration; preserve identity and App state. This supersedes
+earlier drain and legacy-reader gates in this plan. Human checks are combined
+after implementation; see [the combined sweep](../human-testing/AP-14-15.md)
+and [automated evidence](../evidence/AP-14-15.md).
+
+- [x] Retire hosted Mission UI/Gradio and legacy CLI/API/daemon execution paths.
+- [x] Remove Runner services, wheels, ports/config and default virtual topology.
+- [x] Add identity-preserving PostgreSQL/SQLite cleanup migrations.
+- [x] Update supported contracts, deployment scripts and current guides.
+- [x] Pass integrated App installation/runtime/start-stop verification.
+- [x] Operator reports Platform and virtual stacks restarted after reduction (2026-11-25).
+- [ ] Record the combined cdr/ring1 human confidence sweep.

@@ -1,15 +1,15 @@
 import { useAuth0 } from "@auth0/auth0-react";
 import { useEffect, useRef, useState } from "react";
 import { AppLogbookPage } from "@/components/AppLogbookPage";
-import { AppTimelinePage } from "@/components/AppTimelinePage";
 import { AppsPage, StoreRoute } from "@/components/AppsPage";
-import { HomePage } from "@/components/HomePage";
-import { RobotsWorkspacePage } from "@/components/RobotsWorkspacePage";
+import { AppTimelinePage } from "@/components/AppTimelinePage";
 import { HealthPage } from "@/components/HealthPage";
+import { HomePage } from "@/components/HomePage";
 import { IdentityPage } from "@/components/IdentityPage";
 import { InvitationAcceptancePage } from "@/components/InvitationAcceptancePage";
 import { LoginPage } from "@/components/LoginPage";
 import { ProfilePage } from "@/components/ProfilePage";
+import { RobotsWorkspacePage } from "@/components/RobotsWorkspacePage";
 import { AUTH_SESSION_EXPIRED_EVENT, apiFetchAll } from "@/lib/api";
 
 import { resourcePath, useLocation, visit } from "@/lib/location";
@@ -19,9 +19,8 @@ const routes = {
   robots: "robots",
   logbook: "runs",
   timeline: "timeline",
-  missions: "apps",
+  apps: "apps",
   store: "app-store",
-  deployments: "deployments",
   identity: "settings/workspace",
   health: "settings/health",
   profile: "settings/profile",
@@ -29,9 +28,8 @@ const routes = {
 type View =
   | "overview"
   | "robots"
-  | "missions"
+  | "apps"
   | "store"
-  | "deployments"
   | "identity"
   | "health"
   | "profile"
@@ -41,8 +39,8 @@ type View =
 const NAV: { id: View; label: string; icon: string }[] = [
   { id: "overview", label: "Home", icon: "overview" },
   { id: "robots", label: "Robots", icon: "fleet" },
-  { id: "missions", label: "Apps", icon: "missions" },
-  { id: "store", label: "App Store", icon: "missions" },
+  { id: "apps", label: "Apps", icon: "apps" },
+  { id: "store", label: "App Store", icon: "apps" },
   { id: "logbook", label: "Logbook", icon: "logbook" },
   { id: "identity", label: "Organizations", icon: "workspace" },
   { id: "health", label: "System health", icon: "health" },
@@ -64,16 +62,10 @@ function Icon({ name }: { name: string }) {
         <path d="M8 18v2m8-2v2M12 4v3M9 12h.01M15 12h.01M9 15h6" />
       </>
     ),
-    missions: (
+    apps: (
       <>
         <path d="M5 3h10l4 4v14H5z" />
         <path d="M15 3v5h4M8 12h8M8 16h8" />
-      </>
-    ),
-    deployments: (
-      <>
-        <rect x="3" y="5" width="18" height="14" rx="1" />
-        <path d="M8 12h8m-3-3 3 3-3 3" />
       </>
     ),
     logbook: (
@@ -391,6 +383,7 @@ function DevConsole() {
           <div
             id="console-timeline-toolbar"
             className="console-secondary-toolbar"
+            role="toolbar"
             aria-label="Timeline controls"
           />
         )}
@@ -418,12 +411,13 @@ function DevConsole() {
           />
         )}
         {activeOrganizationId &&
-          (view === "missions" || view === "deployments") && (
+          view === "apps" && (
             <AppsPage
               key={activeOrganizationId}
               organizationId={activeOrganizationId}
               workspaceRole={activeRole}
-              focusAppId={id || undefined}
+              focusAppId={id.split("/")[0] || undefined}
+              focusSection={id.split("/")[1] || "overview"}
             />
           )}
         {activeOrganizationId && view === "store" && (

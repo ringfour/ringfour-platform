@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/apps/v2/settings.schema.json",
+  "title": "App live settings and runtime delivery v2",
+  "$defs": {
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "installation_id",
+        "revision_id",
+        "values",
+        "created_by",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "values": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "created_by": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "created_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "application_id",
+        "run_id",
+        "settings_revision_id",
+        "values",
+        "state",
+        "initial",
+        "requested_at",
+        "reason",
+        "delivery_state"
+      ],
+      "properties": {
+        "application_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "settings_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "values": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "applied",
+            "rejected",
+            "ended_before_confirmation"
+          ]
+        },
+        "initial": {
+          "type": "boolean"
+        },
+        "requested_at": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/timestamp"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 240,
+          "pattern": "^[^\\r\\n\\u0000]*$"
+        },
+        "delivery_state": {
+          "enum": [
+            "queued",
+            "delivered",
+            "locally_received",
+            "reported"
+          ]
+        }
+      }
+    },
+    "settings_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installation_id",
+        "support",
+        "runtime_settings",
+        "selected_for_next_start",
+        "active_run_id",
+        "last_applied",
+        "pending_application"
+      ],
+      "properties": {
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "support": {
+          "enum": [
+            "supported",
+            "unsupported",
+            "upgrade_required"
+          ]
+        },
+        "runtime_settings": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "selected_for_next_start": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_run_id": {
+          "oneOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_applied": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending_application": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/application"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "settings_write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "values",
+        "expected_selected_revision_id",
+        "expected_applied_revision_id",
+        "expected_run_id"
+      ],
+      "properties": {
+        "values": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "expected_selected_revision_id": {
+          "oneOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_applied_revision_id": {
+          "oneOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_run_id": {
+          "oneOf": [
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "saved_for_next_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "settings_revision_id",
+        "selected_revision_id"
+      ],
+      "properties": {
+        "state": {
+          "const": "saved_for_next_start"
+        },
+        "settings_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "selected_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        }
+      }
+    },
+    "pending_application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "application_id",
+        "settings_revision_id",
+        "run_id"
+      ],
+      "properties": {
+        "state": {
+          "const": "pending"
+        },
+        "application_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "settings_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        }
+      }
+    },
+    "runtime_pending": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "application"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "application": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/application"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "runtime_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "applied",
+            "rejected"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "pattern": "^[^\\r\\n\\u0000]*$"
+        }
+      }
+    },
+    "runtime_result_accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "application_id",
+        "state"
+      ],
+      "properties": {
+        "application_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "enum": [
+            "applied",
+            "rejected"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -244,7 +244,6 @@ public static class DeviceSocketEndpoints
                                 "This connection was replaced by a newer session for the same robot.",
                                 CloseProtocolViolation);
                         }
-                        await ReplayNonterminalOperationsAsync(db, manager, session, options, cancellationToken);
                         break;
 
                     case "heartbeat":
@@ -253,11 +252,6 @@ public static class DeviceSocketEndpoints
 
                     case "ack":
                         await HandleAckAsync(db, manager, session, options, payload, logger, cancellationToken);
-                        break;
-
-                    case "operation_status":
-                        await HandleOperationStatusAsync(
-                            db, manager, session, options, payload, logger, metrics, cancellationToken);
                         break;
 
                     default:
@@ -331,303 +325,15 @@ public static class DeviceSocketEndpoints
             """, cancellationToken: cancellationToken);
     }
 
-    private static async Task ReplayNonterminalOperationsAsync(
-        RingfourDbContext db,
-        DeviceConnectionManager manager,
-        DeviceConnection session,
-        JsonSerializerOptions options,
-        CancellationToken cancellationToken)
+    private static async Task HandleAckAsync(RingfourDbContext db, DeviceConnectionManager manager,
+        DeviceConnection session, JsonSerializerOptions options, JsonObject payload,
+        ILogger logger, CancellationToken cancellationToken)
     {
-        var operations = await db.Operations
-            .Where(operation =>
-                operation.RobotId == session.RobotId &&
-                (operation.State == OperationState.Queued ||
-                 operation.State == OperationState.Accepted ||
-                 operation.State == OperationState.Running))
-            .OrderBy(operation => operation.CreatedAt)
-            .ThenBy(operation => operation.Id)
-            .ToListAsync(cancellationToken);
-        foreach (var operation in operations)
-        {
-            await manager.SendAsync(session, options, "command", CommandPayload(operation));
-        }
+        if (Guid.TryParse(payload["operation_id"]?.GetValue<string>(), out var id) &&
+            await Ringfour.Api.Apps.AppInstallationDevice.Ack(db, manager, session, id, cancellationToken)) return;
+        await manager.SendAsync(session, options, "error", new JsonObject {
+            ["code"] = "unknown_operation", ["message"] = "No such App operation for this robot." });
     }
-
-    public static JsonObject CommandPayload(Operation operation) => new()
-    {
-        ["operation_id"] = operation.Id.ToString(),
-        ["kind"] = operation.Kind,
-        ["payload_version"] = operation.PayloadVersion,
-        ["payload"] = JsonNode.Parse(operation.Payload),
-        ["deadline_at"] = RingfourJson.UtcTimestamp(operation.DeadlineAt),
-    };
-
-    private static async Task HandleAckAsync(
-        RingfourDbContext db,
-        DeviceConnectionManager manager,
-        DeviceConnection session,
-        JsonSerializerOptions options,
-        JsonObject payload,
-        ILogger logger,
-        CancellationToken cancellationToken)
-    {
-        if (Guid.TryParse(payload["operation_id"]?.GetValue<string>(), out var appOperationId) &&
-            await Ringfour.Api.Apps.AppInstallationDevice.Ack(db, manager, session, appOperationId, cancellationToken)) return;
-        var operation = await FindOperationAsync(db, session, payload, cancellationToken);
-        if (operation is null)
-        {
-            await SendOperationErrorAsync(
-                manager, session, options, "unknown_operation", "No such operation for this robot.");
-            return;
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        if (operation.Kind is "script.execution.start" or "mission.prepare")
-        {
-            await db.Operations.Where(candidate => candidate.Id == operation.Id && candidate.State == OperationState.Queued)
-                .ExecuteUpdateAsync(update => update.SetProperty(candidate => candidate.State, OperationState.Accepted)
-                    .SetProperty(candidate => candidate.AcknowledgedAt, now)
-                    .SetProperty(candidate => candidate.UpdatedAt, now), cancellationToken);
-            await db.Entry(operation).ReloadAsync(cancellationToken);
-            if (OperationStates.IsTerminal(operation.State))
-                await SendOperationErrorAsync(manager, session, options, "state_conflict", $"The operation is already in the terminal state {operation.State}.");
-            return;
-        }
-        if (operation.State == OperationState.Queued)
-        {
-            operation.State = OperationState.Accepted;
-            operation.AcknowledgedAt ??= now;
-            operation.UpdatedAt = now;
-            await db.SaveChangesAsync(cancellationToken);
-            logger.LogInformation("Operation {OperationId} accepted for robot {RobotId} in session {SessionId}",
-                operation.Id, session.RobotId, session.SessionId);
-        }
-        else if (OperationStates.IsTerminal(operation.State))
-        {
-            await SendOperationErrorAsync(
-                manager, session, options, "state_conflict",
-                $"The operation is already in the terminal state {operation.State}.");
-        }
-    }
-
-    private static async Task HandleOperationStatusAsync(
-        RingfourDbContext db,
-        DeviceConnectionManager manager,
-        DeviceConnection session,
-        JsonSerializerOptions options,
-        JsonObject payload,
-        ILogger logger,
-        ConnectivityMetrics metrics,
-        CancellationToken cancellationToken)
-    {
-        var stateText = payload["state"]?.GetValue<string>();
-        if (stateText is null ||
-            !Enum.TryParse<OperationState>(stateText, ignoreCase: true, out var state) ||
-            state == OperationState.Queued)
-        {
-            await manager.CloseWithErrorAsync(
-                session, options, "malformed_message",
-                "state must be one of accepted, running, succeeded, failed, cancelled.",
-                CloseProtocolViolation);
-            return;
-        }
-
-        var operation = await FindOperationAsync(db, session, payload, cancellationToken);
-        if (operation is null)
-        {
-            await SendOperationErrorAsync(
-                manager, session, options, "unknown_operation", "No such operation for this robot.");
-            return;
-        }
-
-        if (operation.Kind == "mission.prepare")
-        {
-            await HandleMissionPrepareStatusAsync(db, manager, session, options, payload, operation, state, metrics, cancellationToken);
-            return;
-        }
-        if (operation.Kind == "script.execution.start")
-        {
-            await HandleScriptStartStatusAsync(db, manager, session, options, payload, operation, state, metrics, cancellationToken);
-            return;
-        }
-        var now = DateTimeOffset.UtcNow;
-        if (OperationStates.IsTerminal(operation.State))
-        {
-            if (operation.State == state)
-            {
-                return; // Idempotent repeat of the same terminal report.
-            }
-            await SendOperationErrorAsync(
-                manager, session, options, "state_conflict",
-                $"The operation is already in the terminal state {operation.State}.");
-            return;
-        }
-
-        operation.State = state;
-        operation.UpdatedAt = now;
-        if (OperationStates.IsTerminal(state))
-        {
-            operation.Result = payload["result"]?.ToJsonString(options) ?? "{}";
-        }
-        await db.SaveChangesAsync(cancellationToken);
-        if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
-        logger.LogInformation("Operation {OperationId} reported {OperationState} for robot {RobotId} in session {SessionId}",
-            operation.Id, state, session.RobotId, session.SessionId);
-    }
-
-    private static async Task HandleScriptStartStatusAsync(RingfourDbContext db, DeviceConnectionManager manager,
-        DeviceConnection session, JsonSerializerOptions options, JsonObject payload, Operation operation,
-        OperationState state, ConnectivityMetrics metrics, CancellationToken ct)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM operations WHERE id = {operation.Id} FOR UPDATE", ct);
-        await db.Entry(operation).ReloadAsync(ct);
-        if (OperationStates.IsTerminal(operation.State))
-        {
-            if (operation.State != state)
-                await SendOperationErrorAsync(manager, session, options, "state_conflict", $"The operation is already in the terminal state {operation.State}.");
-            await transaction.CommitAsync(ct);
-            return;
-        }
-        var now = DateTimeOffset.UtcNow;
-        operation.State = state;
-        operation.UpdatedAt = now;
-        if (OperationStates.IsTerminal(state))
-        {
-            operation.Result = payload["result"]?.ToJsonString(options) ?? "{}";
-            if (state == OperationState.Failed)
-            {
-                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM script_executions WHERE id = {operation.Id} FOR UPDATE", ct);
-                var execution = await db.ScriptExecutions.SingleOrDefaultAsync(candidate => candidate.Id == operation.Id, ct);
-                if (execution is not null && execution.State == "queued")
-                {
-                    execution.State = "failed";
-                    execution.UpdatedAt = now;
-                    var code = "execution_start_failed";
-                    if (payload["result"] is JsonObject result && result["error"] is JsonObject error &&
-                        error["code"] is JsonValue errorCode && errorCode.TryGetValue<string>(out var candidate) &&
-                        candidate is "execution_conflict" or "invalid_input" or "runner_unauthenticated" or "capacity_exceeded" or "insufficient_storage" or "not_found" or "runner_error")
-                        code = candidate;
-                    execution.Error = JsonSerializer.Serialize(new
-                    {
-                        code,
-                        message = code == "insufficient_storage"
-                            ? "The Runner is low on free storage. Free space before starting another mission."
-                            : "The device could not start the execution."
-                    }, options);
-                    var lifecycleEventId = Guid.NewGuid();
-                    db.ScriptExecutionEvents.Add(new ScriptExecutionEvent
-                    {
-                        Id = lifecycleEventId,
-                        ExecutionId = execution.Id,
-                        ActorUserId = execution.ActorUserId,
-                        State = "failed",
-                        OccurredAt = now
-                    });
-                    MissionLifecycleLogbook.Record(db, execution, lifecycleEventId, "failed", now);
-                }
-            }
-        }
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
-    }
-
-    private static async Task HandleMissionPrepareStatusAsync(RingfourDbContext db, DeviceConnectionManager manager,
-        DeviceConnection session, JsonSerializerOptions options, JsonObject payload, Operation operation,
-        OperationState state, ConnectivityMetrics metrics, CancellationToken ct)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM operations WHERE id = {operation.Id} FOR UPDATE", ct);
-        await db.Entry(operation).ReloadAsync(ct);
-        if (OperationStates.IsTerminal(operation.State))
-        {
-            if (operation.State != state)
-                await SendOperationErrorAsync(manager, session, options, "state_conflict", $"The operation is already in the terminal state {operation.State}.");
-            await transaction.CommitAsync(ct);
-            return;
-        }
-        var now = DateTimeOffset.UtcNow;
-        if (OperationStates.IsTerminal(state))
-        {
-            var deploymentId = await db.MissionDeployments.Where(item => item.CandidateOperationId == operation.Id)
-                .Select(item => (Guid?)item.Id).SingleOrDefaultAsync(ct);
-            if (deploymentId is not null)
-            {
-                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM mission_deployments WHERE id = {deploymentId.Value} FOR UPDATE", ct);
-                var deployment = await db.MissionDeployments.SingleAsync(item => item.Id == deploymentId, ct);
-                await db.Entry(deployment).ReloadAsync(ct);
-                if (deployment.CandidateOperationId == operation.Id && deployment.CandidateRevisionId is Guid candidateId)
-                {
-                    var digest = await db.MissionRevisions.Where(item => item.Id == candidateId)
-                        .Select(item => item.ScriptRevision.RevisionDigest).SingleAsync(ct);
-                    var prepared = payload["result"] as JsonObject;
-                    if (state == OperationState.Succeeded && (prepared?["state"]?.ToString() != "ready" || prepared["revision_digest"]?.ToString() != digest))
-                        state = OperationState.Failed;
-                    if (state == OperationState.Succeeded)
-                    {
-                        deployment.SelectedRevisionId = candidateId;
-                        deployment.ObservedState = "ready";
-                        deployment.LastError = null;
-                    }
-                    else
-                    {
-                        deployment.ObservedState = deployment.SelectedRevisionId is null ? "failed" : "ready";
-                        var (code, message) = StorageFailure(payload) ?
-                            ("insufficient_storage", "The Runner is low on free storage. Free space before preparing another mission.") :
-                            ("preparation_failed", "The candidate revision could not be prepared.");
-                        deployment.LastError = JsonSerializer.Serialize(new { code, message }, options);
-                    }
-                    deployment.CandidateRevisionId = null;
-                    deployment.CandidateOperationId = null;
-                    deployment.UpdatedAt = now;
-                }
-            }
-            if (state == OperationState.Succeeded)
-                operation.Result = payload["result"]?.ToJsonString(options) ?? "{}";
-            else if (StorageFailure(payload))
-                operation.Result = """{"error":{"code":"insufficient_storage","message":"The Runner is low on free storage. Free space before preparing another mission."}}""";
-            else
-                operation.Result = """{"error":{"code":"preparation_failed","message":"The candidate revision could not be prepared."}}""";
-        }
-        operation.State = state;
-        operation.UpdatedAt = now;
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        if (OperationStates.IsTerminal(state)) metrics.Terminal(state.ToString().ToLowerInvariant());
-    }
-
-    private static bool StorageFailure(JsonObject payload) =>
-        payload["result"] is JsonObject result && result["error"] is JsonObject error &&
-        error["code"]?.GetValue<string>() == "insufficient_storage";
-
-    private static async Task<Operation?> FindOperationAsync(
-        RingfourDbContext db,
-        DeviceConnection session,
-        JsonObject payload,
-        CancellationToken cancellationToken)
-    {
-        var operationIdText = payload["operation_id"]?.GetValue<string>();
-        if (operationIdText is null || !Guid.TryParse(operationIdText, out var operationId))
-        {
-            return null;
-        }
-        return await db.Operations.SingleOrDefaultAsync(
-            candidate => candidate.Id == operationId && candidate.RobotId == session.RobotId,
-            cancellationToken);
-    }
-
-    private static async Task SendOperationErrorAsync(
-        DeviceConnectionManager manager,
-        DeviceConnection session,
-        JsonSerializerOptions options,
-        string code,
-        string message) =>
-        await manager.SendAsync(session, options, "error", new JsonObject
-        {
-            ["code"] = code,
-            ["message"] = message,
-        });
 
     private static async Task<string?> ReceiveMessageAsync(
         WebSocket socket, byte[] buffer, CancellationToken cancellationToken)
@@ -673,11 +379,6 @@ public static class DeviceSocketEndpoints
                     versions.All(value => value is not null && value.GetValue<int>() >= 1),
                 "heartbeat" => payload.Count == 0,
                 "ack" => payload.Count == 1 && ValidId(payload["operation_id"]),
-                "operation_status" => payload.Count is 2 or 3 &&
-                    payload.All(pair => pair.Key is "operation_id" or "state" or "result") &&
-                    ValidId(payload["operation_id"]) &&
-                    payload["state"]?.GetValue<string>() is "accepted" or "running" or "succeeded" or "failed" or "cancelled" &&
-                    (!payload.ContainsKey("result") || payload["result"] is JsonObject),
                 _ => false,
             };
         }

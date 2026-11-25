@@ -2,9 +2,9 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 
-const schema = JSON.parse(await readFile(new URL("../../schemas/apps/v1/manifest.schema.json", import.meta.url)));
 const ajv = new Ajv2020({ strict: true, allErrors: true, strictRequired: true });
-const structural = ajv.compile(schema);
+const schemas = new Map(await Promise.all([1, 2].map(async version => [version,
+  ajv.compile(JSON.parse(await readFile(new URL(`../../schemas/apps/v${version}/manifest.schema.json`, import.meta.url))))])));
 const fail = message => { throw new Error(message); };
 function checkUnicode(value) {
   if (typeof value === "string" && !value.isWellFormed()) fail("invalid_unicode");
@@ -21,6 +21,8 @@ function checkUnicode(value) {
 export function validateManifest(manifest) {
   checkUnicode(manifest);
   if (Buffer.byteLength(JSON.stringify(manifest), "utf8") > 65536) fail("manifest_too_large");
+  const structural = schemas.get(manifest.schema_version);
+  if (!structural) fail("invalid_manifest: unsupported_manifest_version");
   if (!structural(manifest)) fail(`invalid_manifest: ${ajv.errorsText(structural.errors)}`);
   const targets = new Set();
   for (const target of manifest.targets) {
@@ -44,6 +46,26 @@ export function validateManifest(manifest) {
     }
   }
   validateConfiguration(manifest, manifest.configuration.defaults);
+  if (manifest.schema_version === 2) {
+    const environment = manifest.configuration.environment ?? {};
+    if (Object.keys(environment).length > 32) fail("invalid_environment_mapping");
+    const declared = new Set(Object.keys(config.properties));
+    for (const [name, key] of Object.entries(environment)) {
+      if (!/^[A-Z_][A-Z0-9_]*$/.test(name) ||
+          name.startsWith("RINGFOUR_") || name.startsWith("LD_") || name.startsWith("DYLD_") ||
+          name.startsWith("PYTHON") || ["PATH", "IFS", "ENV", "BASH_ENV", "BASHOPTS", "SHELLOPTS",
+            "NODE_OPTIONS", "NODE_PATH", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "RUBYOPT", "RUBYLIB",
+            "PERL5OPT", "PERL5LIB"].includes(name) || !declared.has(key)) {
+        fail("invalid_environment_mapping");
+      }
+    }
+    if (manifest.runtime_settings) {
+      const settings = manifest.runtime_settings;
+      if (!settings.schema || !settings.defaults) fail("invalid_runtime_settings");
+      const settingsManifest = { configuration: settings };
+      validateConfiguration(settingsManifest, settings.defaults);
+    }
+  }
   return manifest;
 }
 
@@ -51,7 +73,9 @@ export function validateConfiguration(manifest, values) {
   checkUnicode(values);
   if (Buffer.byteLength(JSON.stringify(values), "utf8") > 16384) fail("config_too_large");
   // Add universal limits, including when the author omitted an optional bound.
-  const schema = structuredClone(manifest.configuration.schema);
+  const schema = structuredClone(manifest.schema?.type === "object"
+    ? manifest.schema
+    : manifest.configuration.schema);
   for (const rule of Object.values(schema.properties)) {
     if (rule.type === "string") rule.maxLength ??= 4096;
     if (rule.type === "integer") {
@@ -61,6 +85,17 @@ export function validateConfiguration(manifest, values) {
   }
   const validate = ajv.compile(schema);
   if (!validate(values)) fail(`invalid_config: ${ajv.errorsText(validate.errors)}`);
+  const environment = manifest.configuration?.environment ?? {};
+  let environmentBytes = 0;
+  for (const [name, key] of Object.entries(environment)) {
+    if (!(key in values)) continue;
+    const value = values[key];
+    if (typeof value === "string" && value.includes("\0")) fail("invalid_environment_value");
+    if (!["string", "boolean", "number"].includes(typeof value)) fail("invalid_environment_value");
+    const rendered = String(value);
+    environmentBytes += Buffer.byteLength(name, "utf8") + Buffer.byteLength(rendered, "utf8") + 1;
+  }
+  if (environmentBytes > 16384) fail("environment_too_large");
   return values;
 }
 

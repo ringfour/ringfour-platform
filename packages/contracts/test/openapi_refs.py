@@ -125,16 +125,16 @@ class OpenApiContracts(unittest.TestCase):
                             self.assertEqual(ref, "../schemas/errors/v2/app-error.schema.json")
         self.assertGreaterEqual(count, 30)
 
-    def test_operation_ids_unique_and_legacy_namespaces_retained(self):
+    def test_operation_ids_unique_and_legacy_namespaces_retired(self):
         for path in ROOT.glob("openapi/*.yaml"):
             document = load(path)
             ids = [node["operationId"] for node in walk(document) if "operationId" in node]
             self.assertEqual(len(ids), len(set(ids)), path)
         api = load(ROOT / "openapi/ringfour-api.v1.yaml")
         runtime = load(ROOT / "openapi/ringfour-runtime.v1.yaml")
-        self.assertIn("/v1/executions/{execution_id}/output", api["paths"])
+        self.assertNotIn("/v1/executions/{execution_id}/output", api["paths"])
         self.assertIn("/v1/runtime/interactions", runtime["paths"])
-        self.assertIn("/v1/app-runtime/interactions", runtime["paths"])
+        self.assertNotIn("/v1/app-runtime/interactions", runtime["paths"])
 
 
 if __name__ == "__main__":

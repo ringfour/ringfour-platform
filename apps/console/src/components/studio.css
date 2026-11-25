@@ -182,11 +182,6 @@
   cursor: pointer;
   font-weight: 600;
 }
-.resource-list-page .resource-content:has(.mission-detail) {
-  max-width: none;
-  margin: auto;
-  padding: clamp(1rem, 3vw, 3rem);
-}
 .studio-robot-link {
   color: #9dc4db;
 }
@@ -324,19 +319,6 @@
   .studio-list-row > :last-child {
     text-align: right;
   }
-}
-
-.run-ui-panel-row td {
-  background: #171a1b;
-  padding: 16px 20px !important;
-}
-.run-ui-panel-row section {
-  border-left: 3px solid #e47a00;
-  padding: 4px 16px;
-}
-.run-ui-panel-row p {
-  color: var(--color-muted-foreground);
-  margin: 8px 0;
 }
 .logbook2-open .text-action {
   margin-right: 12px;
@@ -582,43 +564,6 @@
   .logbook2-table tbody {
     display: block;
   }
-  .logbook2-table tbody tr:not(.run-ui-panel-row) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px 15px;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .logbook2-table tbody tr:not(.run-ui-panel-row) td {
-    display: block;
-    min-width: 0;
-    width: auto;
-    height: auto;
-    padding: 0;
-    border: 0;
-    overflow-wrap: anywhere;
-  }
-  .logbook2-table tbody tr:not(.run-ui-panel-row) td:first-child {
-    grid-column: 1 / -1;
-  }
-  .logbook2-table tbody tr:not(.run-ui-panel-row) td:nth-child(2) {
-    grid-column: 1;
-  }
-  .logbook2-table tbody tr:not(.run-ui-panel-row) td:last-child {
-    grid-column: 2;
-    align-self: end;
-    display: flex;
-    align-items: center;
-  }
-  .logbook2-table tbody tr:not(.run-ui-panel-row) td:nth-child(2) time {
-    white-space: normal;
-  }
-  .logbook2-table tbody .run-ui-panel-row {
-    display: block;
-  }
-  .logbook2-table tbody .run-ui-panel-row td {
-    display: block;
-  }
   .logbook2-table td:first-child small {
     font: 0.8rem / 1.4 var(--font-sans);
   }
@@ -628,10 +573,6 @@
     width: 100%;
     min-width: 0;
     table-layout: fixed;
-  }
-  .logbook2-table-scroll .logbook2-table tbody tr:not(.run-ui-panel-row) {
-    width: 100%;
-    box-sizing: border-box;
   }
 }
 @media (max-width: 700px) {

@@ -46,9 +46,9 @@ def test_pinned_base101_welcome_and_engine_platform():
     assert observation.capabilities == ["mobility", "cameras", "lidar", "imu", "slam", "teleop", "watches", "places", "audit", "status"]
     assert observation.instances == {"cameras": ["base"]}
     assert observation.source.profile.name == "base101"
-    assert engine_platform(Settings(db_path="unused", runner_url="unused", engine_os="linux", engine_architecture="aarch64")).architecture == "arm64"
+    assert engine_platform(Settings(db_path="unused", apps_enabled=False,  engine_os="linux", engine_architecture="aarch64")).architecture == "arm64"
     with pytest.raises(InventoryUnavailable):
-        engine_platform(Settings(db_path="unused", runner_url="unused"))
+        engine_platform(Settings(db_path="unused", apps_enabled=False, ))
 
 
 @pytest.mark.parametrize("change,reason", [
@@ -135,7 +135,7 @@ def test_durable_report_retries_same_payload_before_new_observation(tmp_path):
         if len(requests) == 1:
             return httpx.Response(503)
         return httpx.Response(200, json={"report_id": first["report_id"], "report_sequence": 1, "received_at": "2026-11-23T10:01:00Z"})
-    settings = Settings(db_path=db, runner_url="unused", agent_uri="unix:///must-not-be-read")
+    settings = Settings(db_path=db,  agent_uri="unix:///must-not-be-read")
     async def run():
         async with httpx.AsyncClient(base_url="http://platform", transport=httpx.MockTransport(handler)) as client:
             with pytest.raises(httpx.HTTPStatusError):
@@ -147,7 +147,7 @@ def test_durable_report_retries_same_payload_before_new_observation(tmp_path):
 
 
 def test_fresh_gate_does_not_use_cached_inventory(tmp_path):
-    settings = Settings(db_path="unused", runner_url="unused", agent_uri="unix://" + str(tmp_path / "missing.sock"),
+    settings = Settings(db_path="unused", apps_enabled=False,  agent_uri="unix://" + str(tmp_path / "missing.sock"),
                         engine_os="linux", engine_architecture="x86_64")
     manifest = json.loads((ROOT / "apps/v1/manifest.json").read_text())
     assert asyncio.run(check_fresh(settings, manifest))["status"] == "inventory_unavailable"

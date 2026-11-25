@@ -68,12 +68,6 @@ public static class InteractionEndpoints
     private static async Task<(Guid OperationId, Guid ActorUserId)> ExecutionAttribution(
         RingfourDbContext db, Guid executionId, CancellationToken ct)
     {
-        var script = await db.ScriptExecutions.AsNoTracking().Where(item => item.Id == executionId)
-            .Select(item => new { OperationId = item.Operation.Id, item.ActorUserId }).SingleOrDefaultAsync(ct);
-        if (script is not null) return (script.OperationId, script.ActorUserId);
-        var development = await db.DevSessionRuns.AsNoTracking().Where(item => item.Id == executionId)
-            .Select(item => new { item.OperationId, item.ActorUserId }).SingleOrDefaultAsync(ct);
-        if (development is not null) return (development.OperationId, development.ActorUserId);
         var app = await db.AppRuns.AsNoTracking().SingleOrDefaultAsync(x => x.Id == executionId, ct);
         if (app is not null) return (app.StartOperationId, app.RequestedByUserId);
         throw ApiException.Conflict("interaction_conflict", "The execution attribution is unavailable.");
@@ -137,7 +131,7 @@ public static class InteractionEndpoints
         DeviceSync body;
         try
         {
-            var bytes = await ScriptRevisionEndpoints.ReadLimited(context.Request.Body, 16384, ct);
+            var bytes = await RequestBody.ReadLimited(context.Request.Body, 16384, ct);
             var document = JsonNode.Parse(bytes) as JsonObject;
             var fields = new[] { "request_id", "execution_id", "prompt", "choices", "deadline", "timeout_outcome",
                 "state", "outcome", "applied_response_id", "created_at", "updated_at" };
@@ -171,9 +165,7 @@ public static class InteractionEndpoints
         await db.Entry(credential).ReloadAsync(ct);
         if (credential.RevokedAt is not null || credential.ExpiresAt <= DateTimeOffset.UtcNow)
             throw ApiException.InvalidToken("The robot credential is invalid, expired, or revoked.");
-        if (!await db.ScriptExecutions.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct) &&
-            !await db.DevSessionRuns.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct) &&
-            !await db.AppRuns.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct))
+        if (!await db.AppRuns.AnyAsync(item => item.Id == body.ExecutionId && item.RobotId == robot.Id, ct))
             throw ApiException.Conflict("interaction_conflict", "The execution does not belong to this robot.");
 
         var item = await db.HumanInteractions.Include(candidate => candidate.Response)
@@ -269,7 +261,7 @@ public static class InteractionEndpoints
         if (string.IsNullOrWhiteSpace(key) || key.Length > 200)
             throw ApiException.InvalidInput("Idempotency-Key is required and must not exceed 200 characters.");
         JsonObject? body;
-        try { body = JsonNode.Parse(await ScriptRevisionEndpoints.ReadLimited(context.Request.Body, 4096, ct)) as JsonObject; }
+        try { body = JsonNode.Parse(await RequestBody.ReadLimited(context.Request.Body, 4096, ct)) as JsonObject; }
         catch (JsonException) { throw ApiException.InvalidInput("Invalid interaction response."); }
         if (body is null || body.Count != 1 || body["chosen_value"] is not JsonValue choiceNode ||
             !choiceNode.TryGetValue<string>(out var chosen) || !ValuePattern.IsMatch(chosen))

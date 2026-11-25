@@ -101,6 +101,9 @@
       "share_id": null,
       "configuration": {
         "sample_count": 5
+      },
+      "runtime_settings": {
+        "period_seconds": 5
       }
     }
   },
@@ -111,7 +114,8 @@
       "expected_revision_id": "00000000-0000-4000-8000-000000000022",
       "expected_configuration_revision_id": "00000000-0000-4000-8000-000000000023",
       "revision_id": "00000000-0000-4000-8000-000000000006",
-      "configuration_revision_id": "00000000-0000-4000-8000-000000000010"
+      "configuration_revision_id": "00000000-0000-4000-8000-000000000010",
+      "runtime_settings": null
     }
   },
   {

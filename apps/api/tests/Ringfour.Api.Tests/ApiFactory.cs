@@ -2,6 +2,9 @@ using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Ringfour.Api.Apps;
 
 namespace Ringfour.Api.Tests;
 
@@ -11,7 +14,8 @@ public sealed class ApiFactory(
     bool productionEnvironment = false,
     bool includeTestAuth = true,
     string? storageRoot = null,
-    IReadOnlyDictionary<string, string?>? extraConfiguration = null)
+    IReadOnlyDictionary<string, string?>? extraConfiguration = null,
+    bool automaticAppDispatch = false)
     : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -20,15 +24,18 @@ public sealed class ApiFactory(
         {
             builder.UseEnvironment("Production");
         }
+        if (!automaticAppDispatch)
+            builder.ConfigureTestServices(services =>
+            {
+                var worker = services.SingleOrDefault(item => item.ImplementationType == typeof(AppInstallationWorker));
+                if (worker is not null) services.Remove(worker);
+            });
         builder.ConfigureAppConfiguration((_, config) =>
         {
             var values = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Postgres"] = connectionString,
                 ["Database:MigrateOnStartup"] = migrateOnStartup ? "true" : "false",
-                // The sweeper is driven manually in connectivity tests; the
-                // hosted loop staying quiet keeps dispatch assertions exact.
-                ["Connectivity:SweepIntervalSeconds"] = "3600",
             };
             if (includeTestAuth)
             {

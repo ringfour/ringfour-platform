@@ -2,7 +2,6 @@
 
 import asyncio
 import hashlib
-import hmac
 import json
 import math
 import re
@@ -91,41 +90,14 @@ def validate(raw):
 
 
 def _execution_token(settings, header):
-    if header.startswith("Bearer app:"):
-        from .app_runtime import authenticate
-
-        return authenticate(settings, header)
-    if not settings.runner_auth_token or not header.startswith("Bearer "):
-        return None
-    token = header.removeprefix("Bearer ")
-    execution, separator, mac = token.partition(":")
-    if not separator or not logbook._id(execution) or not _MAC.fullmatch(mac):
-        return None
-    expected = hmac.new(
-        settings.runner_auth_token.encode(),
-        ("ringfour-logbook-v1:" + execution).encode(),
-        hashlib.sha256,
-    ).hexdigest()
-    return execution if hmac.compare_digest(mac, expected) else None
+    from .app_runtime import authenticate
+    return authenticate(settings, header) if header.startswith("Bearer app:") else None
 
 
 def _operation(db_path, robot_id, execution):
     with connect(db_path) as conn:
-        app = conn.execute(
-            "SELECT operation_id FROM app_runs WHERE run_id=? AND robot_id=?",
-            (execution, robot_id),
-        ).fetchone()
-        if app:
-            return app[0]
-        row = conn.execute(
-            "SELECT operation_id FROM local_dev_runs WHERE execution_id=?", (execution,)
-        ).fetchone()
-        operation = row[0] if row else execution
-        row = conn.execute(
-            "SELECT 1 FROM device_operations WHERE operation_id=? AND robot_id=? AND kind IN ('dev.session.restart','script.execution.start')",
-            (operation, robot_id),
-        ).fetchone()
-        return operation if row else None
+        row = conn.execute("SELECT operation_id FROM app_runs WHERE run_id=? AND robot_id=?", (execution, robot_id)).fetchone()
+        return row[0] if row else None
 
 
 def _record(settings, robot, execution, operation, entry):
@@ -222,28 +194,7 @@ async def create_entry(request: Request):
             if active is not True:
                 return error(401, "invalid_token", "The run is no longer active.")
         else:
-            async with httpx.AsyncClient(
-                base_url=settings.runner_url,
-                timeout=5,
-                headers={"authorization": f"Bearer {settings.runner_auth_token}"},
-            ) as client:
-                response = await client.get(f"/v1/executions/{execution}")
-                if response.status_code == 404:
-                    return error(
-                        401,
-                        "invalid_token",
-                        "A valid execution credential is required.",
-                    )
-                response.raise_for_status()
-                run = response.json()
-            if (
-                not isinstance(run, dict)
-                or run.get("execution_id") != execution
-                or run.get("state") != "running"
-            ):
-                return error(
-                    401, "invalid_token", "A valid execution credential is required."
-                )
+            return error(401, "invalid_token", "A valid App run credential is required.")
         _record(settings, identity["robot_id"], execution, operation, entry)
     except logbook.OutboxFull:
         return error(503, "capacity_exceeded", "Logbook storage is full.")

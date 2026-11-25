@@ -1,0 +1,567 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/apps/v2/manifest.schema.json",
+  "title": "App release manifest v2",
+  "description": "AP17 new Ringfour design. Version 1 records remain immutable and supported.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "app_key",
+    "release",
+    "display",
+    "targets",
+    "capabilities",
+    "configuration"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "app_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "not": {
+        "pattern": "\\s"
+      }
+    },
+    "release": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "not": {
+        "pattern": "\\s"
+      }
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "\\S"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/imageTarget"
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "optional"
+      ],
+      "properties": {
+        "required": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/capabilityPredicate"
+          }
+        },
+        "optional": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/capabilityPredicate"
+          }
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "defaults"
+      ],
+      "properties": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "additionalProperties",
+            "properties",
+            "required"
+          ],
+          "properties": {
+            "type": {
+              "const": "object"
+            },
+            "additionalProperties": {
+              "const": false
+            },
+            "properties": {
+              "type": "object",
+              "maxProperties": 32,
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                "not": {
+                  "pattern": "\\s"
+                }
+              },
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "string"
+                      },
+                      "minLength": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4096
+                      },
+                      "maxLength": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4096
+                      },
+                      "enum": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 4096
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "integer"
+                      },
+                      "minimum": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "maximum": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "enum": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "boolean"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "required": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                "not": {
+                  "pattern": "\\s"
+                }
+              }
+            }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "not": {
+              "pattern": "\\s"
+            }
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "environment": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$",
+            "not": {
+              "anyOf": [
+                {
+                  "pattern": "^RINGFOUR_"
+                },
+                {
+                  "pattern": "^LD_"
+                },
+                {
+                  "pattern": "^DYLD_"
+                },
+                {
+                  "pattern": "^PYTHON"
+                },
+                {
+                  "enum": [
+                    "PATH",
+                    "IFS",
+                    "ENV",
+                    "BASH_ENV",
+                    "BASHOPTS",
+                    "SHELLOPTS",
+                    "NODE_OPTIONS",
+                    "NODE_PATH",
+                    "JAVA_TOOL_OPTIONS",
+                    "_JAVA_OPTIONS",
+                    "RUBYOPT",
+                    "RUBYLIB",
+                    "PERL5OPT",
+                    "PERL5LIB"
+                  ]
+                }
+              ]
+            }
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          }
+        }
+      }
+    },
+    "runtime_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "defaults"
+      ],
+      "properties": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "additionalProperties",
+            "properties",
+            "required"
+          ],
+          "properties": {
+            "type": {
+              "const": "object"
+            },
+            "additionalProperties": {
+              "const": false
+            },
+            "properties": {
+              "type": "object",
+              "maxProperties": 32,
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                "not": {
+                  "pattern": "\\s"
+                }
+              },
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "string"
+                      },
+                      "minLength": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4096
+                      },
+                      "maxLength": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4096
+                      },
+                      "enum": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 4096
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "integer"
+                      },
+                      "minimum": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "maximum": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "enum": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "const": "boolean"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "required": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                "not": {
+                  "pattern": "\\s"
+                }
+              }
+            }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "not": {
+              "pattern": "\\s"
+            }
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "capabilityPredicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "capability"
+          ],
+          "properties": {
+            "capability": {
+              "enum": [
+                "mobility",
+                "cameras",
+                "lidar",
+                "imu",
+                "slam",
+                "teleop",
+                "watches",
+                "places",
+                "audit",
+                "status",
+                "groups"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "capability",
+            "instance_kind"
+          ],
+          "properties": {
+            "capability": {
+              "const": "groups"
+            },
+            "instance_kind": {
+              "const": "arm"
+            }
+          }
+        }
+      ]
+    },
+    "imageReference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*@sha256:[0-9a-f]{64}$",
+      "not": {
+        "pattern": "[\\u0000-\\u0020\\u007f]"
+      }
+    },
+    "imageTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture",
+        "image",
+        "native_requirements"
+      ],
+      "properties": {
+        "os": {
+          "const": "linux"
+        },
+        "architecture": {
+          "enum": [
+            "amd64",
+            "arm64"
+          ]
+        },
+        "image": {
+          "$ref": "#/$defs/imageReference"
+        },
+        "native_requirements": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._:+-]*$",
+            "not": {
+              "pattern": "\\s"
+            }
+          }
+        }
+      }
+    }
+  }
+}

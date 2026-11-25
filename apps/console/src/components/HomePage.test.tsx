@@ -147,7 +147,7 @@ test("surfaces failed runs and pending HITL while viewer controls remain read-on
 test("shows the no-robot empty state", async () => {
   setup({ robots: [] });
   expect(
-    await screen.findByText("No robots are enrolled in this workspace."),
+    await screen.findByText("Connect a robot and choose an App"),
   ).toBeTruthy();
 });
 

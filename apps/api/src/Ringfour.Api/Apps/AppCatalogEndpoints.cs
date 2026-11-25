@@ -57,6 +57,7 @@ public static class AppCatalogEndpoints
         {
             if (previous.RequestFingerprint != fingerprint) throw ApiException.Conflict("idempotency_conflict", "The key was used for different input.");
             var outcome = JsonNode.Parse(previous.Outcome)!;
+            if (route.StartsWith("app.", StringComparison.Ordinal)) context.RequestServices.GetRequiredService<AppDispatchSignal>().Notify();
             return Results.Json(outcome["body"]!.DeepClone(), statusCode: outcome["status"]!.GetValue<int>());
         }
         var response = await action();
@@ -65,6 +66,7 @@ public static class AppCatalogEndpoints
             Outcome = new JsonObject { ["status"] = status, ["body"] = response.DeepClone() }.ToJsonString(), CreatedAt = DateTimeOffset.UtcNow });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        if (route.StartsWith("app.", StringComparison.Ordinal)) context.RequestServices.GetRequiredService<AppDispatchSignal>().Notify();
         return Results.Json(response, statusCode: status);
     }
 
@@ -83,7 +85,7 @@ public static class AppCatalogEndpoints
             if (existing is not null)
             {
                 if (existing.ManifestDigest != digest || existing.Visibility != visibility)
-                    throw ApiException.Conflict("revision_conflict", "This App release already has different immutable content.");
+                    throw ApiException.Conflict("revision_conflict", "This app_key and release already identify different immutable manifest content. Increment the release before changing display metadata; the new manifest may reuse the same OCI image digest.");
                 return RevisionJson(existing);
             }
             foreach (var target in manifest["targets"]!.AsArray()) await registry.Verify(target!.AsObject(), orgId, ct);

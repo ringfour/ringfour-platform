@@ -19,10 +19,10 @@ the checked-in migration chain.
   API's relational records bind those objects to their organization, robot,
   installation, run, and immutable metadata.
 
-The platform database still contains legacy mission/Runner tables while their
-compatibility callers are being retired. Their presence does not make them a
-prerequisite for the Apps workflow; new App persistence belongs to the AP
-contracts and migrations below.
+AP-14 drops managed UI sessions. AP-15 drops mission/script/development tables
+and generic hosted operations. The App-only schema preserves identity, robot,
+App and shared App/Agent evidence records. Historical migrations remain to
+support upgrades and fresh installation.
 
 ## Identity and organization records
 
@@ -48,7 +48,7 @@ contracts; update those together when changing behavior.
   binding, full immutable configuration snapshots, and idempotent operations.
 - **Execution:** `app_runs` and the shared per-robot `robot_execution_slots`
   bind execution to immutable installation/revision/configuration/image state
-  and prevent concurrent legacy or App execution for one robot.
+  and prevent concurrent App execution for one robot.
 - **Runtime evidence:** `app_run_outputs`, `app_artifacts`, and
   `app_idempotency_records` with their associated cursors/seals record durable,
   scoped runtime output, artifact delivery, and retry identity.
@@ -67,7 +67,7 @@ API semantics and authorization boundaries.
 3. Add Daemon SQLite changes as safe, repeatable migrations. Preserve enrollment,
    deployment namespace, pending operation boundaries, and unacknowledged
    observations through replacement.
-4. Keep the PostgreSQL execution slot as the shared legacy/App exclusion point.
+4. Keep the PostgreSQL execution slot as the per-robot App exclusion point.
    Do not introduce a second independent concurrency lock.
 5. Bind evidence and retries to stable owner, robot, operation, installation,
    and run identities. Acknowledgement must follow durable local or hosted

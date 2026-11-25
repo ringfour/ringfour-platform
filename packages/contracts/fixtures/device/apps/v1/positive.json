@@ -9,7 +9,9 @@
         1
       ],
       "supports_app_installations": false,
-      "supports_app_runs": false
+      "supports_app_runs": false,
+      "supports_manifest_v2": false,
+      "supports_live_settings": false
     }
   },
   {
@@ -119,7 +121,9 @@
             ]
           }
         }
-      }
+      },
+      "supports_manifest_v2": true,
+      "supports_live_settings": false
     }
   },
   {
@@ -171,7 +175,9 @@
             ]
           }
         }
-      }
+      },
+      "supports_manifest_v2": null,
+      "supports_live_settings": null
     }
   },
   {
@@ -224,7 +230,9 @@
             ]
           }
         }
-      }
+      },
+      "supports_manifest_v2": true,
+      "supports_live_settings": false
     }
   },
   {
@@ -240,7 +248,9 @@
       "report_sequence": 0,
       "received_at": null,
       "platform": null,
-      "inventory": null
+      "inventory": null,
+      "supports_manifest_v2": null,
+      "supports_live_settings": null
     }
   },
   {
