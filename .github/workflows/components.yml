@@ -6,16 +6,19 @@ permissions:
 
 jobs:
   api:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --python 3.13
+        working-directory: apps/daemon
       - run: dotnet test apps/api/Ringfour.slnx
 
   console:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     defaults:
       run:
         working-directory: apps/console
@@ -29,7 +32,7 @@ jobs:
       - run: npm run build
 
   contracts:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     defaults:
       run:
         working-directory: packages/contracts
@@ -47,7 +50,7 @@ jobs:
       - run: npm run test:openapi
 
   python-apps:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     strategy:
       fail-fast: false
       matrix:
@@ -63,7 +66,7 @@ jobs:
       - run: uv run --frozen ruff check src tests
 
   runtime:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     defaults:
       run:
         working-directory: packages/python-runtime
@@ -71,3 +74,157 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv run --frozen --python 3.13 --with pytest pytest -q tests
+
+  release-scripts:
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: |
+          for script in cli-installer.sh deployment/deployment.sh deployment/robot-update.sh; do
+            sh -n "$script"
+          done
+          python -m py_compile scripts/package-cli-release.py
+      - shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./cli-installer.ps1), [ref]$tokens, [ref]$errors
+          )
+          if ($errors) { throw ($errors -join "`n") }
+
+  release-build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [api, console, contracts, python-apps, runtime, release-scripts]
+    runs-on: [self-hosted, linux]
+    permissions:
+      contents: read
+      packages: write
+    env:
+      AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
+      AUTH0_CLI_CLIENT_ID: ${{ vars.AUTH0_CLI_CLIENT_ID }}
+      AUTH0_WEB_CLIENT_ID: ${{ vars.AUTH0_WEB_CLIENT_ID }}
+      AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE || 'https://api.ringfour.eu' }}
+      RINGFOUR_API_URL: ${{ vars.RINGFOUR_API_URL }}
+      RELEASE_IMAGE_TAG: ci-${{ github.run_id }}-${{ github.run_attempt }}
+      IMAGE_PREFIX: ghcr.io/ringfour/ringfour-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v6
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package and test CLI
+        run: |
+          python scripts/package-cli-release.py
+          uv build --wheel --python 3.13 --out-dir "$PWD/dist" apps/cli
+          uv tool run --isolated --python 3.13 --from "$(realpath dist/*.whl)" ringfour-cli --help
+      - uses: docker/build-push-action@v6
+        id: api
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}-api:${{ env.RELEASE_IMAGE_TAG }}
+      - uses: docker/build-push-action@v6
+        id: studio
+        with:
+          context: apps/console
+          target: production
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}-studio:${{ env.RELEASE_IMAGE_TAG }}
+          build-args: |
+            VITE_AUTH0_DOMAIN=${{ env.AUTH0_DOMAIN }}
+            VITE_AUTH0_CLIENT_ID=${{ env.AUTH0_WEB_CLIENT_ID }}
+            VITE_AUTH0_AUDIENCE=${{ env.AUTH0_AUDIENCE }}
+      - uses: docker/build-push-action@v6
+        id: daemon
+        with:
+          context: apps/daemon
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}-daemon:${{ env.RELEASE_IMAGE_TAG }}
+      - name: Assemble release and smoke test the images
+        env:
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          STUDIO_DIGEST: ${{ steps.studio.outputs.digest }}
+          DAEMON_DIGEST: ${{ steps.daemon.outputs.digest }}
+        run: |
+          printf 'RINGFOUR_API_IMAGE=%s-api@%s\nRINGFOUR_STUDIO_IMAGE=%s-studio@%s\n' \
+            "$IMAGE_PREFIX" "$API_DIGEST" "$IMAGE_PREFIX" "$STUDIO_DIGEST" > dist/images.env
+          printf '%s-daemon@%s\n' "$IMAGE_PREFIX" "$DAEMON_DIGEST" > dist/daemon-image.txt
+          cp deployment/compose.yml deployment/deployment.sh deployment/.env.example deployment/README.md dist/
+          cp deployment/robot-update.sh deployment/robot-update.service deployment/robot-update.timer dist/
+          tar -C dist -czf deployment.tar.gz compose.yml deployment.sh .env.example README.md images.env
+          mv deployment.tar.gz dist/
+          rm dist/compose.yml dist/deployment.sh dist/.env.example dist/README.md dist/images.env
+          (cd dist && sha256sum ./*.whl ./deployment.tar.gz ./daemon-image.txt ./robot-update.* | sed 's|  \./|  |' > SHA256SUMS)
+          export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+          export CONSOLE_ORIGIN=http://127.0.0.1:5173
+          export API_PORT= CONSOLE_PORT=
+          smoke="$(mktemp -d)"
+          project="ringfour-release-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          compose=(docker compose -p "$project" --env-file "$smoke/images.env" -f "$smoke/compose.yml")
+          cleanup() {
+            docker rm -f "$project-daemon" >/dev/null 2>&1 || true
+            "${compose[@]}" down -v
+            rm -rf "$smoke"
+          }
+          trap cleanup EXIT
+          tar -xzf dist/deployment.tar.gz -C "$smoke"
+          docker run -d --name "$project-daemon" -p 127.0.0.1::8081 \
+            -e RINGFOUR_APPS_ENABLED=false "$IMAGE_PREFIX-daemon@$DAEMON_DIGEST"
+          daemon_address="$(docker port "$project-daemon" 8081/tcp)"
+          curl -fsS --retry 20 --retry-delay 2 --retry-all-errors "http://$daemon_address/health/live"
+          "${compose[@]}" up -d --wait --wait-timeout 180
+          studio_address="$("${compose[@]}" port console 80)"
+          curl -fsS "http://$studio_address/" >/dev/null
+          curl -fsS --retry 20 --retry-delay 2 --retry-all-errors "http://$studio_address/api/health/ready"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platform-release
+          overwrite: true
+          path: dist/
+          if-no-files-found: error
+
+  release-publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: release-build
+    runs-on: [self-hosted, linux]
+    permissions:
+      contents: write
+    concurrency:
+      group: platform-release-publish
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_ASSET_DIR: ${{ runner.temp }}/platform-release-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: platform-release
+          path: ${{ env.RELEASE_ASSET_DIR }}
+      - name: Publish complete build
+        run: |
+          if [ "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" != "$GITHUB_SHA" ]; then
+            echo 'A newer main commit is queued. Skipping publication.'
+            exit 0
+          fi
+          tag="main-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          gh release create "$tag" "$RELEASE_ASSET_DIR"/* --target "$GITHUB_SHA" --latest \
+            --title "Main ${GITHUB_SHA:0:12}" --notes "Source commit: $GITHUB_SHA"

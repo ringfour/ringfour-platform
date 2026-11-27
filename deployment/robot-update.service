@@ -1,0 +1,9 @@
+[Unit]
+Description=Check for a Ringfour Daemon release
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/ringfour/robot-updater.env
+ExecStart=/usr/local/lib/ringfour/robot-update.sh

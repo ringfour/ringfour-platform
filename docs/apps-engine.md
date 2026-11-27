@@ -32,6 +32,7 @@ private PID, dropped capabilities, no-new-privileges, bounded CPU/memory/PIDs/lo
 and one owner network. The immutable image supplies ENTRYPOINT; no command or
 entrypoint override, socket, credentials or host bind is accepted. Configuration
 is copied as a read-only file into the root-owned application directory before start.
-Only the Agent URL/config path and explicitly bound runtime URLs/tokens may
-be passed. The Daemon supplies run-scoped credentials and an owner-labeled
+The Daemon sets the Agent URL, configuration path and bound runtime URLs/tokens.
+For v2 Apps it also injects validated startup values declared in
+`configuration.environment`. The Daemon supplies run-scoped credentials and an owner-labeled
 artifact volume; see [App runtime](apps-runtime.md). Install preparation pulls and inspects images. Only a run may create and start a workload. See [hosted runs](apps-runs.md) for dispatch.

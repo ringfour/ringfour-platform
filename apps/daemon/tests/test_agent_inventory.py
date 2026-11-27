@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 import websockets
+
 from ringfour_daemon.agent_inventory import (
     InventoryUnavailable,
     check_fresh,

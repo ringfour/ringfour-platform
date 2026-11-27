@@ -14,6 +14,12 @@ Configuration fields may use `string`, `integer`, bounded finite `number`, or
 notation. NaN, infinities, overflow, underflow, booleans and strings are not
 accepted as numbers.
 
+`ringfour-cli scaffold [DIRECTORY]` clones a minimal App with a configurable
+greeting, a development image target and a release target. The default directory
+is `my-ringfour-app`. Run `ringfour-cli app validate .` from the checkout after
+editing `app.json`. See the [CLI guide](../apps/cli/README.md#clone-a-starter-app)
+for local and mirrored template repositories.
+
 `app init PATH --app-key KEY --repository REGISTRY/REPO` extracts the one Robot
 Check template from a versioned checksum-pinned archive, then applies the selected
 identity. The standalone example repository owns the source. The CLI packages a
@@ -61,15 +67,12 @@ Commands support `--json` results and bounded structured errors/nonzero exits.
 Offline validation requires neither login nor running services. Build/publish never
 reload Platform or virtual stacks. Installation and start are separate operations.
 
-Robot Check uses a single `sample_count` integer (1–20, default 1), matching the
-manifest fixture. It reads only verified SDK `robot.imu()` with NET transport and
-requires advancing finite sample stamps within a bounded wait. SIGTERM/SIGINT
-stop its loop. It emits timestamped JSON, and writes recognizable Logbook entries
-only when execution runtime URLs/credentials are supplied. No runtime configuration
-means stdout-only standalone use. App configuration is a JSON file selected by
-owner-supplied `RINGFOUR_APP_CONFIG`, defaulting to the image's example file;
-the Daemon supplies its validated values from the immutable installation
-configuration revision. In authoring v2, `configuration.environment` may map
+The pinned Robot Check v0.2.0 template takes a startup `sample_count` from
+1 to 20 (default 20) and a live `sample_interval_ms` from 100 to 5000
+(default 1000). It reads IMU samples through the SDK, writes structured output,
+and uses the configured runtime services for Logbook entries and a published
+`summary.json` artifact. The Daemon supplies startup configuration at
+`RINGFOUR_APP_CONFIG`. In authoring v2, `configuration.environment` may map
 declared startup keys to literal environment variables, for example
 `"SAMPLE_COUNT": "sample_count"`. Names must be unique, match the uppercase
 environment-name pattern, and cannot use `RINGFOUR_`, `PATH`, `LD_*`,

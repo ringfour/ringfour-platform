@@ -141,8 +141,8 @@ topology separately; preserve existing PostgreSQL and Daemon data volumes.
 
 The App uses the existing run-scoped credential and local Daemon HTTP boundary.
 The credential determines the run; no body or query argument can select one.
-Add `GET /v1/runtime/settings/pending` to return at most one pending
-application for that run, or an empty pending result. Add
+`GET /v1/runtime/settings/pending` returns at most one pending
+application for that run, or an empty pending result. Submit
 `POST /v1/runtime/settings/{application_id}/result` with `outcome` equal to
 `applied` or `rejected`, and an optional bounded, single-line safe reason for
 rejection. The Daemon persists receipt/result locally before acknowledging the

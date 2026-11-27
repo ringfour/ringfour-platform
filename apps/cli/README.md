@@ -7,6 +7,17 @@ configured Engine.
 
 ## Install and sign in
 
+Install the latest main build on Linux or macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ringfour/ringfour-platform/main/cli-installer.sh | sh
+ringfour-cli login
+```
+
+On native Windows use [cli-installer.ps1](../../cli-installer.ps1). Release
+builds include public Auth0 and API defaults. The environment and per-user
+configuration can override them.
+
 From the Platform checkout, run the CLI directly:
 
 ```sh
@@ -43,6 +54,27 @@ Use `ringfour-cli org select <organization-id>` to select a workspace. `logout`
 removes the stored login and selected workspace. Auth0 tokens are kept in the
 user's credential store, not the config JSON.
 
+## Clone a starter App
+
+With Git installed, run these commands from your projects directory:
+
+```sh
+ringfour-cli scaffold
+cd my-ringfour-app
+python3 main.py
+ringfour-cli app validate .
+```
+
+Use `ringfour-cli scaffold my-project` to choose the destination. Git preserves
+the template history and sets `origin` to the source. The destination must be
+new or empty. The command works before sign-in.
+
+The CLI uses the sibling `ringfour-template` repository when run from the
+Platform workspace. Standalone installations default to
+`https://github.com/ringfour/ringfour-template.git`. To clone an offline copy
+or a mirror, pass `--repo /path/to/ringfour-template` or set
+`RINGFOUR_TEMPLATE_REPO`.
+
 ## Author and publish an App
 
 Create, publish, discover, import, install and operate an App. Example command
@@ -55,7 +87,6 @@ ringfour-cli app init ./robot-check \
 ringfour-cli app validate ./robot-check
 ringfour-cli app build ./robot-check
 ringfour-cli app publish ./robot-check
-ringfour-cli app search "Robot Check"
 ringfour-cli app show <app-id>
 ringfour-cli app import <revision-id>
 ringfour-cli app imports
@@ -63,7 +94,6 @@ ringfour-cli app install <revision-id> --robot <robot-id>
 ringfour-cli app operation <operation-id> --wait
 ringfour-cli app installations --robot <robot-id>
 ringfour-cli app start <installation-id>
-ringfour-cli app start <app-id> --robot <robot-id>
 ringfour-cli app settings show <installation-id>
 ringfour-cli app settings set <installation-id> --file settings.json
 ringfour-cli app logs <run-id> --follow
@@ -72,12 +102,16 @@ ringfour-cli app artifacts --app <app-id> --org <workspace-id>
 ringfour-cli app artifacts --app <app-id> --robot <robot-id> --path-prefix reports/
 ```
 
+Publication defaults to unlisted. Use the revision ID from publication for an
+import. To discover listed releases, use `app search "Robot Check"`. To start
+by App and robot ID, use `app start <app-id> --robot <robot-id>`.
+
 `app configure <installation-id> --config values.json` and
 `app update <installation-id> <revision-id> --config values.json` accept JSON
 objects validated by the release schema. `app install` and `app update` use
 release defaults when `--config` is omitted. Direct shares require
 `--share-id`. Install, configure and update return operation IDs; use
-`app operation --wait` to follow device acknowledgement. Start returns both a
+`app operation <operation-id> --wait` to follow device acknowledgement. Start returns both a
 run ID and operation ID. Stop requires the exact run ID so an old stop request
 cannot stop a later run.
 
@@ -94,9 +128,9 @@ responses remain pending until the device confirms application. `robot
 capabilities <robot>` shows observed inventory; add `--revision <id>` for the
 server's compatibility assessment.
 
-`app settings show` reports the settings selected for the next start, the last
+`app settings show <installation-id>` reports the settings selected for the next start, the last
 App-confirmed values, and any unresolved exact-run application. `app settings
-set --file settings.json` submits one complete settings object. While the App
+set <installation-id> --file settings.json` submits one complete settings object. While the App
 is idle, the CLI reports that values were saved for the next start; while it is
 running, it returns a pending application ID and run ID. A pending response is
 not an applied acknowledgement. The command uses the current selected/applied
@@ -118,15 +152,11 @@ local wheel bundle and immutable digest flow, and
 [local registry setup](../../docs/local-registry.md) for
 registry configuration.
 
-## Device commands and migration
+## Device commands
 
 Use `robot list`, `robot show`, `robot status` and `robot capabilities` to
 inspect enrolled devices. The authenticated CLI uses the same App APIs and
 role checks as Studio.
-
-The mission, dev, script execution, legacy artifact and diagnostic fixture commands
-were retired in AP-14/AP-15. Use the `app` command group for App lifecycle,
-logs, files and interactions. Historical instructions remain in the archive.
 
 ## App development fastlane
 

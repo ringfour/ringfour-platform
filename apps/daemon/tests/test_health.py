@@ -2,6 +2,7 @@
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import migrate
 from ringfour_daemon.main import create_app

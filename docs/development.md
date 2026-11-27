@@ -21,10 +21,11 @@ ignored `.env` for local Auth0 and registry settings, then start or
 reload it as an operator action:
 
 ```sh
-./up.sh -d api app-registry registry-ui
+./up.sh -d api console app-registry registry-ui
 ```
 
-The local API is normally available at `http://localhost:8080`; the local image
+Studio is available at `http://localhost:5173`. Set `AUTH0_DOMAIN` and
+`AUTH0_WEB_CLIENT_ID` for its SPA configuration. The local API is normally available at `http://localhost:8080`; the local image
 registry is `127.0.0.1:5000` and its browser UI is at `http://localhost:5080`.
 Use the [registry setup guide](local-registry.md) for its
 same-origin proxy and CORS behavior. The virtual Agent/Daemon stack is maintained
@@ -43,7 +44,7 @@ place access tokens in repository files. The usual per-user CLI config path is
 [CLI setup](../apps/cli/README.md#install-and-sign-in) and the
 [pairing guide](pairing-contract.md) for device enrollment.
 
-## Run applications
+## Check the CLI and Daemon installations
 
 From the repository root:
 
@@ -52,7 +53,7 @@ uv sync --project apps/cli --frozen
 uv run --project apps/cli ringfour-cli --help
 
 uv sync --project apps/daemon --frozen
-uv run --project apps/daemon ringfour-daemon --help
+uv run --frozen --project apps/daemon python -c "from importlib.metadata import version; print(version('ringfour-daemon'))"
 ```
 
 The Daemon's App runtime and engine configuration are described in

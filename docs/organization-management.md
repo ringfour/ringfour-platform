@@ -44,8 +44,7 @@ A member can leave from **Organizations**. When other members remain, the last O
 
 ## Personal profile
 
-The Console has a **My profile** entry at the bottom of the sidebar under
-**Settings**. It displays the caller's verified Auth0 email and lets them set a
+Open **My profile** from the Studio top bar. It displays the caller's verified Auth0 email and lets them set a
 display name, public HTTPS profile picture URL, and phone number. Name and
 picture are shown in organization member rosters. Email stays managed by the
 verified Auth0 identity and cannot be edited here. The API stores the profile

@@ -7,8 +7,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import typer
-from ringfour_cli.development_commands import Client, register, snapshot
 from typer.testing import CliRunner
+
+from ringfour_cli.development_commands import Client, register, snapshot
 
 
 def test_source_snapshot_is_stable_and_excludes_models_and_hidden_files(tmp_path):

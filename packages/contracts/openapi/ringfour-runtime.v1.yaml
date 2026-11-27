@@ -3,16 +3,15 @@ info:
   title: Ringfour runtime API
   version: '0.1.0'
   description: |
-    App runtime namespace is contract-only; legacy mission runtime remains supported.
-    New Ringfour-local design, separate from the Agent API. The daemon control
-    listener accepts execution-scoped credentials, separate from human and LAN grants.
+    The Daemon serves local App runtime requests with a per-run bearer credential.
+    Robot-control calls use the separate Agent API.
 paths:
   /v1/runtime/interactions:
     post:
       operationId: createMissionInteraction
       summary: Durably create or replay one execution-scoped human interaction
       description: |
-        The request_id is the mission's stable replay key. The credential supplies
+        The request_id is the App run's stable replay key. The credential supplies
         execution_id; a payload cannot select another execution. timeout_outcome
         must name one of the finite choice values and must be safe without human
         approval. A successful response means the daemon persisted the request,
@@ -72,7 +71,7 @@ paths:
     post:
       operationId: publishMissionArtifact
       summary: Finalize and durably queue one execution artifact
-      description: A successful response means an immutable Runner snapshot and daemon queue row exist; it does not mean hosted availability.
+      description: A successful response means an immutable artifact snapshot and daemon queue row exist; it does not mean hosted availability.
       security:
         - ExecutionCredential: []
       requestBody:
@@ -89,11 +88,11 @@ paths:
         '400': { description: Invalid path, ID or content type }
         '401': { description: Missing, invalid or expired execution credential }
         '409': { description: Artifact ID conflicts with an earlier publication }
-        '503': { description: Runner snapshot or daemon queue unavailable }
+        '503': { description: Artifact snapshot or Daemon queue unavailable }
   /v1/runtime/settings/pending:
     get:
       operationId: pollAppRunSettings
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       summary: Poll the authenticated run for its one pending initial or live settings application
       description: The run credential selects the run. The Daemon returns only a durable queued application for this exact run; bounded long poll is 1–30 seconds and a timeout remains unresolved.
       security:
@@ -134,7 +133,7 @@ paths:
   /v1/runtime/settings/{application_id}/result:
     post:
       operationId: reportAppRunSettingsResult
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       summary: Durably record the App's applied or rejected settings result
       description: The credential determines run ownership. The Daemon persists the same application ID and result before acknowledging; retries with identical content are idempotent.
       security:
@@ -181,7 +180,7 @@ paths:
   /v1/runtime/logbook/entries:
     post:
       operationId: recordMissionLogbookEntry
-      summary: Record a mission-authored structured entry
+      summary: Record an App-authored structured entry
       description: |
         Private local endpoint. Derive execution context from the
         runtime credential and persist the entry before acknowledging. The
@@ -213,8 +212,8 @@ components:
     AppRunCredential:
       type: http
       scheme: bearer
-      description: Proposed per-run credential verified by Daemon against durable run ownership and expiry; no Runner, human or registry authority.
+      description: Per-run bearer verified by the Daemon against durable run ownership and expiry.
     ExecutionCredential:
       type: http
       scheme: bearer
-      description: Per-execution bearer verified against Runner state; no human token.
+      description: Per-run bearer verified against Daemon-owned App run state.

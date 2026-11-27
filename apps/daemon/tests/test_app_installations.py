@@ -7,6 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 from jsonschema.exceptions import ValidationError
+
 from ringfour_daemon import agent_inventory, app_validation, operations
 from ringfour_daemon import app_installations as apps
 from ringfour_daemon.app_engine import EngineError, Executor

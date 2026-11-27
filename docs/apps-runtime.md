@@ -6,7 +6,9 @@ expiry and revocation. Replacement recovers the same credential. Only the owning
 robot/run can use it, and new requests require an observed running container.
 An engine outage means unknown, never automatic cancellation or approval.
 
-The executor supplies only the Agent/config and bound runtime URL/token variables.
+The executor supplies the Agent URL, configuration path and run-scoped runtime
+variables. A v2 App can also receive validated startup configuration through
+its declared [environment mappings](apps-ap17-contract.md#manifest-v2).
 A per-run engine volume stores App artifacts. It is never the Daemon's private
 DB/enrollment volume and no host bind is supplied. Publishing snapshots bytes
 through the exact owned container archive API into a private durable local spool,

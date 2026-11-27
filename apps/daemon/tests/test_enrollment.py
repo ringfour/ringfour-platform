@@ -3,6 +3,7 @@ import stat
 
 import httpx
 from fastapi.testclient import TestClient
+
 from ringfour_daemon.config import Settings
 from ringfour_daemon.enrollment import load_identity
 from ringfour_daemon.main import create_app

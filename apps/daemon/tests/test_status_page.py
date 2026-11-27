@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
+
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import migrate
 from ringfour_daemon.enrollment import save_identity

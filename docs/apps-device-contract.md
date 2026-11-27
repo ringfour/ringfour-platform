@@ -5,8 +5,9 @@ A session negotiates inventory, installation, run and uninstall support. See
 
 ## Separate support negotiation
 
-The negotiation request has optional `supports_app_installations` and
-`supports_app_uninstall` fields. Omission means false;
+The negotiation request has optional `supports_app_installations`,
+`supports_app_uninstall`, `supports_app_runs`, `supports_manifest_v2` and
+`supports_live_settings` fields. Omission means false;
 uninstall support requires installation support. Inventory-only peers remain
 compatible, but cannot receive installation commands or submit installation
 observations. App mode verifies the engine before offering these capabilities;
@@ -92,7 +93,7 @@ On replay find the same durable run/container or terminal result. Never relaunch
 a possibly started run whose container is absent; report interruption with
 unknown exit/end time. An accepted start that is safely known never to have
 started may proceed through its persisted intent. The Daemon journals these
-boundaries before engine calls and preserve output before cleanup.
+boundaries before engine calls and preserves output before cleanup.
 
 ## Observed Agent inventory and target
 
@@ -158,8 +159,8 @@ reject App terminal updates via legacy `operation_status` alone. An applied
 operation requires the corresponding installed binding in this or an already
 persisted observation. A successful start requires evidence of the exact run's
 start, including fast exits; a stop requires that exact run's stopped/terminal
-state. Staging keeps the prior installed binding. Applying during any active
-App or legacy execution is forbidden. Public state/phase/error mapping is
+state. Staging keeps the prior installed binding. Applying during an active
+release or development run is forbidden. Public state/phase/error mapping is
 specified in [API/runtime contract](apps-api-contract.md).
 
 Bodies are at most 65,536 UTF-8 bytes; each observations array has at most 32

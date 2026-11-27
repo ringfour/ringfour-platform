@@ -3,6 +3,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import pytest
+
 from ringfour_cli.app_contracts import read_app_failure, read_app_operation
 
 FIXTURES = json.loads(

@@ -6,6 +6,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import websockets
+
 from ringfour_daemon.config import Settings
 from ringfour_daemon.connection import (
     ConnectionManager,

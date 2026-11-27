@@ -33,8 +33,8 @@ treated as observed running state.
 The operator provides the Docker Engine Unix socket to the trusted Daemon. That
 socket grants Engine-administrator authority; Engine administrators are trusted
 by every workload they can manage. Owner labels scope reconciliation and
-workload reports, but are not a hostile-Engine security boundary. The API,
-legacy Runner and App containers never receive the socket. App manifests cannot
+workload reports, but are not a hostile-Engine security boundary. The API and
+App containers never receive the socket. App manifests cannot
 choose networks, mounts, privileges, devices, commands or entrypoints.
 
 The Daemon places each App on the robot owner's private network and supplies
@@ -72,5 +72,5 @@ No local-signing-key bypass is allowed in hosted configuration.
 Infrastructure owns Daemon and Agent lifecycle. The local server Compose stack
 contains API, PostgreSQL and development services; the sibling `ringfour-virtual`
 repository owns Base101 and device Compose. Agent and daemon form the default
-device stack; App containers are created dynamically. Runner and local source
-execution are retired.
+device stack. The Daemon creates App containers dynamically. An installed App
+can run synced source during an [App development session](app-development.md).

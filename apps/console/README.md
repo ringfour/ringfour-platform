@@ -75,7 +75,7 @@ SSR infrastructure are excluded. Reference App artwork and labelled Store exampl
 imagery are local assets; Files and run Results only show verified API artifacts.
 `lucide-react` is pinned to 0.575.0; bundled notices are in `public/lucide-LICENSE.txt`.
 
-After this dependency/view change, the operator can rebuild only Console with
+To deploy Console changes, the operator can rebuild the Console service with
 `./up.sh -d --no-deps console` from the Platform root. No device restart is needed
 for these views.
 

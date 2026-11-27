@@ -12,34 +12,38 @@ defaults explicitly, validators never merge/insert defaults. Configuration rows
 are immutable. Failed/staged candidates preserve installed revision/configuration.
 Rollback requires a previously applied binding/configuration from that installation.
 
-A mutation commits the operation, complete immutable device command, candidate,
-configuration and response before dispatch. New PostgreSQL columns retain command
-and first dispatch time; report receipts retain the independent observations
-stream. The installation's current binding is its expected generation. Pending
-mutation uniqueness and shared robot locking serialize competing edits/apply/start.
-Legacy start paths refuse a pending mutation; device application also checks
-legacy/App/local-development execution state under SQLite's writer transaction.
+The API persists the candidate, command and operation before dispatch. Robot row
+locking serializes installation changes and starts. An open development session
+or occupied execution slot blocks installation changes. A pending installation
+change also blocks a start. Before applying a binding, the Daemon checks its
+execution slot inside the SQLite write transaction.
 
-API `Apps:InstallationsEnabled` defaults false until API and Daemon consumers are
-deployed together. The optional negotiation request field
-`supports_app_installations` defaults false; only the enabled Daemon offers
-true after obtaining actual engine metadata. An inventory-only session
-cannot receive installation commands. Old hello/welcome and negotiation responses
-remain unchanged. Reconnect rechecks current-session support, namespace and
-credential revocation. Worker dispatch/replay uses the existing v1 command/ack.
+Enable installation dispatch with `APPS_INSTALLATIONS_ENABLED=true` on the API
+(`Apps:InstallationsEnabled`, default false). The Daemon's `RINGFOUR_APPS_ENABLED`
+defaults to true. Configure its Engine socket, private network and Agent URI as
+described in [engine operations](apps-engine.md). The Daemon offers installation,
+uninstall, run, manifest v2 and live-settings support with its verified engine
+facts and deployment namespace. The API also gates live settings with
+`APPS_LIVE_SETTINGS_ENABLED`. Dispatch and replay check the current negotiated
+session and its credentials.
 Only queued operations without any recorded dispatch can expire server-side;
 a possible delivery stays uncertain until device reconciliation supplies an
 outcome. Expired device work never begins new preparation/application.
 
-The Daemon fetches the operation-authorized manifest, validates its canonical
-hash/configuration/target, obtains a new bounded Agent observation before any
-pull, and obtains an ephemeral registry pull grant. Pull/inspect is the only engine
-side effect. A staged journal survives replacement and lost acknowledgement.
+For install, update, configure and rollback, the Daemon fetches the operation-authorized manifest, validates its canonical
+hash/configuration/target and obtains a fresh Agent observation. Install, update
+and rollback obtain an ephemeral registry grant before pulling a new candidate.
+Configure and staged retries inspect the existing image locally. A staged
+journal survives replacement and lost acknowledgement.
 Before application a SQLite transaction rechecks installed generation, deadline
 and robot idleness, then atomically switches revision/image/configuration and
 stores the immutable terminal report/outbox. Retry after application resends
 that report without pull/reapply. Failure records a failed candidate and keeps
 the installed binding unchanged. Runtime/native prerequisites fail closed.
+
+Uninstall checks the exact installed revision and configuration, robot idleness and
+negotiated uninstall support. It clears the installed binding, retains history
+and requires no image pull.
 
 Hosted observations authenticate current session/namespace and bind every ID,
 image/configuration and operation to persisted command intent. Batch projection

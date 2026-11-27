@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from jsonschema import ValidationError
+
 from ringfour_daemon import app_validation
 from ringfour_daemon.app_protocol import (
     InventoryReport,

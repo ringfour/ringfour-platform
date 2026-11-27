@@ -9,6 +9,8 @@ from dataclasses import replace
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from test_app_engine import setup as make_engine_setup
+
 from ringfour_daemon import (
     app_runtime,
     runtime_interactions,
@@ -17,7 +19,6 @@ from ringfour_daemon import (
 )
 from ringfour_daemon.db import connect
 from ringfour_daemon.main import create_app
-from test_app_engine import setup as make_engine_setup
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 # Studio layout template
 
 Keep the shared
-Apps header and selected robot, icon rail, top-bar page tabs, Profile workspace controls, real API
+Apps header and selected robot, icon rail, in-page tabs, top-bar organization picker and Profile workspace controls, real API
 operations and existing unsaved-edit guards. The visual references are Home and
 Files. This extends the Ringfour system; it does not define a new API.
 
@@ -35,7 +35,7 @@ release remain in the App header. Narrow forms stay anchored left.
 | --- | --- |
 | `CollectionPage` | Page heading, connected filter toolbar and collection content; no embedded data fetching. |
 | `StudioPage` | Full-width header plus body grid; `width="reading"` caps Home at 1120px without centering it. |
-| `StudioTabs` | Places page navigation links in the top bar. The feature supplies the route and the selected tab. |
+| `StudioTabs` | Renders a labelled navigation region within its feature page. The feature supplies the route and the selected tab. |
 | `StudioSection` | Open heading, optional description/actions and body; a preceding section adds a thin divider. |
 | `--studio-form-width: 640px` | Shared Startup/Live settings width, clamped by the viewport. |
 | `--studio-row-gap: 24px` | Shared column spacing; 16px on smaller layouts. |

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import migrate
 from ringfour_daemon.enrollment import load_identity, save_identity

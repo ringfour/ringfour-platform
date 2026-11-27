@@ -3,6 +3,7 @@ import sqlite3
 import uuid
 
 import pytest
+
 from ringfour_daemon import agent_motion, logbook
 from ringfour_daemon.db import migrate
 

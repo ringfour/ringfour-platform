@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+
 from ringfour_daemon import development as dev
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import connect, migrate

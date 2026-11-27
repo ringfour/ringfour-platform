@@ -536,7 +536,7 @@ paths:
     get:
       tags: [apps]
       operationId: getAppInstallationSettings
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read selected next-start settings and exact-run application state. Values remain workspace scoped; see docs/apps-ap17-contract.md.
       parameters:
       - {name: installation_id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -551,7 +551,7 @@ paths:
     post:
       tags: [apps]
       operationId: saveAppInstallationSettings
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Compare-and-set a complete live settings object for next start or one exact active run. Requires idempotency and current feature support; see docs/apps-ap17-contract.md.
       parameters:
       - {name: installation_id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -575,7 +575,7 @@ paths:
     get:
       tags: [apps]
       operationId: getAppInstallationSettingsRevision
-      x-implementation-status: contract-only
+      x-implementation-status: implemented
       description: Read one immutable settings revision within its installation and workspace.
       parameters:
       - {name: installation_id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1570,7 +1570,7 @@ paths:
       description: |
         Atomically accept the first authorized, valid, unexpired response. The
         result is submitted for device delivery, not proof the daemon applied it
-        or the mission resumed. Identical Idempotency-Key replay returns the same
+        or the App resumed. Identical Idempotency-Key replay returns the same
         response; another key after a winner receives 409.
       parameters:
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
@@ -2759,8 +2759,7 @@ paths:
   /v1/robots/{robot_id}/app-development:
     get:
       tags: [robots]
-      summary: App development get app-development
-      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      summary: Read the current development session
       parameters:
         - in: path
           name: robot_id
@@ -2768,9 +2767,7 @@ paths:
           schema: {type: string, format: uuid}
       responses:
         "200":
-          description: Development state or accepted action.
-        "204":
-          description: Mutation completed.
+          description: Current session or null.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2779,9 +2776,9 @@ paths:
           $ref: "#/components/responses/Conflict"
     post:
       tags: [robots]
-      summary: App development post app-development
-      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      summary: Open a development session
       parameters:
+        - $ref: '#/components/parameters/AppIdempotencyKey'
         - in: path
           name: robot_id
           required: true
@@ -2793,10 +2790,8 @@ paths:
             schema:
               $ref: "../schemas/apps/development/protocol.schema.json#/$defs/open"
       responses:
-        "200":
-          description: Development state or accepted action.
-        "204":
-          description: Mutation completed.
+        "201":
+          description: Development session opened.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2805,13 +2800,8 @@ paths:
           $ref: "#/components/responses/Conflict"
     delete:
       tags: [robots]
-      summary: App development delete app-development
-      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      summary: Close the expected development session
       parameters:
-        - in: query
-          name: expected_session_id
-          required: true
-          schema: {type: string, format: uuid}
         - in: path
           name: robot_id
           required: true
@@ -2821,10 +2811,8 @@ paths:
           required: true
           schema: {type: string, format: uuid}
       responses:
-        "200":
-          description: Development state or accepted action.
         "204":
-          description: Mutation completed.
+          description: Development session closed.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2834,8 +2822,7 @@ paths:
   /v1/robots/{robot_id}/app-development/grants:
     post:
       tags: [robots]
-      summary: App development post grant
-      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      summary: Rotate the local source grant
       parameters:
         - in: path
           name: robot_id
@@ -2849,9 +2836,7 @@ paths:
               $ref: "../schemas/apps/development/protocol.schema.json#/$defs/grant"
       responses:
         "200":
-          description: Development state or accepted action.
-        "204":
-          description: Mutation completed.
+          description: Grant expiry and pinned Daemon endpoint.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2861,13 +2846,13 @@ paths:
   /v1/device/app-development:
     get:
       tags: [robots]
-      summary: App development get app-development
-      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      summary: Poll development state for the device
       responses:
         "200":
-          description: Development state or accepted action.
-        "204":
-          description: Mutation completed.
+          description: Current session and grant metadata, or a null session.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2877,8 +2862,10 @@ paths:
   /v1/device/app-development/endpoint:
     put:
       tags: [robots]
-      summary: App development put endpoint
-      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      summary: Advertise the pinned development endpoint
       requestBody:
         required: true
         content:
@@ -2886,10 +2873,8 @@ paths:
             schema:
               $ref: "../schemas/apps/development/protocol.schema.json#/$defs/endpoint"
       responses:
-        "200":
-          description: Development state or accepted action.
         "204":
-          description: Mutation completed.
+          description: Endpoint recorded.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2899,8 +2884,10 @@ paths:
   /v1/device/app-development/{session_id}/source:
     post:
       tags: [robots]
-      summary: App development post source
-      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      security:
+        - deviceCredentialId: []
+          deviceCredentialSecret: []
+      summary: Report a committed source generation
       parameters:
         - in: path
           name: session_id
@@ -2913,10 +2900,8 @@ paths:
             schema:
               $ref: "../schemas/apps/development/protocol.schema.json#/$defs/source"
       responses:
-        "200":
-          description: Development state or accepted action.
         "204":
-          description: Mutation completed.
+          description: Generation recorded or identical replay.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":

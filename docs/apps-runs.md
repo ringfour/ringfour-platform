@@ -1,9 +1,11 @@
 # App runs
 
 Start/stop use the App start/stop request, immutable run snapshot and device command
-contracts. `POST /v1/app-installations/{id}/start` requires Operator access,
+contracts. `POST /v1/app-installations/{id}/start` requires Operator, Developer or Owner access,
 Idempotency-Key and the expected installed revision/configuration. The robot row
 lock and shared execution slot serialize normal and development App runs.
+Development starts also require a matching session with committed source and
+the [session owner or an organization Owner](app-development-contract.md).
 Start commits the snapshot and durable operation together; HTTP 202 and device
 acknowledgement mean accepted, never observed running.
 

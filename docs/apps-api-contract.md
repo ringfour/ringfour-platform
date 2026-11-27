@@ -1,4 +1,4 @@
-# Apps API and runtime v1 — new Ringfour design
+# Apps API and runtime v1
 
 The [manifest](apps-contract.md), [installation contract](apps-installation.md),
 [hosted runs](apps-runs.md), [runtime](apps-runtime.md) and
@@ -6,7 +6,7 @@ The [manifest](apps-contract.md), [installation contract](apps-installation.md),
 Installation dispatch requires an installation-capable negotiated Daemon.
 
 OpenAPI: [hosted API](../packages/contracts/openapi/ringfour-api.v1.yaml) and
-[local runtime](../packages/contracts/openapi/ringfour-runtime.v1.yaml). Operations carry `x-implementation-status: implemented` or `contract-only`.
+[local runtime](../packages/contracts/openapi/ringfour-runtime.v1.yaml).
 [Resource definitions](../packages/contracts/schemas/apps/v1/api.schema.json),
 [mutation inputs](../packages/contracts/schemas/apps/v1/requests.schema.json),
 and [App errors](../packages/contracts/schemas/errors/v2/app-error.schema.json)
@@ -24,7 +24,7 @@ shared application code.
 | Import | Server UUID; unique `(organization_id, revision_id)`. Retains original publisher, App and revision. Source is server-derived `store` or `direct_share` with grant ID. |
 | Installation | Server UUID; unique active `(robot_id, app_id)`. Removed records remain as historical tombstones with `removed_at`; reinstall creates a new UUID. Robot workspace and App identity never change. |
 | Configuration revision | Server UUID, append-only complete validated values bound to one installation and release schema, with actor/time. Never overwrite a prior version. |
-| Run | Server UUID and shared execution-row UUID; references installation and an immutable snapshot. No mission record is required. |
+| Run | Server UUID for a run of one installation, with an immutable start snapshot. |
 | Operation | Server UUID for one durable action, independent of the run UUID. Start and stop reference their exact run. Install/configure/update/rollback/uninstall have `run_id: null`. |
 
 Owner/developer in publisher A may publish and grant/revoke revision shares.
@@ -55,19 +55,18 @@ in these resources, App environment or durable command payloads.
 
 ## Operations, application and execution
 
-All hosted mutations require `Idempotency-Key` (1–200 characters). Scope it to
+Catalog, installation and run mutations that record durable replay results require `Idempotency-Key` (1–200 characters). Scope it to
 principal, route, target and canonical request. Commit the key, resource IDs,
 operation and response atomically. Same key/input replays the original IDs and
 result **before** checking current mutable state; changed input returns
 `idempotency_conflict`. Retain the minimal replay tombstone for the lifetime of
 the referenced records, including removed-resource tombstones. No automatic
-expiry is introduced for App mutations. The legacy optional 24-hour header
-contract is unchanged. Natural App/release and workspace/revision uniqueness
+expiry is introduced for App mutations. Natural App/release and workspace/revision uniqueness
 also deduplicates publication and import under different retry keys.
 
 Install/configure/update/rollback/uninstall return 202 with `installation_id`,
 `operation_id` and `run_id: null`. A start atomically claims the shared robot
-execution slot across App and legacy sources, allocates the run/snapshot and
+execution slot for a release or development run, allocates the run/snapshot and
 operation, and returns their stable IDs. A second active start returns
 `execution_conflict`. A stop returns an operation for an existing run and never
 creates a run. Preconditions and authorization are checked before any new run
@@ -95,8 +94,7 @@ appropriate after correcting the dependency; it does not authorize replay.
 Available revision, candidate and installed binding are independent values.
 The candidate progresses `staging → staged`, then is cleared when applied;
 a failure remains visible as `failed`. A staged candidate does not replace
-`installed`. Apply only while the robot is idle (including legacy execution
-exclusion), atomically switching revision/config/image after a device report.
+`installed`. Apply only while the robot is idle, atomically switching revision/config/image after a device report.
 Failed configuration validation or preparation leaves the prior installed
 binding usable. Install, update, rollback and uninstall produce no run.
 Rollback chooses a previously installed, retained binding and configuration
@@ -109,8 +107,9 @@ installation identity, runs, files, logbook evidence or shared image layers.
 Reinstall creates a new installation ID, so delayed commands for the tombstone
 cannot affect the new binding.
 
-Configure, update and rollback use expected revision/configuration IDs to
-prevent overwriting intervening edits (`stale_installation`). Configure validates
+Configure checks the expected configuration revision. Update and rollback check
+both the expected release and configuration revision to prevent overwriting
+intervening edits (`stale_installation`). Configure validates
 a full replacement object against the installed release. Update validates
 against the candidate release. Start requires expected installed revision and
 configuration IDs. Only one pending mutation per installation is allowed;
@@ -132,8 +131,7 @@ possibly started container yields `interrupted`, `container_lost`, unknown exit
 code and no automatic relaunch. A new user start is a distinct run. Run snapshots
 freeze App/revision/import/publisher, image digest reference, manifest digest,
 configuration revision and values, actor and installation. Updating, unlisting
-or uninstalling cannot rewrite that evidence. Preserve legacy run IDs without
-inventing an image or converting archived source into an App.
+or uninstalling cannot rewrite that evidence.
 
 ## Timestamps and observations
 
@@ -162,24 +160,20 @@ observation as current running.
 
 ## Runtime, output, Logbook, artifacts and HITL
 
-`/v1/app-runtime/*` is a private Daemon namespace, separate from legacy
-`/v1/runtime/*`. The App receives only its per-run credential and validated
-configuration. Credential validation uses Daemon-owned durable run ownership,
-expiry and revocation, with no Runner lookup. The context endpoint resolves
-attribution from that credential. Payloads cannot select a run or organization.
-Revoke write authority at terminal completion; already queued data can continue
-syncing through Daemon machine authority. Never pass human, registry or engine
-credentials to an App.
+The Daemon serves Logbook, artifacts, interactions and live settings under
+`/v1/runtime/`. Its per-run bearer credential identifies the App run. The
+Daemon checks its ownership, expiry and revocation. Queued data can continue
+syncing with device credentials after the run ends.
 
-Runtime entry/interaction bodies are limited to 8,192 UTF-8 bytes; artifact
-publication metadata to 4,096 bytes. Entry/request/artifact IDs are stable replay
+Logbook entry bodies are limited to 8,192 UTF-8 bytes, interaction requests to
+16,384 bytes and artifact publication metadata to 4,096 bytes. Entry/request/artifact IDs are stable replay
 keys scoped to the credential's run. Same ID/input replays; changed content
 conflicts. Local acknowledgement requires durable state plus outbox; hosted
 availability is independent. Runtime Logbook evidence must name artifacts owned
 by the same run. Artifacts are regular files under a run-owned area, with no
 symlink/traversal escape; Daemon snapshots immutable bytes before acknowledgement
 and retains them until upload/evidence is durable. Limits: 16 artifacts/run,
-16 MiB/artifact, existing content-type allowlist. No Runner snapshot API is used.
+16 MiB/artifact, existing content-type allowlist.
 
 Output uses independent stdout/stderr byte offsets and base64 chunks of at most
 16,384 decoded bytes, at most 65,536 bytes retained per stream in v1; truncation
@@ -189,13 +183,13 @@ bytes are hosted. Stop must finalize output before cleanup; pending upload must
 not vanish with the container. App-scoped and global App Logbook filters return
 the same run/event UUIDs, with separate robot events retained. See [runtime evidence](apps-runtime.md) for run attribution and delivery.
 
-Interaction v2 replaces legacy `execution_id` attribution with `run_id` in the
-new namespace. A submitted response has no confirmation timestamp and leaves
+Local interaction responses carry the App run UUID in `execution_id`. Hosted
+run-scoped interaction resources expose it as `run_id`. A submitted response has no confirmation timestamp and leaves
 the interaction pending. Only device acceptance permits `applied` and answered;
 confirmed rejection remains distinguishable. No deadline is the default;
 bounded wait expiration leaves pending. Persist original response actor,
 submission and confirmation times. Cross-run/org reads and responses fail even
-with known IDs. Legacy interaction semantics and wire fields remain unchanged.
+with known IDs.
 
 ## Errors, consumers and persistence gate
 
@@ -211,7 +205,7 @@ The Daemon, CLI and Studio consume the same state, failure, ID and observation f
 
 ## Registry and catalog contract
 
-New design: `POST /v1/device/app-registry-grants` refreshes ephemeral pull
+`POST /v1/device/app-registry-grants` refreshes ephemeral pull
 credentials, bound to a current negotiated machine session, nonterminal and
 unexpired install/update/rollback operation, installation candidate operation,
 revision and exact image target. The candidate and its workspace import are

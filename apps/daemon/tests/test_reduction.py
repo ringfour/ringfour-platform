@@ -3,6 +3,7 @@ import sqlite3
 import uuid
 
 from fastapi.testclient import TestClient
+
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import MIGRATIONS_DIR, connect, migrate
 from ringfour_daemon.main import create_app

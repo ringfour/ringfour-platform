@@ -5,6 +5,7 @@ import uuid
 
 import httpx
 import pytest
+
 from ringfour_daemon import logbook
 from ringfour_daemon.config import Settings
 from ringfour_daemon.db import migrate

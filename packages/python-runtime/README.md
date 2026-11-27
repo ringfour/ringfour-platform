@@ -17,10 +17,8 @@ uv pip install --python .venv/bin/python --no-index --find-links wheels \
 .venv/bin/python -c "from ringfour_runtime import artifacts, interactions, logbook, settings"
 ```
 
-AP-04 qualifies the `0.1.0.dev0` local distribution and package checksum. AP-17
-adds the `0.1.1.dev0` settings client; it needs a newly pinned wheel bundle
-before a live-settings App can be built. Public package-feed publication is
-deferred.
+The [bundle release](../python-artifacts/release.json) pins runtime
+`0.1.1.dev0` (including live settings), SDK `0.1.0.dev0` and Agent protocol 1.
 
 ## Use from an App
 

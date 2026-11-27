@@ -3,6 +3,7 @@
 import hashlib
 
 import pytest
+
 from ringfour_cli import development_transport as dev_sync
 
 

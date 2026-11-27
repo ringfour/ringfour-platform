@@ -2,10 +2,11 @@ import json
 
 import httpx
 import pytest
+from typer.testing import CliRunner
+
 from ringfour_cli import auth
 from ringfour_cli.config import load_settings
 from ringfour_cli.main import app
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

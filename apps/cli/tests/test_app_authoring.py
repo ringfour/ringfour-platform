@@ -8,6 +8,8 @@ from pathlib import Path
 
 import httpx
 import pytest
+from typer.testing import CliRunner
+
 from ringfour_cli import app_project, main
 from ringfour_cli.app_manifest import (
     fingerprint,
@@ -16,7 +18,6 @@ from ringfour_cli.app_manifest import (
     validate_manifest,
 )
 from ringfour_cli.config import Settings
-from typer.testing import CliRunner
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages/contracts"
 ORG = "11111111-1111-4111-8111-111111111111"

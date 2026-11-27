@@ -3,6 +3,7 @@ import codecs
 import hashlib
 import json
 import os
+import subprocess
 import tempfile
 import time
 import uuid
@@ -102,6 +103,38 @@ def collect_health(
 @app.callback()
 def callback() -> None:
     """Ringfour developer CLI."""
+
+
+@app.command()
+def scaffold(
+    destination: Annotated[
+        Path, typer.Argument(help="Directory for the new checkout.")
+    ] = Path("my-ringfour-app"),
+    repo: Annotated[
+        str | None,
+        typer.Option(
+            "--repo",
+            envvar="RINGFOUR_TEMPLATE_REPO",
+            help="Template Git URL or local repository path.",
+        ),
+    ] = None,
+) -> None:
+    """Clone the Ringfour App template into a new or empty directory."""
+    if repo is None:
+        repo = "https://github.com/ringfour/ringfour-template.git"
+        for parent in Path(__file__).resolve().parents:
+            if parent.name == "ringfour-platform":
+                sibling = parent.with_name("ringfour-template")
+                if (sibling / ".git").exists():
+                    repo = str(sibling)
+                break
+    try:
+        subprocess.run(["git", "clone", "--", repo, str(destination)], check=True)
+    except FileNotFoundError as error:
+        typer.echo("Install Git to use ringfour-cli scaffold.", err=True)
+        raise typer.Exit(code=1) from error
+    except subprocess.CalledProcessError as error:
+        raise typer.Exit(code=1) from error
 
 
 def _default_client_factory() -> httpx.Client:

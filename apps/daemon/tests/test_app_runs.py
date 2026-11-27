@@ -5,9 +5,10 @@ import uuid
 
 import httpx
 import pytest
+from test_app_engine import setup as make_engine_setup
+
 from ringfour_daemon import app_installations, app_runs, operations
 from ringfour_daemon.db import connect
-from test_app_engine import setup as make_engine_setup
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ import math
 import re
 from datetime import datetime
 from decimal import Decimal, DecimalException
-from typing import Annotated, Literal, TypeVar
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
@@ -203,9 +203,6 @@ class RobotAppStatus(ProtocolModel):
         return self
 
 
-T = TypeVar("T", bound=ProtocolModel)
-
-
 def _unique_object(pairs):
     value = {}
     for key, item in pairs:
@@ -304,7 +301,7 @@ def _integer_number(token):
     raise ProtocolError("nonintegral or unsafe number")
 
 
-def parse(model: type[T], raw: str) -> T:
+def parse[T: ProtocolModel](model: type[T], raw: str) -> T:
     """Validate raw input before typed decoding; never coerce or fetch schemas."""
     try:
         if len(raw.encode("utf-8")) > MAX_BODY_BYTES:

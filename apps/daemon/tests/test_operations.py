@@ -2,6 +2,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
+
 from ringfour_daemon import operations
 from ringfour_daemon.db import migrate
 

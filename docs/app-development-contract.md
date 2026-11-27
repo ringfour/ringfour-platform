@@ -10,23 +10,28 @@ No running App is implicitly stopped on entry. Closing prevents new runs and the
 Daemon stops that session's active development run. Independent local expiry also
 stops the run while Platform is unavailable. Closure is not device confirmation.
 
-Routes (human Auth0): GET/POST /v1/robots/{id}/app-development; POST
-/v1/app-development/{id}/grants; DELETE /v1/app-development/{id}. Mutations require
-Idempotency-Key and revalidate membership under organization/robot locks. Session
-responses include ID, robot, installation, owner, expiry, state, latest generation
-and archive SHA-256. The CLI generates a 32-byte bearer secret and sends only its
-SHA-256 hash to Platform; a grant lasts at most five minutes or session expiry.
-The device advertises a dedicated HTTPS origin and DER certificate SHA-256 through
-POST /v1/device/app-development/endpoint using its own credential. Authenticated
-GET /v1/device/app-development delivers authorized session/grant metadata to that
-Daemon. Revocation/closed sessions remove local grants on the next poll; grants
-expire independently. The status listener never accepts development mutations.
+The hosted API uses human Auth0 credentials for these routes.
+
+| Request | Result |
+| --- | --- |
+| `GET /v1/robots/{robot_id}/app-development` | 200 with the current session or `{"session": null}`. |
+| `POST /v1/robots/{robot_id}/app-development` | Open a session for the installation and requested TTL. Supply `Idempotency-Key`. Returns 201. |
+| `POST /v1/robots/{robot_id}/app-development/grants` | Rotate the grant using `session_id` and `token_sha256`. Returns 200 with the Daemon URL, certificate pin and grant expiry. |
+| `DELETE /v1/robots/{robot_id}/app-development?expected_session_id={session_id}` | Close that exact session. Returns 204. |
+
+The CLI generates a 32-byte bearer secret and sends its SHA-256 hash to Platform.
+The grant expires after five minutes or at session expiry, whichever comes first.
+Using its device credentials, the Daemon advertises its HTTPS origin and certificate
+pin with `PUT /v1/device/app-development/endpoint` and polls
+`GET /v1/device/app-development` for the authorized session and grant.
+The next successful poll removes revoked grants. Cached grants also expire locally.
 
 The CLI verifies the exact Platform-provided certificate pin and validity before
 transmitting its local token. There is no insecure or hosted-source fallback.
-PUT /v1/local/app-development/{id}/source accepts a complete ZIP (16 MiB compressed,
-32 MiB extracted, at most 1024 files, 8 MiB per file), X-Archive-Sha256,
-X-Base-Generation and Idempotency-Key UUID headers. No absolute/traversing paths,
+`GET /v1/local/app-development/{session_id}/source` returns the generation, archive hash and pending-report status.
+`PUT /v1/local/app-development/{session_id}/source` accepts a complete ZIP (16 MiB compressed,
+32 MiB extracted, at most 1024 files, 8 MiB per file), a hex digest in `X-Archive-Sha256`,
+an integer in `X-Base-Generation` and a UUID in `Idempotency-Key`. No absolute/traversing paths,
 symlinks, special files, duplicate files, hidden paths, .env or __pycache__ entries.
 Source-only transfers exclude model directories by default; model/image changes
 require rebuilding. Snapshots commit atomically, and retries preserve the same
@@ -34,7 +39,7 @@ operation ID/body. POST /v1/device/app-development/{id}/source reports only the
 operation/base/new generation and archive hash. Restart waits for that report.
 Source ZIPs never pass through the hosted API.
 
-Normal POST /v1/app-installations/{id}/start gains optional development_session_id.
+`POST /v1/app-installations/{id}/start` accepts an optional `development_session_id`.
 It requires the open matching session and its owner/Owner with Developer authority,
 then includes server-generated development {session_id,generation,archive_sha256,
 expires_at} in the immutable run snapshot. Ordinary App run/operation reporting,

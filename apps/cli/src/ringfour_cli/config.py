@@ -40,11 +40,15 @@ def load_settings(path: Path | None = None) -> Settings:
     config: dict = {}
     if path.exists():
         config = json.loads(path.read_text())
+    defaults_path = Path(__file__).with_name("release_defaults.json")
+    defaults = json.loads(defaults_path.read_text()) if defaults_path.is_file() else {}
     return Settings(
-        api_url=_pick("RINGFOUR_API_URL", config, "api_url", DEFAULT_API_URL),
-        auth0_domain=_pick("RINGFOUR_AUTH0_DOMAIN", config, "auth0_domain"),
-        auth0_client_id=_pick("RINGFOUR_AUTH0_CLIENT_ID", config, "auth0_client_id"),
-        auth0_audience=_pick("RINGFOUR_AUTH0_AUDIENCE", config, "auth0_audience", DEFAULT_AUDIENCE),
+        api_url=_pick("RINGFOUR_API_URL", config, "api_url", defaults.get("api_url", DEFAULT_API_URL)),
+        auth0_domain=_pick("RINGFOUR_AUTH0_DOMAIN", config, "auth0_domain", defaults.get("auth0_domain")),
+        auth0_client_id=_pick("RINGFOUR_AUTH0_CLIENT_ID", config, "auth0_client_id", defaults.get("auth0_client_id")),
+        auth0_audience=_pick(
+            "RINGFOUR_AUTH0_AUDIENCE", config, "auth0_audience", defaults.get("auth0_audience", DEFAULT_AUDIENCE)
+        ),
         config_path=path,
         config=config,
     )

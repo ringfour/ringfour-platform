@@ -1,8 +1,9 @@
 from types import SimpleNamespace
 
 import httpx
-from ringfour_cli import main
 from typer.testing import CliRunner
+
+from ringfour_cli import main
 
 ORG = "11111111-1111-4111-8111-111111111111"
 ROBOT = "22222222-2222-4222-8222-222222222222"

@@ -31,3 +31,6 @@ the authorized Daemon. It is never mounted into an App or the API.
 - Use [local registry setup](docs/local-registry.md) for
   development image publication.
 - Run the [component checks](docs/development.md#component-checks) for the affected application.
+
+See [delivery from main](deployment/README.md) for CLI installation, robot updates
+and N100 deployment.
