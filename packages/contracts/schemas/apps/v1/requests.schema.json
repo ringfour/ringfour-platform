@@ -13,8 +13,12 @@
       "properties": {
         "manifest": {
           "oneOf": [
-            { "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json" },
-            { "$ref": "https://contracts.ringfour.dev/apps/v2/manifest.schema.json" }
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json"
+            },
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v2/manifest.schema.json"
+            }
           ]
         },
         "visibility": {
@@ -154,8 +158,13 @@
         },
         "runtime_settings": {
           "anyOf": [
-            { "type": "object", "maxProperties": 32 },
-            { "type": "null" }
+            {
+              "type": "object",
+              "maxProperties": 32
+            },
+            {
+              "type": "null"
+            }
           ],
           "description": "Optional complete live-settings values for the target release; null explicitly selects defaults and clears the prior selection."
         }
@@ -189,10 +198,31 @@
         },
         "runtime_settings": {
           "anyOf": [
-            { "type": "object", "maxProperties": 32 },
-            { "type": "null" }
+            {
+              "type": "object",
+              "maxProperties": 32
+            },
+            {
+              "type": "null"
+            }
           ],
           "description": "Optional complete live-settings values for the target release; null explicitly selects defaults and clears the prior selection."
+        }
+      }
+    },
+    "uninstall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_revision_id",
+        "expected_configuration_revision_id"
+      ],
+      "properties": {
+        "expected_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "expected_configuration_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
         }
       }
     },
@@ -211,6 +241,15 @@
         "expected_configuration_revision_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "development_session_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "minLength": 36,
+          "maxLength": 36,
+          "not": {
+            "pattern": "\\s"
+          }
         }
       }
     },

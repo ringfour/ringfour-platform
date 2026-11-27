@@ -64,6 +64,7 @@ public sealed class AppInstallation
     public string? Candidate { get; set; }
     public DateTimeOffset? LastObservedAt { get; set; }
     public Guid? SelectedSettingsRevisionId { get; set; }
+    public DateTimeOffset? RemovedAt { get; set; }
 }
 
 public sealed class AppSettingsRevision

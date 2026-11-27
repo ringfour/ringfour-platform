@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/identity/v1/invitation-code-response.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "invitation",
+    "code"
+  ],
+  "properties": {
+    "invitation": {
+      "$ref": "organization-invitation.schema.json"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 128
+    }
+  }
+}

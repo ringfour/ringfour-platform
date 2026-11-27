@@ -62,12 +62,14 @@ public sealed record UpdateMemberRequest(OrgRole Role);
 
 public sealed record CreateInvitationRequest(string? Email, OrgRole Role);
 
+public sealed record CreateInvitationCodeRequest(OrgRole Role);
+
 public sealed record InvitationTokenRequest(string? Token);
 
 public sealed record OrganizationInvitationResponse(
     Guid Id,
     Guid OrganizationId,
-    string Email,
+    string? Email,
     OrgRole Role,
     DateTimeOffset CreatedAt,
     DateTimeOffset ExpiresAt,
@@ -92,6 +94,6 @@ public sealed record InvitationListResponse(IReadOnlyList<OrganizationInvitation
 public sealed record InvitationPreviewResponse(
     Guid OrganizationId,
     string OrganizationName,
-    string Email,
+    string? Email,
     OrgRole Role,
     DateTimeOffset ExpiresAt);

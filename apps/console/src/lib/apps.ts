@@ -6,9 +6,23 @@ export type Robot = {
   id: string;
   organization_id: string;
   name: string;
+  appearance?: string | null;
   created_at?: string;
 };
 export type Capability = { capability: string; instance_kind?: string };
+export type AppValues = Record<string, string | number | boolean>;
+export type AppField = {
+  type: "string" | "integer" | "number" | "boolean";
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  enum?: (string | number | boolean)[];
+};
+export type AppSchema = {
+  properties: Record<string, AppField>;
+  required?: string[];
+};
 export type AppManifest = {
   app_key: string;
   release: string;
@@ -16,43 +30,17 @@ export type AppManifest = {
   capabilities: { required: Capability[]; optional: Capability[] };
   targets: { os: string; architecture: string; image: string }[];
   configuration: {
-    defaults: Record<string, string | number | boolean>;
-    schema: {
-      properties: Record<
-        string,
-        {
-          type: "string" | "integer" | "boolean";
-          minimum?: number;
-          maximum?: number;
-          minLength?: number;
-          maxLength?: number;
-          enum?: (string | number | boolean)[];
-        }
-      >;
-      required?: string[];
-    };
+    environment?: Record<string, string>;
+    defaults: AppValues;
+    schema: AppSchema;
   };
-  runtime_settings?: {
-    defaults: Record<string, string | number | boolean>;
-    schema: {
-      properties: Record<
-        string,
-        {
-          type: "string" | "integer" | "boolean";
-          minimum?: number;
-          maximum?: number;
-          minLength?: number;
-          maxLength?: number;
-          enum?: (string | number | boolean)[];
-        }
-      >;
-      required?: string[];
-    };
-  };
+  runtime_settings?: { defaults: AppValues; schema: AppSchema };
 };
 export type App = {
   id: string;
   publisher_organization_id: string;
+  publisher_name?: string;
+  publisher_type?: "ringfour" | "workspace";
   app_key: string;
   name: string;
   description: string;
@@ -100,6 +88,7 @@ export type Installation = {
   robot_id: string;
   app_id: string;
   created_at: string;
+  removed_at?: string | null;
   available_revision_id: string | null;
   installed: Binding | null;
   candidate: Candidate | null;
@@ -111,7 +100,14 @@ export type AppOperation = {
   robot_id: string;
   installation_id: string;
   run_id: string | null;
-  kind: "install" | "configure" | "update" | "rollback" | "start" | "stop";
+  kind:
+    | "install"
+    | "configure"
+    | "update"
+    | "rollback"
+    | "uninstall"
+    | "start"
+    | "stop";
   state: string;
   phase: string;
   requested_at: string;
@@ -131,6 +127,7 @@ export type AppRun = {
   installation_id: string;
   start_operation_id: string;
   snapshot: {
+    development?: {session_id: string; generation: number; archive_sha256: string; expires_at: string};
     app_id: string;
     revision_id: string;
     publisher_organization_id: string;
@@ -208,13 +205,11 @@ export async function readFirstPage<T>(
 export async function readLiveRuns(token: Token, path: string) {
   const [active, recent] = await Promise.all([
     readPage<AppRun>(token, withQuery(path, { active_only: "true" })),
-    readFirstPage<AppRun>(
-      token,
-      withQuery(path, { recent_first: "true" }),
-      50,
-    ),
+    readFirstPage<AppRun>(token, withQuery(path, { recent_first: "true" }), 50),
   ]);
-  return [...new Map([...recent, ...active].map((run) => [run.id, run])).values()];
+  return [
+    ...new Map([...recent, ...active].map((run) => [run.id, run])).values(),
+  ];
 }
 
 export const readJson = async <T>(token: Token, path: string): Promise<T> =>

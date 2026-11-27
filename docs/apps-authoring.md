@@ -12,6 +12,12 @@ Authoring schema v2 remains additive: v1 files and published releases continue
 to validate unchanged. Select `"schema_version": 2` to declare startup
 environment mappings or live settings.
 
+Configuration fields may use `string`, `integer`, bounded finite `number`, or
+`boolean`. Numbers are IEEE-754 binary64 values with absolute value at most
+9,007,199,254,740,991; canonical JSON uses shortest round-trip decimal
+notation. NaN, infinities, overflow, underflow, booleans and strings are not
+accepted as numbers.
+
 `app init PATH --app-key KEY --repository REGISTRY/REPO` extracts the one Robot
 Check template from a versioned checksum-pinned archive, then applies the selected
 identity. The standalone example repository owns the source. The CLI packages a
@@ -39,7 +45,13 @@ publishing a changed name or description. The Store name changes when the new
 listed release is successfully published. Existing runs retain their frozen
 manifest and image references.
 
-`app publish PATH [--org UUID] [--visibility listed|unlisted]` uses Docker's normal
+`app publish PATH [--org UUID] [--visibility listed|unlisted]` defaults to
+private (`unlisted`). `listed` means public App Store discovery and is reserved
+for the configured Ringfour publisher organization. The CLI prints the workspace,
+App, release and visibility before submission; public publication requires an
+interactive confirmation or `--yes`. Automation supplies an explicit visibility
+and pass `--yes` when using `--json` to publish a listed release. The server enforces this entitlement independently.
+The command uses Docker's normal
 registry login, verifies the unchanged build inputs/local IDs, pushes images,
 resolves/validates concrete remote digest/platform/config, and freezes the release
 before calling AP-05. API credentials stay in the existing Auth0 keyring flow.
@@ -79,8 +91,11 @@ them. Device delivery is at least once, so handlers should make effects
 idempotent. `SettingsRejected` takes a bounded safe reason; validation errors
 must never be treated as applied values. Live settings are ordinary retained
 configuration and Logbook data, not secret storage. Values are limited to the
-existing closed, flat string/integer/boolean schema subset, up to 32 keys and
-16 KiB runtime messages. See [App runtime](apps-runtime.md) and the
+closed, flat string/integer/number/boolean schema subset, up to 32 keys and
+16 KiB runtime messages. `number` means finite IEEE-754 binary64, bounded to
+±9,007,199,254,740,991 and serialized with shortest round-trip decimal form.
+NaN, infinities, overflow, underflow, boolean/string coercion are rejected.
+See [App runtime](apps-runtime.md) and the
 [runtime package guide](../packages/python-runtime/README.md) for recovery,
 acknowledgement and helper usage.
 

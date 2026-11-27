@@ -4,6 +4,7 @@ dynamic = ["version"]
 description = "Ringfour developer CLI."
 requires-python = ">=3.13"
 dependencies = [
+    "cryptography>=46,<47",
     "httpx>=0.28.1",
     "jsonschema>=4.26,<5",
     "keyring>=25.5.0",

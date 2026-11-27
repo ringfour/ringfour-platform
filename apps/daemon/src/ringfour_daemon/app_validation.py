@@ -12,6 +12,7 @@ from .app_protocol import (
     _non_json_number,
     _unique_object,
     _validate_scalars,
+    number_text,
 )
 
 SCHEMAS = {
@@ -40,13 +41,20 @@ def raw_json(raw):
 
 
 def canonical(value):
-    return json.dumps(
-        value,
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
+    if isinstance(value, dict):
+        return (
+            "{"
+            + ",".join(
+                json.dumps(key, ensure_ascii=False) + ":" + canonical(value[key])
+                for key in sorted(value)
+            )
+            + "}"
+        )
+    if isinstance(value, list):
+        return "[" + ",".join(canonical(item) for item in value) + "]"
+    if type(value) in (int, float):
+        return number_text(value)
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
 
 def digest(value):
@@ -82,10 +90,29 @@ def validate_manifest(manifest):
         mappings = manifest["configuration"].get("environment", {})
         if len(mappings) > 32:
             raise ValueError("Environment mapping exceeds entry limit")
-        reserved = {"PATH", "IFS", "ENV", "BASH_ENV", "BASHOPTS", "SHELLOPTS", "NODE_OPTIONS", "NODE_PATH", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "RUBYOPT", "RUBYLIB", "PERL5OPT", "PERL5LIB"}
+        reserved = {
+            "PATH",
+            "IFS",
+            "ENV",
+            "BASH_ENV",
+            "BASHOPTS",
+            "SHELLOPTS",
+            "NODE_OPTIONS",
+            "NODE_PATH",
+            "JAVA_TOOL_OPTIONS",
+            "_JAVA_OPTIONS",
+            "RUBYOPT",
+            "RUBYLIB",
+            "PERL5OPT",
+            "PERL5LIB",
+        }
         properties = manifest["configuration"]["schema"]["properties"]
         for name, key in mappings.items():
-            if (name.startswith(("RINGFOUR_", "LD_", "DYLD_", "PYTHON")) or name in reserved or key not in properties):
+            if (
+                name.startswith(("RINGFOUR_", "LD_", "DYLD_", "PYTHON"))
+                or name in reserved
+                or key not in properties
+            ):
                 raise ValueError("Invalid or reserved App environment mapping")
         configuration_environment(manifest, manifest["configuration"]["defaults"])
         runtime = manifest.get("runtime_settings")
@@ -111,9 +138,13 @@ def configuration_environment(manifest, values):
             output[name] = value
         elif isinstance(value, int):
             output[name] = str(value)
+        elif type(value) is float:
+            output[name] = number_text(value)
         else:
-            raise ValueError("App environment values must be scalar")  # noqa: TRY004 -- public validation uses ValueError
-    size = sum(len(name.encode()) + len(value.encode()) + 1 for name, value in output.items())
+            raise ValueError("App environment values must be scalar")
+    size = sum(
+        len(name.encode()) + len(value.encode()) + 1 for name, value in output.items()
+    )
     if size > 16384:
         raise ValueError("Mapped App environment exceeds byte limit")
     return output

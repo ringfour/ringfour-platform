@@ -85,24 +85,30 @@ def test_negotiation_feature_offers_default_false_and_remain_explicit():
     assert not offer.supports_live_settings
     updated = parse(
         NegotiationRequest,
-        json.dumps({
-            **fixture("negotiation_offer"),
-            "supports_manifest_v2": True,
-            "supports_live_settings": True,
-        }),
+        json.dumps(
+            {
+                **fixture("negotiation_offer"),
+                "supports_manifest_v2": True,
+                "supports_live_settings": True,
+            }
+        ),
     )
     assert updated.supports_manifest_v2 and updated.supports_live_settings
 
 
 def test_manifest_v2_environment_mapping_is_validated_and_scalar():
-    contracts = Path(__file__).resolve().parents[3] / "packages/contracts/fixtures/apps/v2"
+    contracts = (
+        Path(__file__).resolve().parents[3] / "packages/contracts/fixtures/apps/v2"
+    )
     manifest = json.loads((contracts / "manifest.json").read_text())
     app_validation.validate_manifest(manifest)
     canonical = json.loads((contracts / "canonical.json").read_text())
     assert app_validation.canonical(manifest) == canonical["json"]
     assert app_validation.digest(manifest) == canonical["digest"]
     values = manifest["configuration"]["defaults"]
-    assert app_validation.configuration_environment(manifest, values) == {"SAMPLE_COUNT": "3"}
+    assert app_validation.configuration_environment(manifest, values) == {
+        "SAMPLE_COUNT": "3"
+    }
     manifest["configuration"]["environment"] = {"PATH": "sample_count"}
     with pytest.raises(ValidationError, match="PATH"):
         app_validation.validate_manifest(manifest)
@@ -113,6 +119,39 @@ def test_manifest_v2_environment_mapping_is_validated_and_scalar():
         app_validation.configuration_environment(
             manifest, {"sample_count": 3, "note": "bad\0value"}
         )
+
+
+def test_bounded_float_manifest_environment_settings_and_canonical_roundtrip():
+    contracts = (
+        Path(__file__).resolve().parents[3] / "packages/contracts/fixtures/apps/v2"
+    )
+    fixture = json.loads((contracts / "floating-point.json").read_text())
+    manifest = app_validation.validate_manifest(fixture["manifest"])
+    assert app_validation.digest(manifest) == fixture["canonical_digest"]
+    values = app_validation.raw_json(json.dumps(fixture["configuration_values"]))
+    app_validation.validate_configuration(manifest, values)
+    assert (
+        app_validation.configuration_environment(manifest, values)
+        == fixture["expected_environment"]
+    )
+    settings = app_validation.raw_json(json.dumps(fixture["runtime_settings_values"]))
+    assert app_validation.canonical(settings) == app_validation.canonical(
+        fixture["runtime_settings_values"]
+    )
+    assert (
+        app_validation.canonical({"a": 0.000001, "b": 0.0000001, "c": -0.125})
+        == '{"a":0.000001,"b":1e-7,"c":-0.125}'
+    )
+
+    for raw in (
+        '{"value":NaN}',
+        '{"value":Infinity}',
+        '{"value":1e400}',
+        '{"value":1e-400}',
+        '{"value":9007199254740992}',
+    ):
+        with pytest.raises(ValueError):
+            app_validation.raw_json(raw)
 
 
 @pytest.mark.parametrize("value", [True, "1", 1.5, 0, 2])

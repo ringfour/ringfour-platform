@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+import traceback
 import uuid
 from contextlib import closing
 from datetime import UTC, datetime
@@ -54,6 +55,8 @@ def begin(settings, executor, operation):
         try:
             app_installations.check_idle(conn)
         except app_installations.PreparationError:
+            code = "execution_conflict"
+        if conn.execute("SELECT 1 FROM app_preparations WHERE state IN ('staging','staged')").fetchone():
             code = "execution_conflict"
         if current is None:
             conn.execute(
@@ -410,9 +413,13 @@ async def run(settings, manager):
         ):
             try:
                 await tick(settings, manager.app_executor, manager.app_headers)
-            except (httpx.HTTPError, ValueError, sqlite3.Error):
+            except (httpx.HTTPError, ValueError, sqlite3.Error) as error:
+                # Report the failing boundary without dumping configuration or credentials.
+                frames = traceback.extract_tb(error.__traceback__)
+                location = frames[-1] if frames else None
                 logger.warning(
-                    "App run reconciliation/delivery pending; retaining intent."
+                    "App run reconciliation/delivery pending (%s at %s:%s); retaining intent.",
+                    type(error).__name__, location.filename if location else "unknown", location.lineno if location else 0,
                 )
         try:
             await asyncio.wait_for(manager.app_work.wait(), timeout=0.5)

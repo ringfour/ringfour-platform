@@ -42,4 +42,35 @@ public sealed class AppManifestV2Tests
         Assert.Throws<ApiException>(() => AppInstallationEndpoints.ValidateConfiguration(
             manifest, JsonNode.Parse("{\"sample_count\":3,\"note\":\"bad\\u0000value\"}")!));
     }
+
+    [Fact]
+    public void BoundedFloatsPreserveCanonicalDigestConfigurationEnvironmentAndSettings()
+    {
+        var fixture = JsonNode.Parse(File.ReadAllText(Path.Combine(Contracts, "fixtures/apps/v2/floating-point.json")))!;
+        var manifest = AppManifest.Validate(fixture["manifest"]!.ToJsonString());
+        Assert.Equal(fixture["canonical_digest"]!.GetValue<string>(), "sha256:" + AppProtocol.Digest(manifest));
+
+        var configuration = fixture["configuration_values"]!;
+        Assert.True(JsonNode.DeepEquals(
+            AppInstallationEndpoints.ValidateConfiguration(manifest, configuration), configuration));
+        var environment = AppManifest.Environment(manifest, configuration);
+        foreach (var (name, value) in fixture["expected_environment"]!.AsObject())
+            Assert.Equal(value!.GetValue<string>(), environment[name]!.GetValue<string>());
+
+        var settings = AppManifest.ValidateRuntimeSettings(manifest, fixture["runtime_settings_values"]!);
+        Assert.True(JsonNode.DeepEquals(settings, fixture["runtime_settings_values"]));
+
+        foreach (var invalid in new JsonNode?[]
+        {
+            JsonValue.Create(true), JsonValue.Create("0.2"), JsonValue.Create(-1.000001),
+            JsonValue.Create(1.000001), JsonValue.Create(9007199254740992d)
+        })
+        {
+            var values = configuration.DeepClone().AsObject();
+            values["ratio"] = invalid?.DeepClone();
+            Assert.Throws<ApiException>(() => AppInstallationEndpoints.ValidateConfiguration(manifest, values));
+        }
+        Assert.Throws<ApiException>(() => AppProtocol.Validate("{\"value\":1e400}", "request_start"));
+        Assert.Throws<ApiException>(() => AppProtocol.Validate("{\"value\":1e-400}", "request_start"));
+    }
 }

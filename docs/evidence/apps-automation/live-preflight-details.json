@@ -1,0 +1,17 @@
+{
+  "passed": false,
+  "real_auth0": true,
+  "organization_id": "88d119d4-8f51-42dc-b1fd-65376f6b13b3",
+  "started_at": "2026-11-26T13:12:02.948290+00:00",
+  "checks": [
+    "real identity, robot ownership, online/idle and uninstall support"
+  ],
+  "cleanup": [],
+  "stack_operations": false,
+  "two_user_acceptance": "pending",
+  "stage": "real identity, robot ownership, online/idle and uninstall support",
+  "robot_id": "91bc543a-db5f-4b90-bb58-5b7abe17a4cd",
+  "user_id": "b7278210-3edb-484a-83d4-2191b5cb53ec",
+  "preflight_passed": true,
+  "mutations": false
+}

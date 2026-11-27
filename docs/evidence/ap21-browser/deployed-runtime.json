@@ -1,0 +1,21 @@
+{
+  "origin": "http://localhost:5173",
+  "production_bundle": true,
+  "vite_client": false,
+  "gzip": "gzip",
+  "asset": "/assets/index-CHkI_FyH.js",
+  "decoded_javascript_bytes": 684767,
+  "compressed_javascript_bytes": 202597,
+  "http_checks": {
+    "/api/health/ready": 200,
+    "/api/v1/organizations": 401,
+    "/assets/missing.js": 404,
+    "/apps/fixture/settings?workspace=fixture": 200
+  },
+  "cold_sign_in_render_ms": [
+    66,
+    62,
+    63
+  ],
+  "live_authenticated_acceptance": false
+}

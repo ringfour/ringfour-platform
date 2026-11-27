@@ -7,6 +7,7 @@ stays disabled until the installation and executor milestones.
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import datetime
 from decimal import Decimal, DecimalException
@@ -48,6 +49,7 @@ Name = Annotated[
 Text = Annotated[str, StringConstraints(min_length=1, max_length=120)]
 Version = Annotated[int, Field(ge=1, le=1)]
 Sequence = Annotated[int, Field(ge=1, le=9007199254740991)]
+MAX_SAFE_NUMBER = 9007199254740991
 
 
 class ProtocolError(ValueError):
@@ -60,6 +62,7 @@ class ProtocolModel(BaseModel):
 
 class NegotiationRequest(ProtocolModel):
     supports_app_installations: bool = False
+    supports_app_uninstall: bool = False
     supports_app_runs: bool = False
     supports_manifest_v2: bool = False
     supports_live_settings: bool = False
@@ -182,6 +185,7 @@ class RobotAppStatus(ProtocolModel):
     inventory: Inventory | None
     supports_manifest_v2: bool | None = None
     supports_live_settings: bool | None = None
+    supports_app_uninstall: bool | None = None
 
     @model_validator(mode="after")
     def validate_projection(self):
@@ -222,6 +226,61 @@ def _validate_scalars(value):
     elif isinstance(value, list):
         for item in value:
             _validate_scalars(item)
+    elif type(value) is int:
+        if abs(value) > MAX_SAFE_NUMBER:
+            raise ProtocolError("unsafe integer")
+    elif type(value) is float and (
+        not math.isfinite(value) or abs(value) > MAX_SAFE_NUMBER
+    ):
+        raise ProtocolError("unsafe floating-point number")
+
+
+def number_text(value):
+    """Render one binary64 using ECMAScript/JCS shortest-roundtrip notation."""
+    if type(value) is int:
+        if abs(value) > MAX_SAFE_NUMBER:
+            raise ValueError("unsafe integer")
+        return str(value)
+    if (
+        type(value) is not float
+        or not math.isfinite(value)
+        or abs(value) > MAX_SAFE_NUMBER
+    ):
+        raise ValueError("unsafe floating-point number")
+    if value == 0:
+        return "0"
+    if value.is_integer():
+        return str(int(value))
+    raw = repr(value).lower()
+    sign = "-" if raw.startswith("-") else ""
+    raw = raw.lstrip("-")
+    mantissa, _, exponent = raw.partition("e")
+    power = int(exponent) if exponent else 0
+    point = mantissa.find(".")
+    position = (len(mantissa) if point < 0 else point) + power
+    digits = mantissa.replace(".", "")
+    leading = len(digits) - len(digits.lstrip("0"))
+    digits = digits[leading:]
+    position -= leading
+    digits = digits.rstrip("0") or "0"
+    if 0 < position <= 21:
+        rendered = (
+            digits + "0" * (position - len(digits))
+            if len(digits) <= position
+            else digits[:position] + "." + digits[position:]
+        )
+    elif -6 < position <= 0:
+        rendered = "0." + "0" * (-position) + digits
+    else:
+        exponent = position - 1
+        rendered = (
+            digits[0]
+            + ("." + digits[1:] if len(digits) > 1 else "")
+            + "e"
+            + ("+" if exponent >= 0 else "")
+            + str(exponent)
+        )
+    return sign + rendered
 
 
 def _non_json_number(_):
@@ -229,12 +288,17 @@ def _non_json_number(_):
 
 
 def _integer_number(token):
-    # JSON Schema integer includes integral forms such as 1.0 and 1e0.
-    # Preserve exactness; do not coerce strings, booleans or fractional values.
+    # Normalize integral JSON forms, otherwise preserve finite binary64 values.
     try:
         number = Decimal(token)
-        if abs(number) <= 9007199254740991 and number == number.to_integral_value():
+        if not number.is_finite() or abs(number) > MAX_SAFE_NUMBER:
+            raise ValueError("unsafe number")
+        if number == number.to_integral_value():
             return int(number)
+        result = float(number)
+        if not math.isfinite(result) or (number != 0 and result == 0):
+            raise ValueError("number outside binary64 range")
+        return result
     except DecimalException:
         pass
     raise ProtocolError("nonintegral or unsafe number")
@@ -248,6 +312,7 @@ def parse(model: type[T], raw: str) -> T:
         value = json.loads(
             raw,
             object_pairs_hook=_unique_object,
+            parse_int=_integer_number,
             parse_float=_integer_number,
             parse_constant=_non_json_number,
         )

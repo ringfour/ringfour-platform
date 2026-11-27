@@ -74,6 +74,18 @@ test("robot fixtures validate against the v1 robots schemas", async () => {
   assert.ok(deviceIdentity(await loadJson("fixtures/robots/v1/device-identity.json")), "device-identity fixture");
 });
 
+test("robot appearance supports built-in artwork and bounded raster images", async () => {
+  const validate = await validatorFor("schemas/robots/v1/update-appearance-request.schema.json");
+  for (const appearance of [null, "bot", "base101", "rover", "arm", "drone", "data:image/png;base64,iVBORw0KGgo="]) {
+    assert.ok(validate({ appearance }));
+  }
+  for (const appearance of ["", "unknown", "https://example.com/robot.png", "data:image/svg+xml;base64,PHN2Zy8+", "x".repeat(350001)]) {
+    assert.equal(validate({ appearance }), false);
+  }
+  assert.equal(validate({}), false);
+  assert.equal(validate({ appearance: "bot", profile_ref: "changed" }), false);
+});
+
 test("robot schemas reject malformed documents", async () => {
   const robot = await validatorFor("schemas/robots/v1/robot.schema.json");
   const createRobot = await validatorFor("schemas/robots/v1/create-robot-request.schema.json");

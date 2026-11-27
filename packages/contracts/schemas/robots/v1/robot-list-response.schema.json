@@ -4,14 +4,23 @@
   "title": "RobotListResponse",
   "description": "GET /v1/organizations/{org_id}/robots response. Opaque cursor pagination; next_cursor is null when exhausted.",
   "type": "object",
-  "required": ["items", "next_cursor"],
+  "required": [
+    "items",
+    "next_cursor"
+  ],
   "additionalProperties": false,
   "properties": {
     "items": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "organization_id", "name", "created_at", "enrolled_at"],
+        "required": [
+          "id",
+          "organization_id",
+          "name",
+          "created_at",
+          "enrolled_at"
+        ],
         "additionalProperties": false,
         "properties": {
           "id": {
@@ -33,18 +42,36 @@
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
           },
           "enrolled_at": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
           },
           "profile_ref": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "maxLength": 500
+          },
+          "appearance": {
+            "description": "Console visual identity only; independent of Agent profiles. Null uses the default robot icon. Images are PNG/JPEG/WebP base64 data URLs, at most 256 KiB decoded; signatures must match MIME type. No remote URLs or SVG.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 350000,
+            "pattern": "^(bot|rover|arm|drone|base101|data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$"
           }
         }
       }
     },
     "next_cursor": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1
     }
   }

@@ -25,7 +25,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${ADMINER_PORT:-8083}:8080"
+      - "127.0.0.1:${ADMINER_PORT:-9080}:8080"
 
   app-registry:
     image: registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
@@ -84,6 +84,7 @@ services:
       Storage__S3__Region: ${STORAGE_S3_REGION:-}
       Storage__S3__Bucket: ${STORAGE_S3_BUCKET:-}
       Apps__InstallationsEnabled: ${APPS_INSTALLATIONS_ENABLED:-false}
+      Apps__OfficialPublisherOrganizationId: ${APPS_OFFICIAL_PUBLISHER_ORGANIZATION_ID:-}
       Apps__LiveSettingsEnabled: ${APPS_LIVE_SETTINGS_ENABLED:-false}
       Apps__Registries__0__AllowHttp: ${APPS_REGISTRY_ALLOW_HTTP:-false}
       Apps__Registries__0__ApiEndpoint: ${APPS_REGISTRY_API_ENDPOINT:-}
@@ -104,17 +105,19 @@ services:
       - api-storage:/storage
 
   console:
-    build: ../../apps/console
+    build:
+      context: ../../apps/console
+      target: production
+      args:
+        VITE_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN}
+        VITE_AUTH0_CLIENT_ID: ${AUTH0_WEB_CLIENT_ID:?Set AUTH0_WEB_CLIENT_ID}
+        VITE_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
     environment:
       API_PROXY_TARGET: http://api:8080
-      VITE_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?Set AUTH0_DOMAIN}
-      VITE_AUTH0_CLIENT_ID: ${AUTH0_WEB_CLIENT_ID:?Set AUTH0_WEB_CLIENT_ID}
-      VITE_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-https://api.ringfour.eu}
-      VITE_CONSOLE_ORIGIN: ${CONSOLE_ORIGIN:-http://localhost:5173}
     depends_on:
       - api
     ports:
-      - "${CONSOLE_PORT:-5173}:5173"
+      - "${CONSOLE_PORT:-5173}:80"
 
 volumes:
   pgdata:

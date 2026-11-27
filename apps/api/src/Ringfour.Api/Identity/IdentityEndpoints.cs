@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Ringfour.Api.Connectivity;
 using Ringfour.Api.Errors;
 using Ringfour.Api.Persistence;
 using System.Security.Cryptography;
@@ -16,12 +17,15 @@ public static class IdentityEndpoints
         group.MapPatch("/me", UpdateMe);
         group.MapPost("/organizations", CreateOrganization);
         group.MapGet("/organizations", ListOrganizations);
+        group.MapDelete("/organizations/{orgId:guid}", DeleteOrganization);
         group.MapGet("/organizations/{orgId:guid}/members", ListMembers);
         group.MapPost("/organizations/{orgId:guid}/members", AddMember);
         group.MapPatch("/organizations/{orgId:guid}/members/{userId:guid}", UpdateMemberRole);
         group.MapDelete("/organizations/{orgId:guid}/members/{userId:guid}", RemoveMember);
+        group.MapDelete("/organizations/{orgId:guid}/members/me", LeaveOrganization);
         group.MapGet("/organizations/{orgId:guid}/invitations", ListInvitations);
         group.MapPost("/organizations/{orgId:guid}/invitations", CreateInvitation);
+        group.MapPost("/organizations/{orgId:guid}/invitation-codes", CreateInvitationCode);
         group.MapPost("/organizations/{orgId:guid}/invitations/{invitationId:guid}/resend", ResendInvitation);
         group.MapDelete("/organizations/{orgId:guid}/invitations/{invitationId:guid}", RevokeInvitation);
         group.MapPost("/invitations/preview", PreviewInvitation);
@@ -199,6 +203,8 @@ public static class IdentityEndpoints
     {
         var caller = await IdentityAccess.ResolveOrCreateUser(
             db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockOrganization(db, orgId, cancellationToken);
         await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
 
         var target = await db.Users.SingleOrDefaultAsync(
@@ -223,6 +229,7 @@ public static class IdentityEndpoints
             throw ApiException.Conflict("conflict", "The user is already a member of this organization.");
         }
 
+        await transaction.CommitAsync(cancellationToken);
         return Results.Created(
             $"/v1/organizations/{orgId}/members/{membership.UserId}",
             MembershipResponse.FromEntity(membership));
@@ -238,11 +245,10 @@ public static class IdentityEndpoints
     {
         var caller = await IdentityAccess.ResolveOrCreateUser(
             db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
-        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
-
         await using var transaction =
             await db.Database.BeginTransactionAsync(cancellationToken);
         await LockOrganization(db, orgId, cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
 
         var target = await db.Memberships.Include(membership => membership.User).SingleOrDefaultAsync(
             membership => membership.OrganizationId == orgId && membership.UserId == userId,
@@ -268,6 +274,78 @@ public static class IdentityEndpoints
         return MembershipResponse.FromEntity(target);
     }
 
+    private static async Task<IResult> DeleteOrganization(
+        HttpContext httpContext, RingfourDbContext db,
+        DeviceConnectionManager connections, Guid orgId, CancellationToken cancellationToken)
+    {
+        var caller = await IdentityAccess.ResolveOrCreateUser(db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockOrganization(db, orgId, cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
+        // Serialize with App starts/installation changes before checking device work.
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM robots WHERE organization_id = {orgId} ORDER BY id FOR UPDATE", cancellationToken);
+        var robotIds = db.Robots.Where(r => r.OrganizationId == orgId).Select(r => r.Id);
+        if (await db.AppInstallations.AnyAsync(i => i.OrganizationId == orgId && i.InstalledBinding != null, cancellationToken) ||
+            await db.AppRuns.AnyAsync(r => r.OrganizationId == orgId && (r.State == "accepted" || r.State == "running"), cancellationToken) ||
+            await db.AppOperations.AnyAsync(o => o.OrganizationId == orgId && (o.State == "queued" || o.State == "accepted" || o.State == "running"), cancellationToken) ||
+            await db.RobotExecutionSlots.AnyAsync(slot => robotIds.Contains(slot.RobotId), cancellationToken))
+            throw ApiException.Conflict("organization_has_apps", "Stop and uninstall all Apps and wait for pending operations before deleting this organization.");
+
+        var now = DateTimeOffset.UtcNow;
+        var organization = await db.Organizations.SingleAsync(o => o.Id == orgId, cancellationToken);
+        organization.DeletedAt = now;
+        await db.Memberships.Where(m => m.OrganizationId == orgId).ExecuteDeleteAsync(cancellationToken);
+        await db.OrganizationInvitations.Where(i => i.OrganizationId == orgId && i.AcceptedAt == null && i.RevokedAt == null)
+            .ExecuteUpdateAsync(update => update.SetProperty(i => i.RevokedAt, now), cancellationToken);
+        await db.RobotCredentials.Where(c => robotIds.Contains(c.RobotId) && c.RevokedAt == null)
+            .ExecuteUpdateAsync(update => update.SetProperty(c => c.RevokedAt, now), cancellationToken);
+        await db.EnrollmentTokens.Where(t => robotIds.Contains(t.RobotId) && t.ConsumedAt == null && t.ExpiresAt > now)
+            .ExecuteUpdateAsync(update => update.SetProperty(t => t.ExpiresAt, now), cancellationToken);
+        await db.AppShares.Where(share => (share.PublisherOrganizationId == orgId || share.DestinationOrganizationId == orgId) && share.RevokedAt == null)
+            .ExecuteUpdateAsync(update => update.SetProperty(share => share.RevokedAt, now), cancellationToken);
+        var ids = await robotIds.ToListAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        foreach (var id in ids)
+        {
+            var session = connections.Get(id);
+            if (session is null) continue;
+            try { session.Socket.Abort(); }
+            catch (ObjectDisposedException) { /* A concurrent disconnect already closed it. */ }
+            connections.Unregister(id, session.SessionId);
+        }
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> LeaveOrganization(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        Guid orgId,
+        CancellationToken cancellationToken)
+    {
+        var caller = await IdentityAccess.ResolveOrCreateUser(
+            db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
+        await using var transaction =
+            await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockOrganization(db, orgId, cancellationToken);
+
+        // Resolve membership under the same lock as owner removals/demotions.
+        // The route never accepts a different target user or requires Owner rights.
+        var membership = await IdentityAccess.RequireMembership(
+            db, orgId, caller.Id, OrgRole.Operator, cancellationToken);
+        if (membership.Role == OrgRole.Owner &&
+            await CountOwners(db, orgId, cancellationToken) <= 1)
+        {
+            throw ApiException.Conflict(
+                "last_owner", "Make another member an owner before leaving this organization.");
+        }
+
+        db.Memberships.Remove(membership);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> RemoveMember(
         HttpContext httpContext,
         RingfourDbContext db,
@@ -277,11 +355,10 @@ public static class IdentityEndpoints
     {
         var caller = await IdentityAccess.ResolveOrCreateUser(
             db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
-        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
-
         await using var transaction =
             await db.Database.BeginTransactionAsync(cancellationToken);
         await LockOrganization(db, orgId, cancellationToken);
+        await IdentityAccess.RequireMembership(db, orgId, caller.Id, OrgRole.Owner, cancellationToken);
 
         var target = await db.Memberships.SingleOrDefaultAsync(
             membership => membership.OrganizationId == orgId && membership.UserId == userId,
@@ -322,6 +399,25 @@ public static class IdentityEndpoints
             .Take(100)
             .ToListAsync(cancellationToken);
         return new InvitationListResponse(invitations.Select(OrganizationInvitationResponse.FromEntity).ToList());
+    }
+
+    private static async Task<IResult> CreateInvitationCode(
+        HttpContext context, RingfourDbContext db, Guid orgId,
+        CreateInvitationCodeRequest request, CancellationToken ct)
+    {
+        var user = await IdentityAccess.ResolveOrCreateUser(db, IdentityAccess.RequireSubject(context), ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LockOrganization(db, orgId, ct);
+        await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Owner, ct);
+        if (!Enum.IsDefined(request.Role)) throw ApiException.InvalidInput("Choose operator, developer or owner.");
+        var code = CreateInviteToken();
+        var now = DateTimeOffset.UtcNow;
+        var invitation = new OrganizationInvitation { Id = Guid.NewGuid(), OrganizationId = orgId,
+            Role = request.Role, InvitedByUserId = user.Id, TokenHash = HashToken(code), CreatedAt = now, ExpiresAt = now.AddDays(7) };
+        db.OrganizationInvitations.Add(invitation);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Results.Created($"/v1/organizations/{orgId}/invitations/{invitation.Id}", new { invitation = OrganizationInvitationResponse.FromEntity(invitation), code });
     }
 
     private static async Task<IResult> CreateInvitation(
@@ -416,6 +512,7 @@ public static class IdentityEndpoints
         }
 
         var token = CreateInviteToken();
+        if (invitation.Email is null) throw ApiException.InvalidInput("Create a new invitation code instead of resending email.");
         invitation.TokenHash = HashToken(token);
         invitation.ExpiresAt = DateTimeOffset.UtcNow.AddDays(7);
         await db.SaveChangesAsync(cancellationToken);
@@ -458,7 +555,7 @@ public static class IdentityEndpoints
     {
         var token = RequireInvitationToken(request.Token);
         var invitation = await db.OrganizationInvitations.Include(item => item.Organization)
-            .SingleOrDefaultAsync(item => item.TokenHash == HashToken(token), cancellationToken)
+            .SingleOrDefaultAsync(item => item.TokenHash == HashToken(token) && item.Organization.DeletedAt == null, cancellationToken)
             ?? throw ApiException.NotFound("The invitation link is invalid or expired.");
         EnsureInvitationOpen(invitation);
         return Results.Ok(new InvitationPreviewResponse(
@@ -481,17 +578,22 @@ public static class IdentityEndpoints
             item => item.TokenHash == tokenHash, cancellationToken)
             ?? throw ApiException.NotFound("The invitation link is invalid or expired.");
 
-        var profile = await userInfoClient.GetVerifiedEmailAsync(httpContext, cancellationToken);
-        if (profile.NormalizedAddress != invitation.NormalizedEmail)
+        string? verifiedEmail = null;
+        if (invitation.NormalizedEmail is not null)
         {
-            throw ApiException.Forbidden("Sign in with the verified email address that received this invitation.");
+            var profile = await userInfoClient.GetVerifiedEmailAsync(httpContext, cancellationToken);
+            if (profile.NormalizedAddress != invitation.NormalizedEmail)
+                throw ApiException.Forbidden("Sign in with the verified email address that received this invitation.");
+            verifiedEmail = profile.Address;
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockOrganization(db, invitation.OrganizationId, cancellationToken);
+        if (!await db.Organizations.AnyAsync(o => o.Id == invitation.OrganizationId && o.DeletedAt == null, cancellationToken))
+            throw ApiException.NotFound("The invitation link is invalid or expired.");
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT id FROM organization_invitations WHERE id = {invitation.Id} FOR UPDATE", cancellationToken);
-        invitation = await db.OrganizationInvitations.SingleAsync(
-            item => item.Id == invitation.Id, cancellationToken);
+        await db.Entry(invitation).ReloadAsync(cancellationToken);
         if (invitation.TokenHash != tokenHash)
         {
             throw ApiException.NotFound("The invitation link is invalid or expired.");
@@ -500,9 +602,9 @@ public static class IdentityEndpoints
         {
             if (invitation.AcceptedByUserId == caller.Id)
             {
-                var prior = await db.Memberships.SingleAsync(
+                var prior = await db.Memberships.SingleOrDefaultAsync(
                     item => item.OrganizationId == invitation.OrganizationId && item.UserId == caller.Id,
-                    cancellationToken);
+                    cancellationToken) ?? throw ApiException.NotFound("You have left this organization. Ask an owner for a new invitation.");
                 return Results.Ok(MembershipResponse.FromEntity(prior));
             }
             throw ApiException.Conflict("invitation_accepted", "This invitation has already been accepted.");
@@ -524,11 +626,12 @@ public static class IdentityEndpoints
             CreatedAt = DateTimeOffset.UtcNow,
             User = caller,
         };
-        caller.Email = profile.Address;
+        if (verifiedEmail is not null) caller.Email = verifiedEmail;
         db.Memberships.Add(membership);
         invitation.AcceptedAt = DateTimeOffset.UtcNow;
         invitation.AcceptedByUserId = caller.Id;
         await db.SaveChangesAsync(cancellationToken);
+        await db.Entry(membership).ReloadAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Results.Ok(MembershipResponse.FromEntity(membership));
     }

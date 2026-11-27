@@ -19,6 +19,10 @@ class Settings:
     app_inventory_interval_seconds: float = 15.0
     agent_inventory_timeout_seconds: float = 3.0
 
+    development_url: str | None = None
+    development_tls_path: str = "/data/app-development.pem"
+    development_port: int = 8085
+
     apps_enabled: bool = True
     engine_socket: str = "/var/run/docker.sock"
     app_network: str | None = None
@@ -27,6 +31,10 @@ class Settings:
     app_nano_cpus: int = 1000000000
 
     def __post_init__(self):
+        if self.development_url:
+            origin = urlsplit(self.development_url)
+            if origin.scheme != "https" or not origin.hostname or origin.username is not None or origin.password is not None or origin.path not in ("", "/") or origin.query or origin.fragment or not 1 <= self.development_port <= 65535:
+                raise ValueError("Development URL must be an HTTPS origin")
         if self.app_runtime_url:
             origin = urlsplit(self.app_runtime_url)
             if origin.scheme not in ("http", "https") or not origin.hostname or origin.username is not None or origin.password is not None or origin.path not in ("", "/") or origin.query or origin.fragment or any(c in self.app_runtime_url for c in "\r\n"):
@@ -37,6 +45,9 @@ class Settings:
     @staticmethod
     def from_env() -> "Settings":
         return Settings(
+            development_url=os.environ.get("RINGFOUR_DEVELOPMENT_URL") or None,
+            development_tls_path=os.environ.get("RINGFOUR_DEVELOPMENT_TLS_PATH", "/data/app-development.pem"),
+            development_port=int(os.environ.get("RINGFOUR_DEVELOPMENT_PORT", "8085")),
             apps_enabled=os.environ.get("RINGFOUR_APPS_ENABLED", "true").lower() == "true",
             engine_socket=os.environ.get("RINGFOUR_ENGINE_SOCKET", "/var/run/docker.sock"),
             app_network=os.environ.get("RINGFOUR_APP_NETWORK") or None,

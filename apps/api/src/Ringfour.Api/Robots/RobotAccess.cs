@@ -15,13 +15,14 @@ internal static class RobotAccess
         RingfourDbContext db,
         Guid robotId,
         OrgRole minimumRole,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeDeleted = false)
     {
         var user = await IdentityAccess.ResolveOrCreateUser(
             db, IdentityAccess.RequireSubject(httpContext), cancellationToken);
         var robot = await db.Robots.SingleOrDefaultAsync(
             candidate => candidate.Id == robotId, cancellationToken);
-        if (robot is null)
+        if (robot is null || (!includeDeleted && robot.DeletedAt is not null))
         {
             throw ApiException.NotFound(
                 "The requested resource does not exist in this organization.");

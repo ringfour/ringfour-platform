@@ -20,7 +20,10 @@
       "type": "string"
     },
     "email": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "email"
     },
     "role": {

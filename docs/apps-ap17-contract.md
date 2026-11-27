@@ -21,8 +21,10 @@ Names match `[A-Z_][A-Z0-9_]*`; values name existing configuration keys.
 Reject duplicate names (including duplicate JSON members), undeclared keys,
 NUL values and mappings that violate the reserved-name rules below. An absent
 optional configuration value produces no environment override. Strings are
-passed unchanged, integers as canonical base-10 and booleans as lowercase
-`true`/`false`. The rendered mapping is limited to 16,384 UTF-8 bytes, and a
+passed unchanged, integers as canonical base-10, fractional numbers as
+ECMAScript-compatible shortest round-trip IEEE-754 binary64 decimals, and
+booleans as lowercase `true`/`false`. The rendered mapping is limited to
+16,384 UTF-8 bytes, and a
 mapped string containing NUL is refused. Never interpolate through a shell.
 The complete validated configuration JSON file remains available as before.
 
@@ -34,8 +36,9 @@ runtime collision and common process/interpreter loader overrides while
 allowing ordinary App-specific variables.
 
 `runtime_settings` is exactly `{ "schema": <configuration schema>, "defaults":
-<complete values> }`. It uses the existing closed, flat string/integer/boolean
-subset and all current key, byte, scalar, enum and bounds limits. Defaults are
+<complete values> }`. It uses the existing closed, flat
+string/integer/number/boolean subset and all current key, byte, scalar, enum
+and bounds limits. Defaults are
 validated as a complete object. Secrets are unsupported and values are retained
 in immutable revisions/history. This is not a secret store.
 

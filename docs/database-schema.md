@@ -34,6 +34,12 @@ publisher or grant access.
 
 ## Apps persistence families
 
+Robot visual identity is optional Console-owned metadata in `robots.appearance`
+(nullable PostgreSQL `text`), independent of Agent-owned profiles. Values are
+one built-in image/icon key or a bounded raster image data URL (256 KiB decoded).
+Only owners can replace it; updates record `appearance_updated` audit events.
+See [robot appearance](robot-appearance.md) for the API and migration behavior.
+
 The EF model currently groups records into these related families. Exact
 columns, constraints, indexes, and transitions are defined by migrations and
 contracts; update those together when changing behavior.
@@ -81,3 +87,72 @@ run dispatch, and runtime-evidence migrations through
 `20261124085103_AppRuntimeEvidence`. AP-08V changes deployment topology only and
 adds no schema migration. AP-specific evidence records the exact migration and
 runtime acceptance state.
+
+## Organization deletion
+
+`organizations.deleted_at` (nullable timestamptz, migration `20261127100016_OrganizationDeletion`) records explicit Owner deletion. Active organizations have null. Deletion removes all memberships transactionally; existing robot, publication and historical rows retain their original foreign keys. This preserves immutable App provenance/imports and audit evidence rather than cascading into other organizations. Human membership authorization and device authentication reject tombstoned organizations even if a credential or membership is recreated by an already in-flight request. Pending invitations, enrollment tokens, shares and robot credentials are invalidated; live device sessions are disconnected after commit. Store discovery excludes deleted publishers, while existing imports continue to grant access to retained revisions.
+
+Deletion serializes on the organization row and its robot rows, and refuses installed Apps, active runs/execution slots or pending operations. Member additions, removals, role changes, self-leaves and invitation acceptance use the organization lock to preserve membership/deletion invariants. Plain self-leave removes only the caller's membership and protects the last Owner. A sole member's confirmed Console leave uses the explicit deletion endpoint.
+
+## Organization deletion
+
+`organizations.deleted_at` is nullable; existing rows remain active. Explicit
+owner deletion timestamps this tombstone and removes all memberships in the same
+transaction. Robot credentials, pending invitations and shares are revoked;
+unused enrollment tokens expire. User rows and other organizations are preserved.
+Immutable App provenance, prior runs, artifacts and imports held by other
+organizations retain their original foreign keys. This is workspace removal and
+access revocation, not a physical purge of audit/provenance records.
+
+Deletion serializes with membership edits and invitation acceptance using the
+organization row lock, and with App lifecycle changes using ordered robot row
+locks. Installed bindings, active runs/execution slots or nonterminal operations
+block deletion with `409 organization_has_apps` until operator cleanup completes.
+Deleted publishers are excluded from Store discovery and fresh public revision
+reads; existing imported revisions retain their prior access. Device credential
+verification also rejects robots in tombstoned organizations, including a
+credential issued by an already in-flight request.
+
+## Robot lifecycle and invitation codes
+
+Migration `20261127103524_RobotLifecycle` adds nullable `robots.released_at` and
+`robots.deleted_at`, plus audit kinds `robot_unenrolled` / `robot_deleted`.
+Release revokes credentials, expires unused enrollment tokens, clears enrolled_at
+and removes current negotiated inventory. Active runs/slots and pending
+operations block release. Idle installations have installed_binding, candidate
+and selected_settings_revision_id cleared and removed_at set transactionally;
+revision/configuration and robot/run/provenance rows remain. This owner action
+is not recorded as a device-confirmed uninstall.
+Deletion also sets deleted_at; active robot lists/access exclude tombstones,
+while authorized run/installation history can still resolve their retained robot.
+Device auth rejects credentials issued at/before released_at, including stale
+in-flight issuances. Enrollment token consumption excludes deleted organizations
+and robots and tokens from an older release generation.
+
+Migration `20261127103703_InvitationCodes` makes invitation email/normalized_email
+nullable. Both are null for an owner-created shareable code, while email-delivered
+invitations retain their existing verified-recipient requirement. Only a SHA-256
+code hash is persisted; creation returns the random code once. All invitations
+share the existing role, seven-day code expiry, single-account acceptance and
+revocation lifecycle. Acceptance locks the organization and invitation and reloads
+tracked state after the lock to enforce one claimant under concurrency. Codes
+cannot upgrade an already-existing membership. Deleted organizations cannot be
+rejoined through either invitation path.
+
+## App development fastlane
+
+Migration `20261127124235_AppDevelopmentFastlane` adds
+`app_development_sessions` (robot, installation, human owner, TTL, closure,
+source operation/generation/archive digest and short-lived grant hash/expiry)
+and `app_development_endpoints` (robot, advertising credential, HTTPS origin,
+certificate pin). A partial unique robot index permits one unclosed session;
+opening after expiry closes the previous row while holding the robot lock.
+All App binding changes and ordinary starts respect active development sessions.
+Source bytes stay on the device, not in PostgreSQL. Normal App run snapshots gain
+optional development session/generation/digest/expiry provenance.
+
+Daemon SQLite migration 23 adds namespaced local session/grant metadata and
+source operation/generation/report checkpoints. ZIPs are stored under the
+immutable deployment namespace and session ID in the daemon volume. New
+bindings cannot reuse another namespace's source. Existing App runtime, output,
+artifact and execution-slot persistence remains authoritative for execution.

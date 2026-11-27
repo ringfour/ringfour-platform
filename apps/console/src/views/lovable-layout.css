@@ -1,0 +1,102 @@
+/* Layout vocabulary ported from ringfour-robot-studio. Ringfour's existing
+   palette, fonts, controls and radii remain the visual source of truth. */
+@theme inline {
+  --font-display: var(--font-heading);
+  --color-sidebar: var(--color-surface);
+  --color-sidebar-foreground: var(--color-foreground);
+  --color-sidebar-border: var(--color-border);
+  --color-signal-text: var(--color-accent-text);
+  --color-signal-soft: color-mix(
+    in srgb,
+    var(--color-accent) 12%,
+    var(--color-background)
+  );
+  --color-input: #808080;
+  --color-success: var(--color-ready-text);
+  --color-success-soft: color-mix(
+    in srgb,
+    var(--color-ready) 12%,
+    var(--color-background)
+  );
+  --color-destructive: var(--color-danger);
+}
+.studio-container {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 2rem 1.5rem 3.5rem;
+}
+.studio-surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  box-shadow: var(--shadow-elevation-1);
+}
+.studio-inset {
+  background: var(--color-inset);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+}
+.studio-field {
+  background: var(--color-surface);
+  border: 1px solid var(--color-input);
+  border-radius: var(--radius-field);
+}
+.studio-field:focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 2px;
+}
+.studio-rule {
+  height: 1px;
+  background: var(--color-border);
+  border: 0;
+}
+.rf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font: 0.75rem / 1.4 var(--font-mono);
+  white-space: nowrap;
+}
+.rf-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.rf-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.studio-container button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+@media (max-width: 640px) {
+  .studio-container {
+    padding: 1.5rem 1rem 2.5rem;
+  }
+}
+
+.studio-mobile-navigation[open] {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  width: 100dvw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-foreground);
+}
+.studio-mobile-navigation::backdrop {
+  background: #0008;
+}

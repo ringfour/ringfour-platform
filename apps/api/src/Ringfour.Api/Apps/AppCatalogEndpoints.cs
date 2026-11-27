@@ -33,7 +33,7 @@ public static class AppCatalogEndpoints
         var organizations = db.Memberships.Where(x => x.UserId == userId).Select(x => x.OrganizationId);
         var now = DateTimeOffset.UtcNow;
         return db.AppRevisions.AsNoTracking().Where(r =>
-            (r.Visibility == "listed" && organizations.Any()) || organizations.Contains(r.PublisherOrganizationId) ||
+            (r.Visibility == "listed" && organizations.Any() && db.Organizations.Any(o => o.Id == r.PublisherOrganizationId && o.DeletedAt == null)) || organizations.Contains(r.PublisherOrganizationId) ||
             db.AppImports.Any(i => i.RevisionId == r.Id && organizations.Contains(i.OrganizationId)) ||
             db.AppShares.Any(s => s.RevisionId == r.Id && organizations.Contains(s.DestinationOrganizationId) && s.RevokedAt == null && s.ExpiresAt > now));
     }
@@ -70,7 +70,7 @@ public static class AppCatalogEndpoints
         return Results.Json(response, statusCode: status);
     }
 
-    private static async Task<IResult> Publish(Guid orgId, HttpContext context, RingfourDbContext db, AppRegistry registry, CancellationToken ct)
+    private static async Task<IResult> Publish(Guid orgId, HttpContext context, RingfourDbContext db, AppRegistry registry, IConfiguration config, CancellationToken ct)
     {
         var user = await Caller(context, db, ct);
         await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Developer, ct);
@@ -80,6 +80,9 @@ public static class AppCatalogEndpoints
             var manifest = AppManifest.Validate(body["manifest"]!.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
             var key = manifest["app_key"]!.GetValue<string>(); var release = manifest["release"]!.GetValue<string>();
             var digest = "sha256:" + AppProtocol.Digest(manifest); var visibility = body["visibility"]!.GetValue<string>();
+            var officialPublisher = Guid.TryParse(config["Apps:OfficialPublisherOrganizationId"], out var officialId) && officialId == orgId;
+            if (visibility == "listed" && !officialPublisher)
+                throw ApiException.Forbidden("Public catalog publishing is reserved for the official Ringfour publisher. Publish privately or contact a platform administrator.");
             var app = await db.Apps.SingleOrDefaultAsync(x => x.PublisherOrganizationId == orgId && x.AppKey == key, ct);
             var existing = app is null ? null : await db.AppRevisions.SingleOrDefaultAsync(x => x.AppId == app.Id && x.Release == release, ct);
             if (existing is not null)
@@ -110,13 +113,13 @@ public static class AppCatalogEndpoints
     private static (DateTimeOffset? At, Guid? Id) Cursor(string? cursor)
     { if (cursor?.Length > 1024) throw ApiException.InvalidInput("Invalid cursor."); return Pagination.DecodeCursor(cursor); }
 
-    private static async Task<IResult> Search([FromQuery(Name = "organization_id")] Guid organizationId, string? q, string? cursor, int? limit, HttpContext context, RingfourDbContext db, CancellationToken ct)
+    private static async Task<IResult> Search([FromQuery(Name = "organization_id")] Guid organizationId, string? q, string? cursor, int? limit, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct)
     {
         var user = await Caller(context, db, ct);
         await IdentityAccess.RequireMembership(db, organizationId, user.Id, OrgRole.Operator, ct);
         if (q?.Length > 200) throw ApiException.InvalidInput("Search exceeds 200 characters.");
         var (at, id) = Cursor(cursor); var size = Limit(limit);
-        var query = db.Apps.AsNoTracking().Where(a => db.AppRevisions.Any(r => r.AppId == a.Id && r.Visibility == "listed"));
+        var query = db.Apps.AsNoTracking().Where(a => db.Organizations.Any(o => o.Id == a.PublisherOrganizationId && o.DeletedAt == null) && db.AppRevisions.Any(r => r.AppId == a.Id && r.Visibility == "listed"));
         if (!string.IsNullOrEmpty(q))
         {
             var term = q.ToLowerInvariant();
@@ -125,14 +128,18 @@ public static class AppCatalogEndpoints
         if (at is not null) query = query.Where(a => a.CreatedAt > at || (a.CreatedAt == at && a.Id.CompareTo(id!.Value) > 0));
         var rows = await query.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).Take(size + 1).ToListAsync(ct);
         var page = rows.Take(size).ToList();
-        return Results.Json(new { items = page.Select(AppJson), next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.CreatedAt, x => x.Id) });
+        var publisherIds = page.Select(x => x.PublisherOrganizationId).Distinct().ToArray();
+        var publisherNames = await db.Organizations.AsNoTracking().Where(x => publisherIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+        return Results.Json(new { items = page.Select(x => AppJson(x, config, publisherNames.GetValueOrDefault(x.PublisherOrganizationId))), next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.CreatedAt, x => x.Id) });
     }
 
-    private static async Task<IResult> GetApp(Guid appId, HttpContext context, RingfourDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetApp(Guid appId, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct)
     {
         var user = await Caller(context, db, ct);
         if (!await Visible(db, user.Id).AnyAsync(r => r.AppId == appId, ct)) throw ApiException.NotFound("App is not accessible.");
-        return Results.Json(AppJson(await db.Apps.AsNoTracking().SingleAsync(x => x.Id == appId, ct)));
+        var app = await db.Apps.AsNoTracking().SingleAsync(x => x.Id == appId, ct);
+        var publisherName = await db.Organizations.Where(x => x.Id == app.PublisherOrganizationId).Select(x => x.Name).SingleAsync(ct);
+        return Results.Json(AppJson(app, config, publisherName));
     }
 
     private static async Task<IResult> GetRevision(Guid revisionId, [FromQuery(Name = "share_id")] Guid? shareId, HttpContext context, RingfourDbContext db, CancellationToken ct)
@@ -203,7 +210,7 @@ public static class AppCatalogEndpoints
         if (existing is not null) return existing;
         var revision = await db.AppRevisions.SingleOrDefaultAsync(x => x.Id == revisionId, ct) ?? throw ApiException.NotFound("Revision is not accessible.");
         Guid? shareId = null;
-        if (revision.Visibility != "listed")
+        if (revision.Visibility != "listed" && revision.PublisherOrganizationId != orgId)
         {
             if (body["share_id"] is null)
             {
@@ -235,7 +242,9 @@ public static class AppCatalogEndpoints
     internal static JsonObject RevisionJson(AppRevision r) => new() { ["id"] = r.Id.ToString(), ["app_id"] = r.AppId.ToString(),
         ["publisher_organization_id"] = r.PublisherOrganizationId.ToString(), ["manifest"] = JsonNode.Parse(r.Manifest), ["manifest_digest"] = r.ManifestDigest,
         ["visibility"] = r.Visibility, ["published_by"] = r.PublishedByUserId.ToString(), ["published_at"] = AppProtocol.Timestamp(r.PublishedAt) };
-    private static JsonObject AppJson(AppRecord a) => new() { ["id"] = a.Id.ToString(), ["publisher_organization_id"] = a.PublisherOrganizationId.ToString(),
+    private static JsonObject AppJson(AppRecord a, IConfiguration config, string? publisherName) => new() { ["id"] = a.Id.ToString(), ["publisher_organization_id"] = a.PublisherOrganizationId.ToString(),
+        ["publisher_name"] = publisherName,
+        ["publisher_type"] = Guid.TryParse(config["Apps:OfficialPublisherOrganizationId"], out var officialId) && officialId == a.PublisherOrganizationId ? "ringfour" : "workspace",
         ["app_key"] = a.AppKey, ["name"] = a.Name, ["description"] = a.Description, ["created_by"] = a.CreatedByUserId.ToString(), ["created_at"] = AppProtocol.Timestamp(a.CreatedAt) };
     private static JsonObject ShareJson(AppShare s) => new() { ["id"] = s.Id.ToString(), ["app_id"] = s.AppId.ToString(), ["revision_id"] = s.RevisionId.ToString(),
         ["publisher_organization_id"] = s.PublisherOrganizationId.ToString(), ["destination_organization_id"] = s.DestinationOrganizationId.ToString(),

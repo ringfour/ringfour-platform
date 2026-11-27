@@ -1,0 +1,167 @@
+{
+  "fixture": true,
+  "origin": "http://localhost:4174",
+  "api_latency_ms": 5,
+  "profile_latency_ms": 220,
+  "samples": [
+    {
+      "name": "cold Home",
+      "ms": 245,
+      "requests": 26
+    },
+    {
+      "name": "Home to Robots",
+      "ms": 149.7,
+      "requests": 22
+    },
+    {
+      "name": "Robots to Home",
+      "ms": 150,
+      "requests": 24
+    },
+    {
+      "name": "Home to Robots",
+      "ms": 149.9,
+      "requests": 22
+    },
+    {
+      "name": "Robots to Home",
+      "ms": 150.2,
+      "requests": 24
+    },
+    {
+      "name": "Home to Robots",
+      "ms": 149.9,
+      "requests": 22
+    },
+    {
+      "name": "Robots to Home",
+      "ms": 149.9,
+      "requests": 24
+    },
+    {
+      "name": "Home to Robots",
+      "ms": 149.9,
+      "requests": 22
+    },
+    {
+      "name": "Robots to Home",
+      "ms": 150.1,
+      "requests": 24
+    },
+    {
+      "name": "Home to Robots",
+      "ms": 149.8,
+      "requests": 22
+    },
+    {
+      "name": "Robots to Home",
+      "ms": 150.1,
+      "requests": 24
+    },
+    {
+      "name": "Overview to Settings",
+      "ms": 71.4,
+      "requests": 3
+    },
+    {
+      "name": "Settings to Overview",
+      "ms": 66.8,
+      "requests": 8
+    },
+    {
+      "name": "Overview to Settings",
+      "ms": 66.5,
+      "requests": 3
+    },
+    {
+      "name": "Settings to Overview",
+      "ms": 66.8,
+      "requests": 8
+    },
+    {
+      "name": "Overview to Settings",
+      "ms": 66.7,
+      "requests": 3
+    },
+    {
+      "name": "Settings to Overview",
+      "ms": 66.7,
+      "requests": 8
+    },
+    {
+      "name": "Overview to Settings",
+      "ms": 66.5,
+      "requests": 3
+    },
+    {
+      "name": "Settings to Overview",
+      "ms": 66.9,
+      "requests": 8
+    },
+    {
+      "name": "Overview to Settings",
+      "ms": 66.5,
+      "requests": 3
+    },
+    {
+      "name": "Settings to Overview",
+      "ms": 66.7,
+      "requests": 8
+    }
+  ],
+  "summary": {
+    "cold Home": {
+      "p50_ms": 245,
+      "max_ms": 245,
+      "requests": [
+        26
+      ]
+    },
+    "Home to Robots": {
+      "p50_ms": 149.9,
+      "max_ms": 149.9,
+      "requests": [
+        22,
+        22,
+        22,
+        22,
+        22
+      ]
+    },
+    "Robots to Home": {
+      "p50_ms": 150.1,
+      "max_ms": 150.2,
+      "requests": [
+        24,
+        24,
+        24,
+        24,
+        24
+      ]
+    },
+    "Overview to Settings": {
+      "p50_ms": 66.5,
+      "max_ms": 71.4,
+      "requests": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ]
+    },
+    "Settings to Overview": {
+      "p50_ms": 66.8,
+      "max_ms": 66.9,
+      "requests": [
+        8,
+        8,
+        8,
+        8,
+        8
+      ]
+    }
+  },
+  "document_reloads_during_navigation": 0
+}

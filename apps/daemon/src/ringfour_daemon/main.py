@@ -29,6 +29,9 @@ from .status_page import create_status_app
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
+    # This runs before any worker, socket or App executor can use the old state.
+    from .release import recover_released_enrollment
+    await asyncio.to_thread(recover_released_enrollment, settings, app.state.http_client_factory)
     from .app_engine import Executor, run_reconciliation
     executor = None
     # The lifetime writer fence precedes any App consumer. Enrollment may be pending.
@@ -38,6 +41,8 @@ async def lifespan(app: FastAPI):
     connection = ConnectionManager(settings)
     connection.app_executor = executor
     app.state.connection_manager = connection
+    from .development import run as run_development
+    development_task = asyncio.create_task(run_development(settings, connection))
     task = asyncio.create_task(connection.run())
     app_engine_task = asyncio.create_task(run_reconciliation(settings, connection))
     from .app_runs import run as run_apps
@@ -54,6 +59,7 @@ async def lifespan(app: FastAPI):
     finally:
         connection.stop()
         task.cancel()
+        development_task.cancel()
         app_engine_task.cancel()
         app_run_task.cancel()
         pairing_task.cancel()
@@ -62,7 +68,7 @@ async def lifespan(app: FastAPI):
         agent_motion_task.cancel()
         interaction_task.cancel()
         interaction_delivery_task.cancel()
-        await asyncio.gather(app_runtime_task, app_run_task, app_engine_task, pairing_task, logbook_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
+        await asyncio.gather(development_task, app_runtime_task, app_run_task, app_engine_task, pairing_task, logbook_task, agent_motion_task, interaction_task, interaction_delivery_task, return_exceptions=True)
         try:
             await task
         except asyncio.CancelledError:
@@ -92,6 +98,15 @@ def main() -> None:
 
     settings = Settings.from_env()
     control_app = create_app(settings)
+    if settings.development_url:
+        from .development import create_local_app
+        from .development_tls import local_identity
+        local_identity(settings.development_tls_path)
+        development_socket = socket.create_server(("0.0.0.0", settings.development_port))
+        development_server = uvicorn.Server(uvicorn.Config(
+            create_local_app(settings, control_app), access_log=False,
+            ssl_keyfile=settings.development_tls_path, ssl_certfile=settings.development_tls_path))
+        threading.Thread(target=development_server.run, kwargs={"sockets": [development_socket]}, daemon=True).start()
     # The LAN listener serves only a read-only status app. Control endpoints
     # remain on the independent daemon listener.
     status_socket = socket.create_server((

@@ -226,6 +226,10 @@
           "type": "boolean",
           "description": "AP-07 installation consumer with AP-08 executor; omitted means false."
         },
+        "supports_app_uninstall": {
+          "type": "boolean",
+          "description": "Durable AP-18 installation removal consumer; omitted means false."
+        },
         "supports_app_runs": {
           "type": "boolean",
           "default": false
@@ -365,10 +369,16 @@
           ]
         },
         "supports_manifest_v2": {
-          "type": ["boolean", "null"]
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "supports_live_settings": {
-          "type": ["boolean", "null"]
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "negotiated_at": {
           "anyOf": [
@@ -424,6 +434,13 @@
               "type": "null"
             }
           ]
+        },
+        "supports_app_uninstall": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "True only for the current online negotiated Daemon session."
         }
       },
       "allOf": [
@@ -726,8 +743,12 @@
         },
         "runtime_settings_revision_id": {
           "anyOf": [
-            { "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid" },
-            { "type": "null" }
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
           ],
           "description": "Optional target-release settings selection committed with the installation binding."
         },
@@ -807,6 +828,34 @@
           ]
         }
       ]
+    },
+    "uninstall_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_protocol_version",
+        "deployment_namespace",
+        "installation_id",
+        "expected_revision_id",
+        "expected_configuration_revision_id"
+      ],
+      "properties": {
+        "app_protocol_version": {
+          "const": 1
+        },
+        "deployment_namespace": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "expected_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        },
+        "expected_configuration_revision_id": {
+          "$ref": "https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/uuid"
+        }
+      }
     },
     "start_command": {
       "type": "object",
@@ -948,7 +997,8 @@
             "rollback",
             "start",
             "stop",
-            "settings.apply"
+            "settings.apply",
+            "uninstall"
           ]
         },
         "state": {
@@ -999,7 +1049,8 @@
                   "install",
                   "configure",
                   "update",
-                  "rollback"
+                  "rollback",
+                  "uninstall"
                 ]
               }
             },
@@ -1116,7 +1167,8 @@
                   "staging",
                   "staged",
                   "starting",
-                  "stopping"
+                  "stopping",
+                  "removing"
                 ]
               },
               "observed_at": {
@@ -1806,6 +1858,7 @@
                 "app.configure",
                 "app.update",
                 "app.rollback",
+                "app.uninstall",
                 "app.start",
                 "app.stop",
                 "app.settings.apply"
@@ -1838,6 +1891,27 @@
             "properties": {
               "payload": {
                 "$ref": "#/$defs/apply_command"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "app.uninstall"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/uninstall_command"
               }
             }
           }

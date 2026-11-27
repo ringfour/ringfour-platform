@@ -184,6 +184,7 @@ def main():
 
                     org_a, org_b, org_c = [post(client, "/v1/organizations", {"name": "AP05 " + who})["id"] for client, who in zip(clients, "ABC", strict=True)]
                     env["Apps__Registries__0__PublisherOrganizationId"] = org_a
+                    env["Apps__OfficialPublisherOrganizationId"] = org_a
                     stop(process); process = start(); ready(a)
                     user_b = b.get("/v1/me").json()["user"]["id"]
                     manifest = json.loads((ROOT / "packages/contracts/fixtures/apps/v1/manifest.json").read_text())

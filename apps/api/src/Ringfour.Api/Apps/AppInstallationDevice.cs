@@ -52,7 +52,8 @@ public static class AppInstallationDevice
         try
         {
             if (manager.Get(session.RobotId)?.SessionId != session.SessionId) return true;
-            if (!await db.RobotAppInventories.AnyAsync(x => x.RobotId == session.RobotId && x.SessionId == session.SessionId && x.InstallationsSupported, ct)) return true;
+            var inventory = await db.RobotAppInventories.AsNoTracking().SingleOrDefaultAsync(x => x.RobotId == session.RobotId && x.SessionId == session.SessionId, ct);
+            if (inventory is null || !inventory.InstallationsSupported || (await db.AppOperations.AsNoTracking().Where(x => x.Id == id).Select(x => x.Kind).SingleAsync(ct) == "uninstall" && !inventory.UninstallSupported)) return true;
             var now = DateTimeOffset.UtcNow;
             await db.AppOperations.Where(x => x.Id == id && x.RobotId == session.RobotId && x.State == "queued")
                 .ExecuteUpdateAsync(set => set.SetProperty(x => x.State, "accepted").SetProperty(x => x.Phase, "accepted").SetProperty(x => x.AcknowledgedAt, now), ct);
@@ -97,15 +98,15 @@ public static class AppInstallationDevice
             if (ops.Any(x => x!["kind"]!.GetValue<string>() == "settings.apply") && (!session.ManifestV2Supported || !session.LiveSettingsSupported))
                 throw ApiException.Conflict("daemon_upgrade_required", "Negotiate live-settings support first.");
             await AppRunDevice.Observe(db, robot.Id, body, now, ct);
-            foreach (var item in ops.Where(x => x!["kind"]!.GetValue<string>() is "install" or "configure" or "update" or "rollback"))
+            foreach (var item in ops.Where(x => x!["kind"]!.GetValue<string>() is "install" or "configure" or "update" or "rollback" or "uninstall"))
             {
                 var operationId = Guid.Parse(item!["operation_id"]!.GetValue<string>());
                 var o = await db.AppOperations.SingleOrDefaultAsync(x => x.Id == operationId && x.RobotId == robot.Id, ct) ?? throw Invalid();
-                if (o.Command is null || o.Kind is not ("install" or "configure" or "update" or "rollback") || o.RunId is not null || item["run_id"] is not null || item["kind"]!.GetValue<string>() != o.Kind || item["installation_id"]!.GetValue<string>() != o.InstallationId.ToString()) throw Invalid();
+                if (o.Command is null || o.Kind is not ("install" or "configure" or "update" or "rollback" or "uninstall") || o.RunId is not null || item["run_id"] is not null || item["kind"]!.GetValue<string>() != o.Kind || item["installation_id"]!.GetValue<string>() != o.InstallationId.ToString()) throw Invalid();
                 var observed = DateTimeOffset.Parse(item["observed_at"]!.GetValue<string>());
                 var state = item["state"]!.GetValue<string>(); var phase = item["phase"]!.GetValue<string>();
                 var incoming = installations.SingleOrDefault(x => x!["installation_id"]!.GetValue<string>() == o.InstallationId.ToString()) ?? throw Invalid();
-                if (state == "succeeded") Match(incoming["installed"] ?? throw Invalid(), JsonNode.Parse(o.Command)!["release"]!, operationId, true);
+                if (state == "succeeded" && o.Kind != "uninstall") Match(incoming["installed"] ?? throw Invalid(), JsonNode.Parse(o.Command)!["release"]!, operationId, true);
                 if (!AppInstallationEndpoints.Pending.Contains(o.State))
                 {
                     if (o.State != state || o.Phase != phase || o.ObservedAt != observed || !Same(o.Failure is null ? null : JsonNode.Parse(o.Failure), item["failure"])) throw Invalid();
@@ -115,31 +116,48 @@ public static class AppInstallationDevice
                 if (state == "cancelled" || (state != "failed" && Array.IndexOf(phases,phase) < Array.IndexOf(phases,o.Phase))) throw Invalid();
                 var installation = await db.AppInstallations.SingleAsync(x => x.Id == o.InstallationId, ct);
                 var candidate = installation.Candidate is null ? null : JsonNode.Parse(installation.Candidate)!.AsObject();
-                if (candidate?["operation_id"]!.GetValue<string>() != operationId.ToString()) throw Invalid();
-                var command = JsonNode.Parse(o.Command)!; var release = command["release"]!;
+                if (o.Kind != "uninstall" && candidate?["operation_id"]!.GetValue<string>() != operationId.ToString()) throw Invalid();
+                if (o.Kind == "uninstall" && candidate is not null) throw Invalid();
+                var command = JsonNode.Parse(o.Command)!; var release = command["release"];
                 var oldBinding = installation.InstalledBinding is null ? null : JsonNode.Parse(installation.InstalledBinding)!.AsObject();
                 if (!Same(command["expected_revision_id"],oldBinding?["revision_id"]) || !Same(command["expected_configuration_revision_id"],oldBinding?["configuration_revision_id"])) throw Invalid();
                 if (state == "succeeded")
                 {
-                    if (phase != "applied" || incoming["installed"] is null || incoming["candidate"] is not null) throw Invalid();
-                    Match(incoming["installed"]!,release,operationId,true);
+                    if (phase != "applied" || (o.Kind != "uninstall" && incoming["installed"] is null) || incoming["candidate"] is not null) throw Invalid();
                     await AppInstallationEndpoints.RequireIdle(db,robot.Id,ct);
-                    var binding = incoming["installed"]!.DeepClone().AsObject(); binding["observed_at"] = incoming["observed_at"]!.DeepClone();
-                    installation.InstalledBinding = binding.ToJsonString(); installation.Candidate = null;
-                    if (release.AsObject().ContainsKey("runtime_settings_revision_id"))
-                        installation.SelectedSettingsRevisionId = release["runtime_settings_revision_id"] is null ? null : Guid.Parse(release["runtime_settings_revision_id"]!.GetValue<string>());
-                    db.LogbookEvents.Add(new LogbookEvent { Id=o.Id,RobotId=robot.Id,AppOperationId=o.Id,AppInstallationId=installation.Id,ActorUserId=o.RequestedByUserId,Type="app.installation.changed",SchemaVersion=3,OccurredAt=observed,ReceivedAt=now,Payload=new JsonObject { ["revision_id"]=release["revision_id"]!.DeepClone(),["kind"]=o.Kind,["runtime_settings_revision_id"]=release["runtime_settings_revision_id"]?.DeepClone() }.ToJsonString() });
+                    if (o.Kind == "uninstall")
+                    {
+                        if (incoming["installed"] is not null || incoming["candidate"] is not null) throw Invalid();
+                        installation.InstalledBinding = null; installation.Candidate = null;
+                        installation.SelectedSettingsRevisionId = null; installation.RemovedAt = observed;
+                    }
+                    else
+                    {
+                        if (incoming["installed"] is null) throw Invalid();
+                        Match(incoming["installed"]!,release!,operationId,true);
+                        var binding = incoming["installed"]!.DeepClone().AsObject(); binding["observed_at"] = incoming["observed_at"]!.DeepClone();
+                        installation.InstalledBinding = binding.ToJsonString(); installation.Candidate = null; installation.RemovedAt = null;
+                        if (release!.AsObject().ContainsKey("runtime_settings_revision_id"))
+                            installation.SelectedSettingsRevisionId = release["runtime_settings_revision_id"] is null ? null : Guid.Parse(release["runtime_settings_revision_id"]!.GetValue<string>());
+                    }
+                    db.LogbookEvents.Add(new LogbookEvent { Id=o.Id,RobotId=robot.Id,AppOperationId=o.Id,AppInstallationId=installation.Id,ActorUserId=o.RequestedByUserId,Type=o.Kind == "uninstall" ? "app.installation.removed" : "app.installation.changed",SchemaVersion=3,OccurredAt=observed,ReceivedAt=now,Payload=new JsonObject { ["kind"]=o.Kind, ["revision_id"]=(release?["revision_id"] ?? command["expected_revision_id"])?.DeepClone(), ["runtime_settings_revision_id"]=release?["runtime_settings_revision_id"]?.DeepClone() }.ToJsonString() });
+                }
+                else if (o.Kind == "uninstall")
+                {
+                    if (!Same(oldBinding, incoming["installed"]) || incoming["candidate"] is not null) throw Invalid();
                 }
                 else
                 {
+                    var releaseValue = release ?? throw Invalid();
+                    var candidateValue = candidate ?? throw Invalid();
                     oldBinding?.Remove("observed_at");
                     if (!Same(oldBinding,incoming["installed"]) || incoming["candidate"] is null) throw Invalid();
-                    var staged = incoming["candidate"]!; Match(staged,release,operationId,false);
+                    var staged = incoming["candidate"]!; Match(staged,releaseValue,operationId,false);
                     if ((state == "failed") != (staged["state"]!.GetValue<string>() == "failed") || !Same(staged["failure"],item["failure"])) throw Invalid();
                     if ((phase == "staged") != (staged["state"]!.GetValue<string>() == "staged")) throw Invalid();
-                    candidate["state"] = staged["state"]!.DeepClone(); candidate["observed_at"] = incoming["observed_at"]!.DeepClone();
-                    candidate["staged_at"] = staged["staged_at"]?.DeepClone(); candidate["failure"] = staged["failure"]?.DeepClone();
-                    installation.Candidate = candidate.ToJsonString();
+                    candidateValue["state"] = staged["state"]!.DeepClone(); candidateValue["observed_at"] = incoming["observed_at"]!.DeepClone();
+                    candidateValue["staged_at"] = staged["staged_at"]?.DeepClone(); candidateValue["failure"] = staged["failure"]?.DeepClone();
+                    installation.Candidate = candidateValue.ToJsonString();
                 }
                 installation.LastObservedAt = DateTimeOffset.Parse(incoming["observed_at"]!.GetValue<string>());
                 o.State = state; o.Phase = phase; o.ObservedAt = observed; o.ReceivedAt = now; o.AcknowledgedAt ??= now;
@@ -226,8 +244,16 @@ public sealed class AppInstallationWorker(IServiceScopeFactory scopes, DeviceCon
             }
             var session = manager.Get(robot);
             if (session is null || session.Socket.State != System.Net.WebSockets.WebSocketState.Open ||
-                !await db.RobotCredentials.AnyAsync(x => x.Id == session.CredentialId && x.RevokedAt == null && (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct) ||
-                !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.Supported && x.InstallationsSupported,ct)) return;
+                !await db.RobotCredentials.AnyAsync(x => x.Id == session.CredentialId && x.RevokedAt == null && (x.ExpiresAt == null || x.ExpiresAt > DateTimeOffset.UtcNow), ct)) return;
+            var negotiated = await db.RobotAppInventories.AsNoTracking().SingleOrDefaultAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.Supported, ct);
+            if (negotiated is null) return;
+            if (o.Kind == "uninstall" && (!negotiated.InstallationsSupported || !negotiated.UninstallSupported))
+            {
+                o.State = "failed"; o.Phase = "failed"; o.CompletedAt = DateTimeOffset.UtcNow;
+                o.Failure = new JsonObject { ["code"] = "daemon_upgrade_required", ["message"] = "The current Daemon session does not support App uninstall.", ["details"] = new JsonObject { ["retryable"] = false } }.ToJsonString();
+                await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return;
+            }
+            if (!negotiated.InstallationsSupported) return;
             if (o.RunId is not null && !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.RunsSupported, ct)) return;
             if (o.Kind == "settings.apply" && !await db.RobotAppInventories.AnyAsync(x => x.RobotId == robot && x.SessionId == session.SessionId && x.ManifestV2Supported && x.LiveSettingsSupported, ct)) return;
             var command = JsonNode.Parse(o.Command)!;

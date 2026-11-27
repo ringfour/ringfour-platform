@@ -52,9 +52,9 @@ internal static class IdentityAccess
         OrgRole minimumRole,
         CancellationToken cancellationToken)
     {
-        var membership = await db.Memberships.SingleOrDefaultAsync(
+        var membership = await db.Memberships.AsNoTracking().SingleOrDefaultAsync(
             candidate =>
-                candidate.OrganizationId == organizationId && candidate.UserId == userId,
+                candidate.OrganizationId == organizationId && candidate.UserId == userId && candidate.Organization.DeletedAt == null,
             cancellationToken);
         if (membership is null)
         {

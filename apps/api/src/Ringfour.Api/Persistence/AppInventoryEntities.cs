@@ -4,6 +4,7 @@ public sealed class RobotAppInventory
 {
     public bool RunsSupported { get; set; }
     public bool InstallationsSupported { get; set; }
+    public bool UninstallSupported { get; set; }
     public bool ManifestV2Supported { get; set; }
     public bool LiveSettingsSupported { get; set; }
     public Guid RobotId { get; set; }

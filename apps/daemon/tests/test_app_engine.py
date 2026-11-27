@@ -356,3 +356,24 @@ def test_expired_start_does_not_create_and_log_rotation_preserves_durable_prefix
     result=executor.reconcile(run)
     assert result['stdout']==original['stdout'] and result['stdout_truncated']==1
     assert result['stderr']==original['stderr'] and result['stderr_truncated']==1
+
+
+def test_development_snapshot_requires_a_development_image_before_creating_container(setup, monkeypatch):
+    executor, engine, run = setup
+    original_image = engine.image
+    def ordinary_image(reference):
+        value = original_image(reference)
+        value["Config"]["Labels"] = None
+        return value
+    monkeypatch.setattr(engine, "image", ordinary_image)
+    original_row = executor.row
+    def development_row(run_id):
+        row, intent = original_row(run_id)
+        snapshot = json.loads(row["snapshot_json"])
+        snapshot["development"] = {"session_id": uid(), "generation": 1,
+            "archive_sha256": "sha256:" + "a" * 64, "expires_at": "2099-01-01T00:00:00Z"}
+        return row | {"snapshot_json": json.dumps(snapshot)}, intent
+    monkeypatch.setattr(executor, "row", development_row)
+    with pytest.raises(app_engine.EngineError,match='revision_unavailable'):
+        executor.create(run)
+    assert not engine.containers

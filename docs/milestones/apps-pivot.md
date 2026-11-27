@@ -6,10 +6,12 @@ The earlier 00–10 milestones describe legacy behavior and regression evidence.
 
 ## Current execution agreement · 25 November 2026
 
-AP-14/AP-15 reductions and their combined acceptance are complete. The user
-directed AP-17's existing settings/files scope and AP-19 API/Daemon performance
-measurements next; AP-17.F1 floating-point support and AP-19 UI/browser
-acceptance are deferred. AP-17 isolated settings/files integration passed.
+AP-14/AP-15 reductions and their combined acceptance are complete. AP-17's
+settings/files scope and AP-17.F1 bounded floating-point support are
+implemented. Contract, API, daemon, CLI, runtime and Console checks passed; the
+full AP-17 process acceptance needs a rerun after a test harness fix for raw
+NaN input. AP-19 API/Daemon performance work is live-accepted; broader
+UI/browser acceptance remains deferred.
 AP-19 backend wakeups and before/after benchmark are recorded below and in the
 evidence file. Live stacks have not loaded the new wakeup code. The workspace
 rule reserves all Platform and `ringfour-virtual` reload/rebuild operations for
@@ -373,6 +375,34 @@ and `/home/cdr/ringfour/design_system` is the interface token source. These sibl
 changes and were inspected without editing them. The operator reloaded the
 Platform API and virtual Apps stacks; no data volumes were recreated.
 
+## AP-18 — Official Apps, updates and uninstall (server/CLI implemented; acceptance in progress)
+
+AP18's API/Daemon/CLI operation layer is implemented. Store and installed
+App UI controls are part of AP-21 by user direction. See
+[the AP-18 human guide](../human-testing/AP-18.md) and
+[current implementation evidence](../evidence/AP-18.md).
+
+- [x] Restrict public catalog publication to the configured official publisher;
+  default CLI publication to private and show the workspace/App/release/visibility.
+- [x] Derive Ringfour publisher identity from trusted server configuration.
+- [x] Add negotiated uninstall command, API operation, durable Daemon
+  acknowledgement, soft removal and reinstall-safe identity.
+- [x] Add AP-18 API migration and CLI uninstall operation.
+- [x] Build the API; compile changed Python modules, pass CLI Ruff, and pass
+  Console TypeScript typecheck.
+- [x] Component checks: API 154, Daemon 114, CLI 69, contracts 179 and OpenAPI 5.
+  Daemon checks cover uninstall resume/replay, stale binding and Start exclusion.
+- [x] Disposable real-process acceptance: official discovery/import/install in
+  a second workspace, CLI uninstall, reinstall identity, retained configuration,
+  second-robot preservation and existing update/rollback/recovery checks.
+- [ ] Configure the live official publisher workspace and apply both API migrations.
+- [ ] Human acceptance of private/public publisher policy, update/rollback,
+  uninstall/reinstall and replay recovery.
+- [x] AP-21 wires official label, update/rollback and uninstall UI flows; live acceptance remains separately tracked.
+
+The API and Daemon changes require the operator to reload the Platform and
+`ringfour-virtual` stacks. No stack operation is performed by the agent.
+
 ## AP-19 — Responsive, consistent App state (backend implementation complete; broader acceptance in progress)
 
 **Backend performance update · 25 November 2026:** added post-commit API and
@@ -473,3 +503,67 @@ and [automated evidence](../evidence/AP-14-15.md).
 - [x] Pass integrated App installation/runtime/start-stop verification.
 - [x] Operator reports Platform and virtual stacks restarted after reduction (2026-11-25).
 - [ ] Record the combined cdr/ring1 human confidence sweep.
+
+## AP-21 — Studio UI sweep (implemented; locally deployed; live acceptance pending)
+
+AP21 covers route/navigation behavior and the owner journeys through Store,
+installation management, App updates/rollback/uninstall, robot credentials,
+Home and Logbook. It consumes AP18's server-enforced publication and durable
+installation operations. See [AP-21 specification](../../../AP-21-studio-ui-sweep.md).
+
+- [x] Reconcile the spec's baseline commit with the current Console.
+- [x] Implement canonical navigation and retain browser Back/direct-entry behavior.
+- [x] Wire official publisher labels and AP18 update/rollback/uninstall operations.
+- [x] Replace Fleet Manage with enrollment/credentials routes; fix capabilities
+  to read `inventory.current` and qualify last-known observations.
+- [x] Implement Store/listing/picker, installation-aware membership, verified
+  photo previews, grouped Home failures and App Activity; retain Logbook/Timeline.
+- [x] Owner approved deployable Studio; add static production target, mandatory
+  Auth0, and an initial local development target (subsequently switched to
+  production during the frontend slowdown follow-up).
+- [x] Browser fixture verifies desktop/narrow layouts, modal focus/Escape,
+  exact targets, dirty link/Back/Forward guards and verified image preview.
+- [x] Production static smoke verifies deep links, API proxy, unauthenticated
+  denial and the sign-in screen.
+- [ ] Operator reloads Platform, configures the official publisher, and completes
+  live cdr/ring1 Auth0/robot/registry acceptance and hosted production login.
+
+- [x] Adopt the owner's Lovable view structure at `1b99764`, retaining existing
+  Ringfour CSS, Auth0/API actions, explicit installation scope and real results.
+  Close layout copies cover shell, Home, Store, App tabs, robot access and Logbook;
+  58 Console tests and 28 browser fixture screenshots validate the integration.
+- [x] Apply the website-derived typography, graphite surfaces and lighter controls;
+  expand shared App/listing headers with real descriptions and a separate
+  robot/tabs toolbar. Verified across desktop/narrow fixture views.
+
+- [x] Restore the pre-Apps Logbook presentation from `4204161` on current App
+  runs/events/files; retain groups, filters, run record, duration/events and split
+  output. Reapply the Organizations palette across Studio, enlarge the sidebar
+  and use fluid desktop width. Latest checks: 65 Console tests and 34 page captures
+  plus mobile/wide review; live acceptance remains separately tracked.
+
+- [x] Apply the Apps header across every Studio view and add shell-owned top-bar
+  back navigation with retained filters, workspace and unsaved-edit protection.
+  Latest checks: 74 Console tests, 38 desktop/narrow captures plus drawer/wide,
+  TypeScript/build/lint and production static smoke pass. Live gates stay open.
+- [x] Move workspace selection, role and Organizations/health/profile into the
+  top bar; reduce the sidebar to a 72px accessible icon rail. Latest: 75 Console
+  tests, 38 desktop/phone captures plus tablet/drawer/wide and static smoke pass.
+
+- [x] Implement `../uifix.md` with shared page/grid/section/history primitives,
+  open App settings/overview/activity and robot sections, aligned Files filters,
+  inventory truthfulness, variant/artwork handling and a layout cookbook.
+  81 Console tests and populated desktop/phone feedback checks pass.
+- [x] Diagnose whole-frontend slowdown, remove unused profile/artifact waits from
+  Home/Robots, and deploy the compiled/compressed Console at the owner's request.
+  Controlled Home/Robots navigation p50: ~350→150ms. Live authenticated timing
+  and wider human acceptance remain open.
+
+- [x] Modularize Studio by feature; separate auth/workspace/routing and major page
+  controllers from presentation. Reuse collection/section/schema-form templates
+  and document extension recipes. 85 Console tests, browser/static checks and
+  unchanged navigation latency/request counts verify the refactor.
+
+See [AP-21 evidence](../evidence/AP-21.md) and the
+[human acceptance guide](../human-testing/AP-21.md). Browser fixtures are not
+live authentication/device evidence.

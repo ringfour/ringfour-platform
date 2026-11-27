@@ -3,15 +3,18 @@
 Status: AP-03 supplies session negotiation/inventory and AP-08 the owner-scoped
 engine. AP-07 supplies opt-in install-family dispatch, revision reads, preparation/
 application and installation observations. Run dispatch/observations remain AP-09.
+AP-18 adds negotiated uninstall support.
 The original v1 envelopes and legacy runtime are unchanged. See
 [installation gates/recovery](apps-installation.md) and [engine policy](apps-engine.md).
 
 ## Separate support negotiation
 
-AP-07 adds optional `supports_app_installations` to the negotiation request only.
-Omission means false. Inventory-only peers remain compatible, but cannot receive
-installation commands or submit installation observations. App mode verifies the
-engine before offering true; the response and legacy hello/welcome stay unchanged.
+AP-07 adds optional `supports_app_installations` and AP-18 adds optional
+`supports_app_uninstall` to the negotiation request. Omission means false;
+uninstall support requires installation support. Inventory-only peers remain
+compatible, but cannot receive installation commands or submit installation
+observations. App mode verifies the engine before offering these capabilities;
+the response and legacy hello/welcome stay unchanged.
 
 Keep `/v1/device/connect`, its envelope version 1, hello, welcome, ack,
 heartbeat and legacy command/status shapes unchanged. Do not add App fields to
@@ -69,7 +72,10 @@ tenants. Never globally prune shared digests or resources.
 
 App commands reuse the v1 durable `command` envelope, with `payload_version: 1`
 and one of `app.install`, `app.configure`, `app.update`, `app.rollback`,
-`app.start`, `app.stop`. The negotiated payload schema additionally validates
+`app.uninstall`, `app.start`, `app.stop`. Uninstall carries the exact installation
+and expected installed revision/configuration IDs; it has no release descriptor
+or registry pull. It is dispatched only to a session advertising uninstall support.
+The negotiated payload schema additionally validates
 kind-specific bodies. The full manifest is fetched by credential/session and
 operation from `/v1/device/app-revisions/{revision_id}`; the server authorizes
 that exact revision through the robot's nonterminal operation. Known IDs alone

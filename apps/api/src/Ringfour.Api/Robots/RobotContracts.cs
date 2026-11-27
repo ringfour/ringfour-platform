@@ -2,7 +2,12 @@ using Ringfour.Api.Persistence;
 
 namespace Ringfour.Api.Robots;
 
-public sealed record CreateRobotRequest(string? Name, string? ProfileRef);
+public sealed record CreateRobotRequest(string? Name, string? ProfileRef, string? Appearance = null);
+
+public sealed record UpdateRobotAppearanceRequest
+{
+    public required string? Appearance { get; init; }
+}
 
 public sealed record RobotResponse(
     Guid Id,
@@ -10,7 +15,8 @@ public sealed record RobotResponse(
     string Name,
     DateTimeOffset CreatedAt,
     DateTimeOffset? EnrolledAt,
-    string? ProfileRef)
+    string? ProfileRef,
+    string? Appearance = null)
 {
     public static RobotResponse FromEntity(Robot robot) => new(
         robot.Id,
@@ -18,7 +24,8 @@ public sealed record RobotResponse(
         robot.Name,
         robot.CreatedAt,
         robot.EnrolledAt,
-        robot.ProfileRef);
+        robot.ProfileRef,
+        robot.Appearance);
 }
 
 public sealed record RobotListResponse(IReadOnlyList<RobotResponse> Items, string? NextCursor);

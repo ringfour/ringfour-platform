@@ -11,7 +11,8 @@
       "supports_app_installations": false,
       "supports_app_runs": false,
       "supports_manifest_v2": false,
-      "supports_live_settings": false
+      "supports_live_settings": false,
+      "supports_app_uninstall": false
     }
   },
   {
@@ -123,7 +124,8 @@
         }
       },
       "supports_manifest_v2": true,
-      "supports_live_settings": false
+      "supports_live_settings": false,
+      "supports_app_uninstall": true
     }
   },
   {
@@ -177,7 +179,8 @@
         }
       },
       "supports_manifest_v2": null,
-      "supports_live_settings": null
+      "supports_live_settings": null,
+      "supports_app_uninstall": null
     }
   },
   {
@@ -232,7 +235,8 @@
         }
       },
       "supports_manifest_v2": true,
-      "supports_live_settings": false
+      "supports_live_settings": false,
+      "supports_app_uninstall": true
     }
   },
   {
@@ -250,7 +254,8 @@
       "platform": null,
       "inventory": null,
       "supports_manifest_v2": null,
-      "supports_live_settings": null
+      "supports_live_settings": null,
+      "supports_app_uninstall": null
     }
   },
   {
@@ -571,6 +576,65 @@
         "expected_run_id": "00000000-0000-4000-8000-000000000012"
       },
       "deadline_at": "2026-11-23T10:05:00Z"
+    }
+  },
+  {
+    "name": "uninstall_command",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/uninstall_command",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "installation_id": "00000000-0000-4000-8000-000000000009",
+      "expected_revision_id": "00000000-0000-4000-8000-000000000006",
+      "expected_configuration_revision_id": "00000000-0000-4000-8000-000000000010"
+    }
+  },
+  {
+    "name": "uninstall_transport_typed",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/command",
+    "value": {
+      "operation_id": "00000000-0000-4000-8000-000000000011",
+      "kind": "app.uninstall",
+      "payload_version": 1,
+      "payload": {
+        "app_protocol_version": 1,
+        "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+        "installation_id": "00000000-0000-4000-8000-000000000009",
+        "expected_revision_id": "00000000-0000-4000-8000-000000000006",
+        "expected_configuration_revision_id": "00000000-0000-4000-8000-000000000010"
+      },
+      "deadline_at": "2026-11-23T10:05:00Z"
+    }
+  },
+  {
+    "name": "uninstall_observed",
+    "schema": "device/apps/v1/protocol.schema.json#/$defs/observations",
+    "value": {
+      "app_protocol_version": 1,
+      "deployment_namespace": "10000000-0000-4000-8000-000000000001",
+      "report_id": "10000000-0000-4000-8000-000000000003",
+      "report_sequence": 1,
+      "operations": [
+        {
+          "operation_id": "00000000-0000-4000-8000-000000000011",
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "run_id": null,
+          "kind": "uninstall",
+          "state": "succeeded",
+          "phase": "applied",
+          "observed_at": "2026-11-23T10:00:03Z",
+          "failure": null
+        }
+      ],
+      "installations": [
+        {
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "observed_at": "2026-11-23T10:00:03Z",
+          "installed": null,
+          "candidate": null
+        }
+      ],
+      "runs": []
     }
   }
 ]

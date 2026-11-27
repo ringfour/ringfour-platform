@@ -9,6 +9,8 @@
     "typecheck": "bash scripts/typecheck.sh",
     "test": "bash scripts/test-component.sh",
     "test:e2e": "bash tests/e2e/00-health.sh",
+    "test:acceptance": "python3 scripts/apps-acceptance.py",
+    "test:acceptance:runner": "python3 -m unittest discover -s tests/automation -v",
     "test:e2e:01": "bash tests/e2e/01-identity.sh",
     "test:e2e:02": "bash tests/e2e/02-enrollment.sh",
     "test:e2e:pairing": "bash tests/e2e/02-pairing.sh",

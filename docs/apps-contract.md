@@ -68,9 +68,11 @@ future device outcomes. AP-03 adds current observed matching, not this slice.
 ## Configuration and canonical content
 
 Configuration is a closed flat object with at most 32 ASCII snake_case keys.
-Supported types are `string`, `integer` and `boolean`; strings may specify
-`minLength`, `maxLength` and `enum`; integers may specify `minimum`, `maximum`
-and `enum`. No nesting, arrays, null, regex, formats, references, combinators,
+Supported types are `string`, `integer`, `number` and `boolean`; strings may
+specify `minLength`, `maxLength` and `enum`; numeric types may specify
+`minimum`, `maximum` and `enum`. A `number` is finite IEEE-754 binary64 within
+±9,007,199,254,740,991. NaN, infinity, overflow, underflow and boolean/string
+coercion are rejected. No nesting, arrays, null, regex, formats, references, combinators,
 secret injection or arbitrary JSON Schema keywords. This intentionally small
 subset is sufficient for Robot Check's `sample_count`. All integers, bounds and
 values stay within ±9,007,199,254,740,991; strings contain at most 4,096 Unicode
@@ -84,10 +86,12 @@ start from defaults; validators do not insert them. Revisions bind the schema
 and defaults immutably. Runtime input is data for the App, never engine settings.
 
 After validation, recursively sort object keys in ASCII order, retain array
-order, and serialize compact JSON with no whitespace. Strings use JSON escaping
+order, and serialize compact JSON with no whitespace. Numbers use
+ECMAScript-compatible shortest round-trip decimal notation, so each consumer
+reconstructs the same binary64 value; integral-valued numbers use integer
+notation and negative zero is zero. Strings use JSON escaping
 (quote, backslash and control characters), retain other Unicode characters and
-apply no Unicode normalization. Integers use decimal notation, with negative
-zero serialized as zero. Hash the UTF-8 bytes using SHA-256, represented as
+apply no Unicode normalization. Hash the UTF-8 bytes using SHA-256, represented as
 `sha256:<64 lower-case hex>`. Metadata changes therefore change the manifest
 digest. Raw parser and cross-language readers must preserve these rules; the
 [canonical fixture](../packages/contracts/fixtures/apps/v1/canonical.json)

@@ -25,7 +25,9 @@ export function StudioTime({ value }: { value: string }) {
   const now = useSyncExternalStore(subscribe, snapshot);
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return <>Time unknown</>;
-  const minutes = Math.round((date.getTime() - now) / 60000);
+  const elapsed = date.getTime() - Math.max(now, Date.now());
+  const minutes =
+    elapsed < 0 ? Math.ceil(elapsed / 60000) : Math.floor(elapsed / 60000);
   const unit =
     Math.abs(minutes) < 60
       ? "minute"
@@ -43,14 +45,7 @@ export function StudioTime({ value }: { value: string }) {
       dateTime={value}
       title={date.toLocaleString(undefined, { timeZoneName: "short" })}
     >
-      {date.toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })}{" "}
-      · {age}
+      {Math.abs(elapsed) < 60000 ? "just now" : age}
     </time>
   );
 }

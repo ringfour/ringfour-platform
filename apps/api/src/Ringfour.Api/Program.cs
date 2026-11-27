@@ -1,3 +1,4 @@
+using Ringfour.Api.Development;
 using Ringfour.Api.Logbook;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
@@ -103,6 +104,7 @@ app.MapAppRegistryEndpoints();
 app.MapAppInstallationEndpoints();
 app.MapAppSettingsEndpoints();
 app.MapAppRunEndpoints();
+app.MapAppDevelopmentEndpoints();
 app.MapAppRuntimeEndpoints();
 app.MapAppArtifactEndpoints();
 app.MapAppHistoryEndpoints();

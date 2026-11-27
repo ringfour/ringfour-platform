@@ -376,3 +376,67 @@ def test_shutdown_releases_writer_only_after_pull_and_refuses_late_application(d
         assert conn.execute("SELECT revision_id FROM app_installations").fetchone() == (
             None,
         )
+
+
+def test_uninstall_replays_durable_report_and_preserves_new_installation(device):
+    settings, executor, command, payload, calls, reports, broken = device
+    process(settings, executor, command())
+    removal = {key: value for key, value in payload.items() if key != "release"}
+    removal.update(expected_revision_id=payload["release"]["revision_id"],
+                   expected_configuration_revision_id=payload["release"]["configuration_revision_id"])
+    operation = command(removal, "uninstall")
+    assert apps.begin_uninstall(settings, executor, operation) == "staging"
+    # Resume after interruption before removal; then lose the API receipt.
+    broken["report"] = True
+    with pytest.raises(httpx.ConnectError):
+        asyncio.run(apps.process_uninstall(settings, executor, operation, {}))
+    with connect(settings.db_path) as conn:
+        assert conn.execute("SELECT revision_id FROM app_installations").fetchone() == (None,)
+    broken["report"] = False
+    asyncio.run(apps.process_uninstall(settings, executor, operation, {}))
+    assert reports[-1]["operations"][0]["kind"] == "uninstall"
+    assert reports[-1]["operations"][0]["state"] == "succeeded"
+    replacement = copy.deepcopy(payload)
+    replacement["installation_id"] = uid()
+    process(settings, executor, command(replacement))
+    asyncio.run(apps.process_uninstall(settings, executor, operation, {}))
+    with connect(settings.db_path) as conn:
+        assert conn.execute("SELECT revision_id FROM app_installations WHERE installation_id=?",
+                            (replacement["installation_id"],)).fetchone() == (payload["release"]["revision_id"],)
+    assert calls.count("pull") == 2
+
+
+def test_stale_uninstall_fails_without_removing_binding(device):
+    settings, executor, command, payload, _, reports, _ = device
+    process(settings, executor, command())
+    removal = {key: value for key, value in payload.items() if key != "release"}
+    removal.update(expected_revision_id=uid(),
+                   expected_configuration_revision_id=payload["release"]["configuration_revision_id"])
+    asyncio.run(apps.process_uninstall(settings, executor, command(removal, "uninstall"), {}))
+    assert reports[-1]["operations"][0]["failure"]["code"] == "stale_installation"
+    with connect(settings.db_path) as conn:
+        assert conn.execute("SELECT revision_id FROM app_installations").fetchone() == (payload["release"]["revision_id"],)
+
+
+def test_start_cannot_overtake_an_accepted_uninstall(device):
+    from ringfour_daemon import app_runs
+
+    settings, executor, command, payload, _, _, _ = device
+    process(settings, executor, command())
+    removal = {key: value for key, value in payload.items() if key != "release"}
+    removal.update(expected_revision_id=payload["release"]["revision_id"],
+                   expected_configuration_revision_id=payload["release"]["configuration_revision_id"])
+    uninstall = command(removal, "uninstall")
+    apps.begin_uninstall(settings, executor, uninstall)
+    start = next(item["value"] for item in json.loads(
+        (ROOT / "fixtures/device/apps/v1/positive.json").read_text()) if item["name"] == "start_command")
+    start.update(deployment_namespace=payload["deployment_namespace"], installation_id=payload["installation_id"], run_id=uid())
+    for key in ("app_id", "revision_id", "configuration_revision_id", "configuration", "manifest_digest"):
+        start["snapshot"][key] = payload["release"][key]
+    start["snapshot"]["image"] = payload["release"]["target"]["image"]
+    app_runs.begin(settings, executor, command(start, "start"))
+    with connect(settings.db_path) as conn:
+        state, failure = conn.execute("SELECT state,failure_json FROM app_runs").fetchone()
+        assert state == "failed" and json.loads(failure)["code"] == "execution_conflict"
+        assert not conn.execute("SELECT 1 FROM device_execution_slots").fetchone()
+    apps.finish_uninstall(settings, executor, uninstall)

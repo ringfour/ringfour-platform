@@ -30,6 +30,7 @@ from .config import (
     selected_org,
     update_config,
 )
+from .development_commands import register as register_app_development
 
 app = typer.Typer(
     name="ringfour-cli",
@@ -49,6 +50,7 @@ apps_app.add_typer(app_settings_app, name="settings")
 hitl_app = typer.Typer(help="Inspect and answer human interactions.", no_args_is_help=True)
 app.add_typer(hitl_app, name="hitl")
 console = Console()
+publish_console = Console(stderr=True)
 
 # name -> (env var, default base URL)
 SERVICES: tuple[tuple[str, str, str], ...] = (
@@ -506,6 +508,47 @@ def app_rollback(
     console.print_json(data=result)
 
 
+@apps_app.command("uninstall")
+def app_uninstall(
+    installation_id: str,
+    yes: bool = typer.Option(False, "--yes", help="Confirm uninstall of this App from this robot."),
+    idempotency_key: str | None = typer.Option(None, "--idempotency-key"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Remove one stopped App installation while retaining its history and files."""
+    settings, store = _settings(), auth.TokenStore()
+    installation = _api_request(
+        "GET", f"/v1/app-installations/{_app_id(installation_id)}", settings, store, _error_json=json_output
+    ).json()
+    binding = installation.get("installed")
+    if not binding or installation.get("removed_at"):
+        raise typer.BadParameter("This installation has no confirmed release to remove.")
+    app = _api_request("GET", f"/v1/apps/{installation['app_id']}", settings, store).json()
+    robot = _api_request("GET", f"/v1/robots/{installation['robot_id']}", settings, store).json()
+    revision = _api_request("GET", f"/v1/app-revisions/{binding['revision_id']}", settings, store).json()
+    release = revision["manifest"]["release"]
+    summary = f"Remove {app['name']} {release} from robot {robot['name']}? Run history and published files will remain available."
+    if json_output and not yes:
+        raise typer.BadParameter("Automation must pass --yes to confirm uninstall.")
+    publish_console.print(summary)
+    if not yes and not typer.confirm("Continue with uninstall?", default=False):
+        raise typer.Abort()
+    body = {
+        "expected_revision_id": binding["revision_id"],
+        "expected_configuration_revision_id": binding["configuration_revision_id"],
+    }
+    result = _api_request(
+        "POST",
+        f"/v1/app-installations/{installation['id']}/uninstall",
+        settings,
+        store,
+        headers={"Idempotency-Key": _idempotency_key(idempotency_key)},
+        json=body,
+        _error_json=json_output,
+    ).json()
+    console.print_json(data=result)
+
+
 @apps_app.command("start")
 def app_start(target: str, robot: str | None = typer.Option(None, "--robot", help="Resolve an App ID on this robot; required when targeting an App."), org: str | None = typer.Option(None, "--org"), idempotency_key: str | None = typer.Option(None, "--idempotency-key"), json_output: bool = typer.Option(False, "--json")):
     """Start by installation ID, or resolve an App ID on an explicitly selected robot."""
@@ -782,10 +825,11 @@ def app_build(
     directory: Annotated[Path, typer.Argument()] = Path("."),
     wheels: Annotated[Path | None, typer.Option("--wheels")] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
+    development: Annotated[bool, typer.Option("--development", help="Build the development Dockerfile target")] = False,
 ):
     """Build isolated App images from explicit sources and local hash-pinned wheels."""
     _app_result(
-        lambda: app_project.build_project(directory.resolve(), wheels), json_output
+        lambda: app_project.build_project(directory.resolve(), wheels, **({"development": True} if development else {})), json_output
     )
 
 
@@ -794,7 +838,8 @@ def app_publish(
     directory: Annotated[Path, typer.Argument()] = Path("."),
     manifest: Annotated[Path | None, typer.Option("--manifest")] = None,
     org: str | None = typer.Option(None, "--org"),
-    visibility: str = typer.Option("listed", "--visibility"),
+    visibility: str | None = typer.Option(None, "--visibility", help="Publication visibility: unlisted (private) or listed (public; Ringfour publisher only)."),
+    yes: bool = typer.Option(False, "--yes", help="Confirm the displayed publication details."),
     idempotency_key: str | None = typer.Option(None, "--idempotency-key"),
     json_output: bool = typer.Option(False, "--json"),
 ):
@@ -807,7 +852,8 @@ def app_publish(
         if not organization:
             raise ValueError("Select a workspace with org select or --org")
         organization = str(uuid.UUID(organization))
-        if visibility not in ("listed", "unlisted"):
+        selected_visibility = visibility or "unlisted"
+        if selected_visibility not in ("listed", "unlisted"):
             raise ValueError("visibility must be listed or unlisted")
         if idempotency_key is not None and (
             not 1 <= len(idempotency_key) <= 200
@@ -824,7 +870,20 @@ def app_publish(
             if manifest is not None
             else app_project.prepare_publication(directory.resolve())
         )
-        body = {"manifest": release, "visibility": visibility}
+        body = {"manifest": release, "visibility": selected_visibility}
+        visibility_label = "public App Store" if selected_visibility == "listed" else "private to publisher workspace"
+        publish_console.print(
+            f"Publish [bold]{release['display']['name']}[/bold] "
+            f"({release['app_key']} {release['release']}) to workspace {organization} "
+            f"as {visibility_label}."
+        )
+        needs_public_confirmation = selected_visibility == "listed" and not yes
+        if needs_public_confirmation and json_output:
+            raise typer.BadParameter("Automation must pass --yes to publish a listed release.")
+        if needs_public_confirmation and not typer.confirm(
+            "Submit this public release?", default=False
+        ):
+            raise typer.Abort()
         key = idempotency_key or "app:" + app_fingerprint(
             {"api": settings.api_url, "organization": organization, "request": body}
         )
@@ -1235,3 +1294,7 @@ def _idempotency_key(key: str | None) -> str:
     if not key.strip() or len(key) > 180:
         raise typer.BadParameter("Must be nonblank and at most 180 characters.", param_hint="--idempotency-key")
     return key
+
+
+# App-scoped development uses the normal authenticated API client.
+register_app_development(apps_app, _settings, _api_request, app_logs)

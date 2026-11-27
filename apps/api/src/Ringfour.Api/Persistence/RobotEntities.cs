@@ -6,6 +6,9 @@ namespace Ringfour.Api.Persistence;
 public static class RobotAuditTypes
 {
     public const string RobotCreated = "robot_created";
+    public const string Unenrolled = "robot_unenrolled";
+    public const string Deleted = "robot_deleted";
+    public const string AppearanceUpdated = "appearance_updated";
     public const string EnrollmentTokenIssued = "enrollment_token_issued";
     public const string Enrolled = "enrolled";
     public const string CredentialRotated = "credential_rotated";
@@ -19,7 +22,10 @@ public sealed class Robot
     public required string Name { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? EnrolledAt { get; set; }
+    public DateTimeOffset? ReleasedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
     public string? ProfileRef { get; set; }
+    public string? Appearance { get; set; }
 
     public Organization Organization { get; set; } = null!;
     public List<EnrollmentToken> EnrollmentTokens { get; } = [];

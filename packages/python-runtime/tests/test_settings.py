@@ -99,3 +99,13 @@ def test_serve_cancels_between_applications(monkeypatch):
     )
     assert [call[0] for call in calls] == ["GET", "POST"]
 
+
+def test_bounded_float_settings_values_keep_binary64_roundtrip():
+    assert settings._json_number("0.2") == 0.2
+    assert settings._json_number("-0.125") == -0.125
+    assert settings._json_number("1.0") == 1
+    assert settings._json_number("1e-7") == 1e-7
+    for token in ("NaN", "Infinity", "1e400", "1e-400", "9007199254740992"):
+        with pytest.raises(ValueError):
+            settings._json_number(token)
+

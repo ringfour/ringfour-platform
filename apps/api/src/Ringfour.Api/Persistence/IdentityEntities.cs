@@ -27,6 +27,8 @@ public sealed class Organization
     public required string Name { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
+    public DateTimeOffset? DeletedAt { get; set; }
+
     public List<Membership> Memberships { get; } = [];
 }
 
@@ -45,8 +47,8 @@ public sealed class OrganizationInvitation
 {
     public Guid Id { get; set; }
     public Guid OrganizationId { get; set; }
-    public required string Email { get; set; }
-    public required string NormalizedEmail { get; set; }
+    public string? Email { get; set; }
+    public string? NormalizedEmail { get; set; }
     public OrgRole Role { get; set; }
     public Guid InvitedByUserId { get; set; }
     public required string TokenHash { get; set; }

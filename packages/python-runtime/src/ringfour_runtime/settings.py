@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import os
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from decimal import Decimal, DecimalException
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
@@ -44,6 +46,38 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+_MAX_SAFE_NUMBER = 9007199254740991
+
+
+def _json_number(token: str):
+    try:
+        exact = Decimal(token)
+        value = float(exact)
+        if not exact.is_finite() or abs(exact) > _MAX_SAFE_NUMBER or not math.isfinite(value):
+            raise ValueError("unsafe settings number")
+        if exact != 0 and value == 0:
+            raise ValueError("settings number underflow")
+        return int(value) if value.is_integer() and abs(value) <= _MAX_SAFE_NUMBER else value
+    except (DecimalException, OverflowError) as error:
+        raise ValueError("unsafe settings number") from error
+
+
+def _validate_numbers(value):
+    if type(value) is int:
+        if abs(value) > _MAX_SAFE_NUMBER:
+            raise ValueError("unsafe settings integer")
+    elif type(value) is float:
+        if not math.isfinite(value) or abs(value) > _MAX_SAFE_NUMBER:
+            raise ValueError("unsafe settings number")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _validate_numbers(key)
+            _validate_numbers(item)
+    elif isinstance(value, list):
+        for item in value:
+            _validate_numbers(item)
+
+
 def _runtime() -> tuple[str, str]:
     base = os.environ.get("RINGFOUR_SETTINGS_URL", "")
     token = os.environ.get("RINGFOUR_SETTINGS_TOKEN", "")
@@ -74,6 +108,8 @@ def _call(method: str, path: str, body: dict | None = None) -> dict:
     encoded = None if body is None else json.dumps(
         body, ensure_ascii=False, allow_nan=False, separators=(",", ":")
     ).encode("utf-8")
+    if body is not None:
+        _validate_numbers(body)
     if encoded is not None and len(encoded) > 16_384:
         raise SettingsError("The settings request exceeds the runtime size limit.")
     request = urllib.request.Request(
@@ -91,9 +127,16 @@ def _call(method: str, path: str, body: dict | None = None) -> dict:
             raw = response.read(16_385)
         if len(raw) > 16_384:
             raise ValueError
-        value = json.loads(raw, object_pairs_hook=_unique)
+        value = json.loads(
+            raw,
+            object_pairs_hook=_unique,
+            parse_int=_json_number,
+            parse_float=_json_number,
+            parse_constant=lambda _: (_ for _ in ()).throw(ValueError("non-JSON number")),
+        )
         if not isinstance(value, dict):
             raise TypeError
+        _validate_numbers(value)
         return value
     except urllib.error.HTTPError as exc:
         if exc.code in (502, 503, 504):

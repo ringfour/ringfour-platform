@@ -181,6 +181,11 @@ def finish(settings, executor, operation, failure=None):
         ).fetchone()
         if saved and saved[0]:
             return json.loads(saved[0])
+        if saved is None:
+            conn.execute(
+                "INSERT INTO app_preparations(operation_id,installation_id,state,terminal_report_json,updated_at) VALUES (?,?, 'staging', NULL, ?)",
+                (operation.operation_id, command["installation_id"], now),
+            )
         current = row(conn, command["installation_id"])
         check_generation(current, command)
         if (
@@ -289,6 +294,141 @@ def finish(settings, executor, operation, failure=None):
         return report
 
 
+@fenced
+def begin_uninstall(settings, executor, operation):
+    command = operation.payload
+    app_validation.validate(command, "device", "uninstall_command")
+    if (
+        command["deployment_namespace"] != executor.identity["deployment_namespace"]
+        or operation.robot_id != executor.identity["robot_id"]
+    ):
+        raise PreparationError("ownership_conflict")
+    with closing(connect(settings.db_path)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
+        known = conn.execute(
+            "SELECT state FROM app_preparations WHERE operation_id=?",
+            (operation.operation_id,),
+        ).fetchone()
+        if known:
+            return known[0]
+        current = row(conn, command["installation_id"])
+        if current is None or current["robot_id"] != operation.robot_id:
+            raise PreparationError("installation_removed")
+        if current["candidate_json"] and json.loads(current["candidate_json"])["state"] != "failed":
+            raise PreparationError("stale_installation")
+        if current["revision_id"] != command["expected_revision_id"] or current[
+            "configuration_revision_id"
+        ] != command["expected_configuration_revision_id"]:
+            raise PreparationError("stale_installation")
+        try:
+            check_idle(conn)
+        except PreparationError:
+            raise PreparationError("execution_conflict") from None
+        now = utc_now()
+        conn.execute(
+            "INSERT INTO app_preparations(operation_id,installation_id,state,terminal_report_json,updated_at) VALUES (?,?, 'staging', NULL, ?)",
+            (operation.operation_id, command["installation_id"], now),
+        )
+        return "staging"
+
+
+@fenced
+def finish_uninstall(settings, executor, operation, failure=None):
+    executor.fence()
+    command = operation.payload
+    now = utc_now()
+    with closing(connect(settings.db_path)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
+        saved = conn.execute(
+            "SELECT terminal_report_json FROM app_preparations WHERE operation_id=?",
+            (operation.operation_id,),
+        ).fetchone()
+        if saved and saved[0]:
+            return json.loads(saved[0])
+        if saved is None:
+            conn.execute(
+                "INSERT INTO app_preparations(operation_id,installation_id,state,terminal_report_json,updated_at) VALUES (?,?, 'staging', NULL, ?)",
+                (operation.operation_id, command["installation_id"], now),
+            )
+        current = row(conn, command["installation_id"])
+        if current is None or current["robot_id"] != operation.robot_id:
+            raise PreparationError("installation_removed")
+        if failure is None and (current["revision_id"] != command["expected_revision_id"] or current[
+            "configuration_revision_id"
+        ] != command["expected_configuration_revision_id"]):
+            raise PreparationError("stale_installation")
+        if failure is None:
+            try:
+                check_idle(conn)
+            except PreparationError:
+                failure = {
+                    "code": "execution_conflict",
+                    "message": "The robot must be idle before removing this App.",
+                    "details": {"retryable": True},
+                }
+        if failure is None:
+            conn.execute(
+                "UPDATE app_installations SET revision_id=NULL,configuration_revision_id=NULL,image_json=NULL,configuration_json=NULL,candidate_json=NULL,updated_at=? WHERE installation_id=?",
+                (now, command["installation_id"]),
+            )
+        current = row(conn, command["installation_id"])
+        sequence = conn.execute(
+            "SELECT last_sequence+1 FROM app_observation_streams WHERE route='observations'"
+        ).fetchone()[0]
+        state = "succeeded" if failure is None else "failed"
+        report = {
+            "app_protocol_version": 1,
+            "deployment_namespace": executor.identity["deployment_namespace"],
+            "report_id": str(uuid.uuid4()),
+            "report_sequence": sequence,
+            "operations": [
+                {
+                    "operation_id": operation.operation_id,
+                    "installation_id": command["installation_id"],
+                    "run_id": None,
+                    "kind": "uninstall",
+                    "state": state,
+                    "phase": "applied" if failure is None else "failed",
+                    "observed_at": now,
+                    "failure": failure,
+                }
+            ],
+            "installations": [
+                {
+                    "installation_id": command["installation_id"],
+                    "observed_at": now,
+                    "installed": installed(current),
+                    "candidate": None,
+                }
+            ],
+            "runs": [],
+        }
+        app_validation.validate(report, "device", "observations")
+        encoded = app_validation.canonical(report)
+        conn.execute(
+            "INSERT INTO app_observation_outbox(route,sequence,report_id,deployment_namespace,body_sha256,body_json,created_at) VALUES ('observations',?,?,?,?,?,?)",
+            (
+                sequence,
+                report["report_id"],
+                report["deployment_namespace"],
+                hashlib.sha256(encoded.encode()).hexdigest(),
+                encoded,
+                now,
+            ),
+        )
+        conn.execute(
+            "UPDATE app_preparations SET state=?,terminal_report_json=?,updated_at=? WHERE operation_id=?",
+            ("applied" if failure is None else "failed", encoded, now, operation.operation_id),
+        )
+        conn.execute(
+            "UPDATE device_operations SET state=?,result=?,updated_at=? WHERE operation_id=?",
+            (state, app_validation.canonical({"report_id": report["report_id"]}), now, operation.operation_id),
+        )
+        return report
+
+
 _delivery_lock = asyncio.Lock()
 
 
@@ -339,6 +479,8 @@ async def process(settings, executor, operation, headers):
         base_url=executor.identity["platform_url"], headers=headers, timeout=30
     ) as client:
         await deliver(settings, client)
+
+
         state = await asyncio.to_thread(begin, settings, executor, operation)
         if state in ("applied", "failed"):
             return
@@ -471,4 +613,37 @@ async def process(settings, executor, operation, headers):
                     "details": details,
                 },
             )
+        await deliver(settings, client)
+
+
+async def process_uninstall(settings, executor, operation, headers):
+    if not settings.apps_enabled or executor is None:
+        raise PreparationError("daemon_upgrade_required")
+    app_validation.validate(operation.payload, "device", "uninstall_command")
+    async with httpx.AsyncClient(
+        base_url=executor.identity["platform_url"], headers=headers, timeout=30
+    ) as client:
+        await deliver(settings, client)
+        try:
+            state = await asyncio.to_thread(begin_uninstall, settings, executor, operation)
+        except PreparationError as error:
+            failure = {
+                "code": error.code,
+                "message": "App uninstall could not be applied: " + error.code + ".",
+                "details": error.details,
+            }
+            await asyncio.to_thread(finish_uninstall, settings, executor, operation, failure)
+            await deliver(settings, client)
+            return
+        if state in ("applied", "failed"):
+            await deliver(settings, client)
+            return
+        failure = None
+        if operations.is_expired(operation.deadline_at, datetime.now(UTC)):
+            failure = {
+                "code": "deadline_exceeded",
+                "message": "The uninstall operation expired before it was applied.",
+                "details": {"retryable": True},
+            }
+        await asyncio.to_thread(finish_uninstall, settings, executor, operation, failure)
         await deliver(settings, client)

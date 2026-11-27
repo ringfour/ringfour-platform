@@ -9,6 +9,7 @@ import argparse
 import base64
 import importlib.util
 import json
+import math
 import os
 import subprocess
 import threading
@@ -113,7 +114,25 @@ def acceptance(
         (ROOT / "tests/fixtures/apps/settings/main.py").read_text()
     )
     authoring = json.loads((project / "app.json").read_text())
-    authoring["configuration"]["environment"] = {"SAMPLE_COUNT": "sample_count"}
+    authoring["configuration"]["schema"]["properties"]["angular_speed_rad_s"] = {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+    }
+    authoring["configuration"]["schema"]["required"].append("angular_speed_rad_s")
+    authoring["configuration"]["defaults"]["angular_speed_rad_s"] = 0.2
+    authoring["configuration"]["environment"] = {
+        "SAMPLE_COUNT": "sample_count",
+        "ANGULAR_SPEED_RAD_S": "angular_speed_rad_s",
+    }
+    runtime_settings = authoring["runtime_settings"]
+    runtime_settings["schema"]["properties"]["gain"] = {
+        "type": "number",
+        "minimum": -1,
+        "maximum": 1,
+    }
+    runtime_settings["schema"]["required"].append("gain")
+    runtime_settings["defaults"]["gain"] = 0.125
     authoring["capabilities"] = {"required": [], "optional": []}
     (project / "app.json").write_text(json.dumps(authoring))
     cli("validate", project)
@@ -125,7 +144,7 @@ def acceptance(
             {
                 "revision_id": revision["id"],
                 "share_id": None,
-                "configuration": {"sample_count": 2},
+                "configuration": {"sample_count": 2, "angular_speed_rad_s": 0.2},
             },
         )
     )
@@ -145,22 +164,30 @@ def acceptance(
     def settings():
         return checked(client.get(settings_path))
 
-    def write(value, key=None, state=None):
+    def write(value, key=None, state=None, gain=0.2):
         state = state or settings()
         body = {
-            "values": {"sample_interval_ms": value},
+            "values": {"sample_interval_ms": value, "gain": gain},
             "expected_selected_revision_id": (
                 state.get("selected_for_next_start") or {}
             ).get("id"),
             "expected_applied_revision_id": (state.get("last_applied") or {}).get("id"),
             "expected_run_id": state["active_run_id"],
         }
+        if isinstance(gain, float) and not math.isfinite(gain):
+            # httpx's json= encoder rejects NaN before it can reach the API.
+            # Send this deliberately invalid token as raw JSON instead.
+            return client.post(
+                settings_path,
+                content=json.dumps(body, allow_nan=True, separators=(",", ":")),
+                headers={"Idempotency-Key": key or str(uuid.uuid4())},
+            )
         return post(settings_path, body, key)
 
     def run(accepted):
         return checked(client.get("/v1/app-runs/" + accepted["run_id"]))
 
-    def applied(value):
+    def applied(value, gain=0.2):
         state = settings()
         return (
             state
@@ -169,6 +196,7 @@ def acceptance(
             .get("values", {})
             .get("sample_interval_ms")
             == value
+            and state["last_applied"]["values"].get("gain") == gain
             else False
         )
 
@@ -214,7 +242,7 @@ def acceptance(
             return
         # Idle selections are immutable and do not pretend to be process confirmations.
         config_file = c["root"] / "settings.json"
-        config_file.write_text('{"sample_interval_ms": 150}')
+        config_file.write_text('{"sample_interval_ms": 150, "gain": 0.125}')
         saved = cli(
             "settings", "set", installed["installation_id"], "--file", config_file
         )
@@ -224,19 +252,35 @@ def acceptance(
             is None
         )
         first = start()
-        wait(lambda: applied(150), "initial settings applied")
+        wait(lambda: applied(150, 0.125), "initial float settings applied")
         wait(
-            lambda: any(x.get("startup_sample_count") == "2" for x in output(first)),
-            "literal startup environment mapping",
+            lambda: any(
+                x.get("startup_sample_count") == "2"
+                and x.get("startup_angular_speed_rad_s") == "0.2"
+                for x in output(first)
+            ),
+            "literal integer and float startup environment mapping",
         )
+        assert run(first)["snapshot"]["configuration_environment"]["ANGULAR_SPEED_RAD_S"] == "0.2"
+        assert write(250, gain=True).status_code == 400
+        assert write(250, gain="0.25").status_code == 400
+        assert write(250, gain=1.000001).status_code == 400
+        assert write(250, gain=float("nan")).status_code == 400
         assert write(99).status_code == 400
         before = settings()
         key = str(uuid.uuid4())
-        response = checked(write(250, key, before))
+        response = checked(write(250, key, before, gain=-0.375))
         assert response["state"] == "pending"
-        assert checked(write(250, key, before)) == response
-        assert write(350, key, before).status_code == 409
-        wait(lambda: applied(250), "active settings applied")
+        assert checked(write(250, key, before, gain=-0.375)) == response
+        assert write(350, key, before, gain=-0.375).status_code == 409
+        wait(lambda: applied(250, -0.375), "fractional live setting applied")
+        wait(
+            lambda: any(
+                x.get("event") == "settings.handler" and x.get("gain") == -0.375
+                for x in output(first)
+            ),
+            "fractional settings handler output delivered",
+        )
         selected = settings()["selected_for_next_start"]["id"]
         rejected = checked(write(777))
         wait(
@@ -415,9 +459,9 @@ def acceptance(
                 check=False,
             )
             assert fetched.returncode == 0, fetched.stdout + fetched.stderr
-            assert json.loads(destination.read_text())["values"][
-                "sample_interval_ms"
-            ] in (450, 650)
+            summary = json.loads(destination.read_text())
+            assert summary["values"]["sample_interval_ms"] in (450, 650)
+            assert summary["values"]["gain"] == 0.2
         history = checked(
             client.get(
                 f"/v1/organizations/{c['org']}/app-logbook",
@@ -431,6 +475,13 @@ def acceptance(
             "ap17_passed": True,
             "manifest_v2": True,
             "startup_environment": True,
+            "float_configuration": {
+                "startup_environment_roundtrip": "0.2",
+                "live_applied_and_read_back": -0.375,
+                "runtime_artifact_read_back": 0.2,
+                "boolean_string_and_out_of_bounds_rejected": True,
+                "nan_rejected": True,
+            },
             "initial_and_live_settings": True,
             "rejection_and_cas": True,
             "api_daemon_replacement": True,

@@ -26,7 +26,7 @@ public static class AppManifest
         foreach (var property in properties)
         {
             var rule = property.Value!.AsObject();
-            if ((rule["minimum"] is not null && rule["maximum"] is not null && AppProtocol.Integer(rule["minimum"]!) > AppProtocol.Integer(rule["maximum"]!)) ||
+            if ((rule["minimum"] is not null && rule["maximum"] is not null && AppProtocol.Number(rule["minimum"]!) > AppProtocol.Number(rule["maximum"]!)) ||
                 (rule["minLength"] is not null && AppProtocol.Integer(rule["minLength"]!) > (rule["maxLength"] is null ? 4096 : AppProtocol.Integer(rule["maxLength"]!))))
                 throw ApiException.InvalidInput("Configuration bounds are reversed.");
             if (rule["enum"] is JsonArray choices)
@@ -56,7 +56,7 @@ public static class AppManifest
                 foreach (var property in runtimeProperties)
                 {
                     var rule = property.Value!.AsObject();
-                    if ((rule["minimum"] is not null && rule["maximum"] is not null && AppProtocol.Integer(rule["minimum"]!) > AppProtocol.Integer(rule["maximum"]!)) ||
+                    if ((rule["minimum"] is not null && rule["maximum"] is not null && AppProtocol.Number(rule["minimum"]!) > AppProtocol.Number(rule["maximum"]!)) ||
                         (rule["minLength"] is not null && AppProtocol.Integer(rule["minLength"]!) > (rule["maxLength"] is null ? 4096 : AppProtocol.Integer(rule["maxLength"]!))))
                         throw ApiException.InvalidInput("Runtime settings bounds are reversed.");
                 }
@@ -82,6 +82,8 @@ public static class AppManifest
             var rule = property.Value!.AsObject();
             if (rule["type"]!.GetValue<string>() == "string") rule["maxLength"] ??= 4096;
             if (rule["type"]!.GetValue<string>() == "integer")
+            { rule["minimum"] ??= -9007199254740991L; rule["maximum"] ??= 9007199254740991L; }
+            if (rule["type"]!.GetValue<string>() == "number")
             { rule["minimum"] ??= -9007199254740991L; rule["maximum"] ??= 9007199254740991L; }
         }
         return effective;
@@ -117,7 +119,7 @@ public static class AppManifest
                 System.Text.Json.JsonValueKind.String => value.GetValue<string>(),
                 System.Text.Json.JsonValueKind.True => "true",
                 System.Text.Json.JsonValueKind.False => "false",
-                System.Text.Json.JsonValueKind.Number => AppProtocol.Integer(value).ToString(CultureInfo.InvariantCulture),
+                System.Text.Json.JsonValueKind.Number => AppProtocol.NumberText(value),
                 _ => throw ApiException.InvalidInput("Environment values must be scalar.")
             };
         }

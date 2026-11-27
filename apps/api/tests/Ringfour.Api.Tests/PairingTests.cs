@@ -64,8 +64,9 @@ public sealed class PairingTests(PostgresFixture postgres)
             var pending = await (await Poll(device, id, secret)).Content.ReadAsStringAsync();
             ContractSchema.AssertValid("pairing/v1/poll-response.schema.json", pending);
             Assert.Equal("pending", JsonDocument.Parse(pending).RootElement.GetProperty("state").GetString());
-            var claim = await owner.PostAsJsonAsync($"/v1/organizations/{orgId}/pairing-claims", new { code, name = "base101" }, RingfourJson.Options);
+            var claim = await owner.PostAsJsonAsync($"/v1/organizations/{orgId}/pairing-claims", new { code, name = "base101", appearance = "base101" }, RingfourJson.Options);
             Assert.Equal(HttpStatusCode.OK, claim.StatusCode);
+            Assert.Equal("base101", JsonDocument.Parse(await claim.Content.ReadAsStringAsync()).RootElement.GetProperty("appearance").GetString());
             robotId = JsonDocument.Parse(await claim.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
             Assert.Equal(HttpStatusCode.Conflict, (await owner.PostAsJsonAsync($"/v1/organizations/{orgId}/pairing-claims", new { code, name = "duplicate" }, RingfourJson.Options)).StatusCode);
             var body = JsonDocument.Parse(await (await Poll(device, id, secret)).Content.ReadAsStringAsync()).RootElement;

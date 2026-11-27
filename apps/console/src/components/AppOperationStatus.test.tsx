@@ -47,3 +47,33 @@ test("refreshes the owning view once when an operation reaches terminal state", 
   );
   expect(onTerminal).toHaveBeenCalledTimes(1);
 });
+
+test("a stale operation from another selected installation never becomes success", async () => {
+  const onTerminal = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      Response.json({
+        id: "operation",
+        installation_id: "robot-a-install",
+        organization_id: "org",
+        state: "succeeded",
+        phase: "applied",
+      }),
+    ),
+  );
+  render(
+    <AppOperationStatus
+      operationId="operation"
+      installationId="robot-b-install"
+      organizationId="org"
+      token={async () => "token"}
+      onTerminal={onTerminal}
+    />,
+  );
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    expect.stringContaining("unavailable in the selected installation"),
+  );
+  expect(onTerminal).not.toHaveBeenCalled();
+});

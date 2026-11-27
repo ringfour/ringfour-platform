@@ -30,14 +30,14 @@ shared application code.
 | Revision | Server UUID; unique `(app_id, manifest.release)`. Manifest, canonical digest and publisher provenance are immutable. Visibility is fixed for this initial release contract. |
 | Share | Server UUID, one immutable revision and destination workspace, grant actor/time, expiry and optional revocation time. A guessed UUID does not authorize access. |
 | Import | Server UUID; unique `(organization_id, revision_id)`. Retains original publisher, App and revision. Source is server-derived `store` or `direct_share` with grant ID. |
-| Installation | Server UUID; unique `(robot_id, app_id)` in v1. Several Apps can be installed on one robot. Robot workspace and App identity never change. |
+| Installation | Server UUID; unique active `(robot_id, app_id)`. Removed records remain as historical tombstones with `removed_at`; reinstall creates a new UUID. Robot workspace and App identity never change. |
 | Configuration revision | Server UUID, append-only complete validated values bound to one installation and release schema, with actor/time. Never overwrite a prior version. |
 | Run | Server UUID and shared execution-row UUID for AP-02; references installation and an immutable snapshot. No mission record is required. |
-| Operation | Server UUID for one durable action, independent of the run UUID. Start and stop reference their exact run. Install/configure/update/rollback have `run_id: null`. |
+| Operation | Server UUID for one durable action, independent of the run UUID. Start and stop reference their exact run. Install/configure/update/rollback/uninstall have `run_id: null`. |
 
 Owner/developer in publisher A may publish and grant/revoke revision shares.
 Authenticated members of a selected workspace may browse listed releases.
-Owner/developer in destination B may import/install/configure/update/rollback
+Owner/developer in destination B may import/install/configure/update/rollback/uninstall
 on B's robots. Operator/developer/owner in B may inspect/start/stop installed
 Apps and respond to their interactions. Membership is rechecked per action.
 A publisher listing or grant never authorizes access to consumer robots,
@@ -74,7 +74,7 @@ expiry is introduced for App mutations. The legacy optional 24-hour header
 contract is unchanged. Natural App/release and workspace/revision uniqueness
 also deduplicates publication and import under different retry keys.
 
-Install/configure/update/rollback return 202 with `installation_id`,
+Install/configure/update/rollback/uninstall return 202 with `installation_id`,
 `operation_id` and `run_id: null`. A start atomically claims the shared robot
 execution slot across App and legacy sources, allocates the run/snapshot and
 operation, and returns their stable IDs. A second active start returns
@@ -107,9 +107,16 @@ a failure remains visible as `failed`. A staged candidate does not replace
 `installed`. Apply only while the robot is idle (including legacy execution
 exclusion), atomically switching revision/config/image after a device report.
 Failed configuration validation or preparation leaves the prior installed
-binding usable. Install produces no run. Update/rollback produces no run.
+binding usable. Install, update, rollback and uninstall produce no run.
 Rollback chooses a previously installed, retained binding and configuration
 from this installation and still performs current compatibility checks.
+
+Uninstall requires an idle robot, the exact installed revision/configuration
+IDs and a Daemon session that negotiated uninstall support. Device confirmation
+sets `removed_at` and clears the installed binding; it does not delete the
+installation identity, runs, files, logbook evidence or shared image layers.
+Reinstall creates a new installation ID, so delayed commands for the tombstone
+cannot affect the new binding.
 
 Configure, update and rollback use expected revision/configuration IDs to
 prevent overwriting intervening edits (`stale_installation`). Configure validates
@@ -261,7 +268,11 @@ permit other digests in that repository; device execution must still enforce the
 authorized image digest. Tokens exist only in memory/response and responses use
 `Cache-Control: no-store`. Errors and logs exclude credentials.
 
-Publisher role is checked before registry access. Identical publication and
+Publisher role is checked before registry access. Only the server-configured
+Ringfour publisher organization may create publicly listed releases; other
+publishers use private `unlisted` releases and explicit destination shares.
+The returned Ringfour publisher label is derived from this same trusted config.
+Identical publication and
 idempotency replays do not need the registry to remain online. Different manifest
 content or visibility under an existing release conflicts. App display metadata is initialized on first publication and updated only by
 a listed publication. Unlisted revisions keep their display changes within the
@@ -275,3 +286,26 @@ case-insensitive App name/key/description matching, bounded to 200 characters.
 Hosted App JSON bodies are bounded to 65,536 bytes, including publication wrappers.
 No AP-05 database migration is required; AP-02 supplied the catalog, import/share
 and permanent App idempotency tables. Secrets and ephemeral grants are not stored.
+
+Publisher workspaces may import/install their own private revisions without a
+share. A different destination workspace still needs an explicit share for a
+private release. The existing `store` import source denotes the path without a
+share; it does not imply that the imported release has public visibility.
+
+
+## AP-21 Studio read support (new interface design)
+
+`GET /v1/app-installations/{installation_id}/configuration-revisions` lists
+retained configurations confirmed `succeeded/applied` by this installation's
+operation history. It uses existing operator read authority and stable
+creation-time/ID cursor pagination (`limit` 1–100). Failed or merely staged
+candidates are excluded. Existing exact configuration reads and guarded rollback
+remain authoritative. No new durable state or background worker is introduced.
+Responses follow `configuration_revision_page`.
+
+App records optionally include the server-derived `publisher_name`.
+`publisher_type` remains the trusted official entitlement label, independent of
+display names. Robot App status optionally includes nullable
+`supports_app_uninstall`: true/false for the current online negotiated session,
+null without current confirmation. Studio never infers removal support from
+cached capability inventory or a daemon version string.

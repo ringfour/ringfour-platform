@@ -15,6 +15,7 @@ import threading
 from contextlib import closing
 from datetime import UTC, datetime
 from functools import wraps
+from pathlib import Path
 from urllib.parse import quote
 
 import httpx
@@ -233,12 +234,17 @@ class Executor:
         return dict(row), None if intent is None else dict(intent)
 
     def labels(self, row):
-        return ownership_labels(
+        labels = ownership_labels(
             row["robot_id"],
             self.identity["deployment_namespace"],
             row["installation_id"],
             row["run_id"],
         )
+        development = json.loads(row["snapshot_json"]).get("development")
+        if development:
+            labels.update({"eu.ringfour.development-session": development["session_id"],
+                           "eu.ringfour.source-sha256": development["archive_sha256"]})
+        return labels
 
     def verify(self, container, row, intent):
         if any(
@@ -298,6 +304,11 @@ class Executor:
             r"[1-9][0-9]*(?::[0-9]+)?", config.get("User", "")
         ):
             raise EngineError("native_requirement_unavailable")
+        if snapshot.get("development") and (
+            (image["Config"].get("Labels") or {}).get("eu.ringfour.development-source") != "/workspace"
+            or image["Config"].get("WorkingDir") != "/workspace"
+        ):
+            raise EngineError("revision_unavailable")
         network = self.engine.network()
         name = "rf-" + row["robot_id"] + "-" + run_id
         with closing(connect(self.settings.db_path)) as conn, conn:
@@ -481,6 +492,26 @@ class Executor:
             params={"path": "/app"},
             content=archive.getvalue(),
         )
+        if snapshot.get("development"):
+            from .development import snapshot_files
+            try:
+                files = snapshot_files(self.settings, snapshot["development"])
+                user = self.engine.image(snapshot["image"])["Config"]["User"]
+                uid, _, gid = user.partition(":")
+                source = io.BytesIO()
+                with tarfile.open(fileobj=source, mode="w") as tar:
+                    directories = sorted({str(parent) for name in files for parent in Path(name).parents if str(parent) != "."}, key=lambda name: (name.count("/"), name))
+                    for name in directories:
+                        entry = tarfile.TarInfo(name); entry.type = tarfile.DIRTYPE
+                        entry.mode = 0o755; entry.uid = int(uid); entry.gid = int(gid or uid)
+                        tar.addfile(entry)
+                    for name, content in sorted(files.items()):
+                        entry = tarfile.TarInfo(name); entry.size = len(content)
+                        entry.mode = 0o644; entry.uid = int(uid); entry.gid = int(gid or uid)
+                        tar.addfile(entry, io.BytesIO(content))
+                self.engine.request("PUT", "/containers/" + row["container_id"] + "/archive", params={"path": "/workspace"}, content=source.getvalue())
+            except (OSError, ValueError):
+                raise EngineError("revision_unavailable") from None
         if self.settings.app_runtime_url:
             from .app_runtime import directory
             user = self.engine.image(snapshot["image"])["Config"]["User"]

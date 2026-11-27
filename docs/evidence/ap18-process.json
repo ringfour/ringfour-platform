@@ -1,0 +1,27 @@
+{
+  "fixture": "tests/e2e/ap18-lifecycle.py",
+  "results": [
+    {
+      "passed": true,
+      "image": "127.0.0.1:46583/apps/robot-check@sha256:8346e31692956ad720426d25a84a619f8343c747834affd487e76be540840653",
+      "installation_id": "a4d8ac30-0d26-45a3-ad48-73ca6a31b5e2",
+      "operation_id": "c659fef5-7b90-4d73-a1ae-1270ee135c41",
+      "report_id": "a8d1077d-70ed-4874-82a3-243da80fed7c",
+      "api_and_daemon_recovery": true,
+      "configure_update_rollback": true,
+      "failed_update_keeps_binding": true,
+      "two_apps": true,
+      "zero_create_or_start": true
+    },
+    {
+      "passed": true,
+      "official_discovery_import_install_other_workspace": true,
+      "private_isolation": true,
+      "cli_uninstall": true,
+      "removed_configuration_retained": true,
+      "reinstall_new_identity": true,
+      "other_installation_preserved": true,
+      "update_rollback_recovery": true
+    }
+  ]
+}

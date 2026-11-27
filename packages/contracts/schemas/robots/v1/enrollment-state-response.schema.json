@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.ringfour.dev/robots/v1/enrollment-state-response.schema.json",
+  "title": "Device enrollment state receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "robot_id",
+    "credential_id",
+    "state",
+    "reason"
+  ],
+  "properties": {
+    "robot_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "credential_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "state": {
+      "enum": [
+        "enrolled",
+        "released"
+      ]
+    },
+    "reason": {
+      "enum": [
+        null,
+        "robot_unenrolled",
+        "robot_deleted",
+        "organization_deleted"
+      ]
+    }
+  }
+}

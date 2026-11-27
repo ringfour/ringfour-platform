@@ -251,6 +251,12 @@ def main():
                         host + "/apps/robot-check",
                     )
                     cli("validate", project)
+                    initial_release = json.loads((project / "app.json").read_text())[
+                        "release"
+                    ]
+                    first_release_path = (
+                        project / ".ringfour/releases" / (initial_release + ".json")
+                    )
                     (project / ".env").write_text("AP06_SENTINEL=never-in-image")
                     (project / "ringfour.context.json").write_text(
                         '{"private_selection":"never-in-image"}'
@@ -259,7 +265,14 @@ def main():
                     image = built["targets"][0]
                     inspection = json.loads(
                         support.command(
-                            ["docker", "--host", publisher_host, "image", "inspect", image["image_id"]]
+                            [
+                                "docker",
+                                "--host",
+                                publisher_host,
+                                "image",
+                                "inspect",
+                                image["image_id"],
+                            ]
                         )
                     )[0]
                     assert inspection["Config"]["User"] == "10001:10001" and inspection[
@@ -292,13 +305,8 @@ def main():
                     support.stop(process)
                     process = None
                     failure = cli("publish", project, success=False)
-                    assert (
-                        "error" in failure
-                        and (project / ".ringfour/releases/0.1.0.json").exists()
-                    ), failure
-                    first_snapshot = (
-                        project / ".ringfour/releases/0.1.0.json"
-                    ).read_bytes()
+                    assert "error" in failure and first_release_path.exists(), failure
+                    first_snapshot = first_release_path.read_bytes()
                     process = start()
                     support.ready(client)
                     first = cli("publish", project)
@@ -376,18 +384,27 @@ def main():
                         )[0]["Id"]
                         == image["image_id"]
                     )
-                    assert (
-                        client.get(
-                            f"/v1/store/apps?organization_id={organization}&q=robot-check"
-                        ).json()["items"][0]["id"]
-                        == first["app_id"]
+                    # Publication now defaults to private. Publisher access stays
+                    # available, while the official-only Store must not expose it.
+                    assert first["visibility"] == "unlisted"
+                    app = client.get("/v1/apps/" + first["app_id"])
+                    app.raise_for_status()
+                    assert app.json()["id"] == first["app_id"]
+                    revisions = client.get("/v1/apps/" + first["app_id"] + "/revisions")
+                    revisions.raise_for_status()
+                    assert first["id"] in {r["id"] for r in revisions.json()["items"]}
+                    store = client.get(
+                        f"/v1/store/apps?organization_id={organization}&q=robot-check"
                     )
+                    store.raise_for_status()
+                    assert first["app_id"] not in {a["id"] for a in store.json()["items"]}
                     print(
                         "Publishing changed v2 while retaining v1 snapshot and API metadata",
                         flush=True,
                     )
                     document = json.loads((project / "app.json").read_text())
-                    document["release"] = "0.2.0"
+                    major, minor, patch = initial_release.split("-", 1)[0].split(".")
+                    document["release"] = f"{major}.{minor}.{int(patch) + 1}"
                     (project / "app.json").write_text(json.dumps(document))
                     (project / "main.py").write_text(
                         "# AP06 changed revision\n" + (project / "main.py").read_text()
@@ -398,9 +415,7 @@ def main():
                         second["id"] != first["id"]
                         and second["manifest"]["targets"][0]["image"] != published_image
                     )
-                    assert (
-                        project / ".ringfour/releases/0.1.0.json"
-                    ).read_bytes() == first_snapshot
+                    assert first_release_path.read_bytes() == first_snapshot
                     assert (
                         client.get("/v1/app-revisions/" + first["id"]).json() == first
                     )

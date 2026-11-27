@@ -178,7 +178,7 @@ def benchmark(c, report_path, samples=20):
             published = checked(
                 post(
                     organization + "/app-revisions",
-                    {"manifest": manifest, "visibility": "listed"},
+                    {"manifest": manifest, "visibility": "unlisted"},
                 )
             )
             checked(

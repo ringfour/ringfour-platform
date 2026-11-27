@@ -1,0 +1,255 @@
+/* Pre-pivot LogbookPage layout at 4204161, consuming App history contracts. */
+.studio-shell .logbook2-page {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  padding: 32px clamp(24px, 2vw, 40px) 56px;
+}
+.logbook2-page :is(.logbook2-back, .logbook2-record-heading h1 a) {
+  text-decoration: none;
+}
+.logbook2-page
+  :is(
+    .logbook2-filters,
+    .logbook2-table-panel,
+    .logbook2-record-header,
+    .logbook2-section
+  ) {
+  box-shadow: none;
+}
+.logbook2-page .logbook2-filters > summary {
+  padding: 16px 20px;
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+  cursor: pointer;
+}
+.logbook2-page .logbook2-filter-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.logbook2-page .logbook2-filter :is(select, input) {
+  border-color: var(--color-input);
+  color: var(--color-foreground);
+}
+.logbook2-page .logbook2-table {
+  min-width: 640px;
+}
+.logbook2-page .logbook2-table td {
+  padding: 20px;
+}
+.logbook2-page .logbook2-open > a {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 40px;
+  min-height: 40px;
+}
+.logbook2-page .logbook2-section-heading > a {
+  color: var(--color-accent-text);
+  font-size: 13px;
+}
+.logbook2-page .logbook2-table td:first-child > a {
+  display: inline-block;
+  color: var(--color-foreground);
+  font: 500 18px / 1.3 var(--font-heading);
+  text-decoration: none;
+}
+.logbook2-page .logbook2-event-copy small {
+  font-size: 12px;
+}
+.logbook2-page .logbook2-table td small {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.logbook2-page .logbook2-table :is(a:hover, a:focus-visible) {
+  color: var(--color-accent-text);
+}
+.logbook2-page .logbook2-open {
+  width: 64px;
+}
+
+.logbook2-page
+  .logbook2-state:is([data-state="accepted"], [data-state="running"]) {
+  color: var(--color-accent-text);
+}
+.logbook2-page .logbook2-state[data-state="interrupted"] {
+  color: var(--color-danger);
+}
+.logbook-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 20px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+}
+.logbook-range label {
+  display: grid;
+  gap: 8px;
+  min-width: 200px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+.logbook-range input {
+  border: 1px solid var(--color-input);
+  background: var(--color-inset);
+  color: var(--color-foreground);
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+.logbook2-page .logbook2-record-header h1 {
+  font-size: clamp(28px, 2.6vw, 40px);
+  font-weight: 400;
+}
+.logbook-record-technical {
+  padding: 16px 24px;
+  font-size: 13px;
+  color: var(--color-muted-foreground);
+}
+.logbook-record-technical dl {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px 20px;
+  padding-top: 16px;
+}
+.logbook-record-technical dd {
+  overflow-wrap: anywhere;
+}
+.logbook-current {
+  margin-block: 24px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-elevation-1);
+}
+.logbook-current h2 {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--color-muted-foreground);
+}
+.logbook-current p {
+  font-size: 18px;
+}
+.logbook2-page .logbook2-section-heading {
+  gap: 16px;
+  min-height: 72px;
+  padding: 24px;
+}
+.logbook2-page .logbook2-section-heading h2 {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.logbook2-detail > .studio-timeline {
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-elevation-1);
+}
+.logbook2-page .logbook2-section {
+  margin-top: 24px;
+  box-shadow: var(--shadow-elevation-1);
+}
+
+.logbook2-page .logbook2-event time {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+
+.logbook2-page .logbook2-event-detail {
+  max-width: 100%;
+}
+.logbook2-page .logbook2-event-detail pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.logbook2-page .logbook2-output-grid pre {
+  max-height: 65vh;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.logbook-artifact-section > .app-files-panel {
+  padding: 24px;
+}
+.logbook-artifact-section .app-files-heading > div > .app-eyebrow {
+  display: none;
+}
+.logbook-output-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+.logbook-output-actions > div {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.logbook-notice {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+@media (max-width: 1000px) {
+  .logbook2-page .logbook2-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .studio-shell .logbook2-page {
+    padding: 24px 20px 48px;
+  }
+  .logbook2-page
+    :is(
+      .logbook2-page-header,
+      .logbook2-detail-toolbar,
+      .logbook2-record-heading
+    ) {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .logbook2-page .logbook2-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .logbook2-page .logbook2-record-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .logbook2-page .logbook2-record-meta > div {
+    border-bottom: 1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+  }
+  .logbook2-page .logbook2-record-meta > div:nth-child(2n) {
+    border-right: 0;
+  }
+  .logbook2-page .logbook2-event summary {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding-inline: 8px;
+  }
+  .logbook2-page .logbook2-event-copy {
+    flex-basis: calc(100% - 40px);
+  }
+  .logbook2-page .logbook2-output-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .logbook2-page .logbook2-output-grid > div + div {
+    border-left: 0;
+    border-top: 1px solid var(--color-border);
+  }
+  .logbook-record-technical dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .logbook-range label {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+.studio-run-list > .studio-page-tabs {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}

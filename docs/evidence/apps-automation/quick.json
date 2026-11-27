@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-26T13:03:43.859894+00:00",
+  "scope": "component and disposable fixtures only",
+  "live_stack_operations": false,
+  "full_live_acceptance": false,
+  "interrupted": false,
+  "selected": [
+    "contracts",
+    "console-types",
+    "console",
+    "cli",
+    "daemon"
+  ],
+  "summary": {
+    "passed": 5
+  },
+  "suites": [
+    {
+      "id": "contracts",
+      "title": "Contracts and representative fixtures",
+      "kind": "component",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "cwd": "packages/contracts",
+      "status": "passed",
+      "returncode": 0,
+      "reason": null,
+      "seconds": 0.52,
+      "log": "contracts.log"
+    },
+    {
+      "id": "console-types",
+      "title": "Console type checking",
+      "kind": "component",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "apps/console",
+      "status": "passed",
+      "returncode": 0,
+      "reason": null,
+      "seconds": 2.72,
+      "log": "console-types.log"
+    },
+    {
+      "id": "console",
+      "title": "Console interactions, forms, routing and permissions",
+      "kind": "component",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "cwd": "apps/console",
+      "status": "passed",
+      "returncode": 0,
+      "reason": null,
+      "seconds": 5.2,
+      "log": "console.log"
+    },
+    {
+      "id": "cli",
+      "title": "CLI validation, targeting and commands",
+      "kind": "component",
+      "command": [
+        "uv",
+        "run",
+        "--locked",
+        "pytest"
+      ],
+      "cwd": "apps/cli",
+      "status": "passed",
+      "returncode": 0,
+      "reason": null,
+      "seconds": 0.67,
+      "log": "cli.log"
+    },
+    {
+      "id": "daemon",
+      "title": "Daemon durability and App lifecycle",
+      "kind": "component",
+      "command": [
+        "uv",
+        "run",
+        "--locked",
+        "pytest"
+      ],
+      "cwd": "apps/daemon",
+      "status": "passed",
+      "returncode": 0,
+      "reason": null,
+      "seconds": 3.17,
+      "log": "daemon.log"
+    }
+  ],
+  "coverage": [
+    {
+      "check": "Setup and identity",
+      "section": "1",
+      "automated_evidence": {
+        "api": "not_selected",
+        "console": "passed"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Real Auth0 identities, publisher entitlement and two enrolled robots"
+    },
+    {
+      "check": "Publish, share and install",
+      "section": "2",
+      "automated_evidence": {
+        "api": "not_selected",
+        "cli": "passed",
+        "ap05-catalog": "not_selected",
+        "ap06-publish": "not_selected",
+        "ap07-install": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Confirm publisher A / consumer B with their real CLI accounts"
+    },
+    {
+      "check": "Run slots and independent targets",
+      "section": "3",
+      "automated_evidence": {
+        "api": "not_selected",
+        "daemon": "passed",
+        "ap09-runs": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Two real robot sessions and cross-device continuity"
+    },
+    {
+      "check": "State agreement and navigation",
+      "section": "3",
+      "automated_evidence": {
+        "console": "passed",
+        "browser": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Live deployed browser/CLI state agreement; fixture APIs do not establish this"
+    },
+    {
+      "check": "IMU, settings and fractions",
+      "section": "3",
+      "automated_evidence": {
+        "api": "not_selected",
+        "cli": "passed",
+        "daemon": "passed",
+        "ap17-settings": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Reference Robot Check IMU behavior and its own summary artifact"
+    },
+    {
+      "check": "Files, outputs and decisions",
+      "section": "3",
+      "automated_evidence": {
+        "api": "not_selected",
+        "console": "passed",
+        "ap10-runtime": "not_selected",
+        "ap17-settings": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Real device bytes and prompted human decision attribution"
+    },
+    {
+      "check": "Storefront and installation context",
+      "section": "3",
+      "automated_evidence": {
+        "console": "passed",
+        "browser": "not_selected",
+        "ap18-lifecycle": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Real deployed Store and installation acceptance"
+    },
+    {
+      "check": "Update, rollback and removal",
+      "section": "4",
+      "automated_evidence": {
+        "api": "not_selected",
+        "daemon": "passed",
+        "ap07-install": "not_selected",
+        "ap18-lifecycle": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "B's disposable live installation and A's continuing installation"
+    },
+    {
+      "check": "Foreign IDs and roles",
+      "section": "5",
+      "automated_evidence": {
+        "api": "not_selected",
+        "cli": "passed",
+        "console": "passed"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Real invite/email acceptance and the two users' deployed sessions"
+    },
+    {
+      "check": "Keyboard, small screens and errors",
+      "section": "5",
+      "automated_evidence": {
+        "console": "passed",
+        "browser": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Visual judgment and real session expiry / recovery"
+    },
+    {
+      "check": "Recovery and negative delivery",
+      "section": "6",
+      "automated_evidence": {
+        "api": "not_selected",
+        "daemon": "passed",
+        "ap09-runs": "not_selected",
+        "ap10-runtime": "not_selected",
+        "ap17-settings": "not_selected",
+        "ap18-lifecycle": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Operator-only interruption of the live disposable topology; never automated by this runner"
+    },
+    {
+      "check": "Conditional deployment gates",
+      "section": "7",
+      "automated_evidence": {
+        "contracts": "passed",
+        "api": "not_selected"
+      },
+      "live_status": "pending",
+      "live_prerequisite": "Hosted registry, HTTPS/Auth0, second supported platform and load/performance matrix"
+    }
+  ]
+}

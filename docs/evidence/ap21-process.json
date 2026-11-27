@@ -1,0 +1,31 @@
+{
+  "fixture": "tests/e2e/ap18-lifecycle.py",
+  "additional_assertions": [
+    "confirmed applied configuration list",
+    "current negotiated uninstall capability"
+  ],
+  "results": [
+    {
+      "passed": true,
+      "image": "127.0.0.1:47917/apps/robot-check@sha256:9d770dd51003494798b82902baf8def18357c8f0bb015f605bb2a2c36aa2cc68",
+      "installation_id": "86e43ab9-76a6-4d7a-ba9b-60754440153a",
+      "operation_id": "1cbd824f-c76a-4db0-83b4-96fe399d1621",
+      "report_id": "2743679d-0284-4883-9ea5-3ecf4537e8ec",
+      "api_and_daemon_recovery": true,
+      "configure_update_rollback": true,
+      "failed_update_keeps_binding": true,
+      "two_apps": true,
+      "zero_create_or_start": true
+    },
+    {
+      "passed": true,
+      "official_discovery_import_install_other_workspace": true,
+      "private_isolation": true,
+      "cli_uninstall": true,
+      "removed_configuration_retained": true,
+      "reinstall_new_identity": true,
+      "other_installation_preserved": true,
+      "update_rollback_recovery": true
+    }
+  ]
+}

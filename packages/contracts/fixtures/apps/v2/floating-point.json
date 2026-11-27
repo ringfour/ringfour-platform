@@ -1,0 +1,145 @@
+{
+  "manifest": {
+    "schema_version": 2,
+    "app_key": "settings-check",
+    "release": "1.0.0",
+    "display": {
+      "name": "Settings Check",
+      "description": "Exercise manifest v2 environment mapping and live settings."
+    },
+    "targets": [
+      {
+        "os": "linux",
+        "architecture": "amd64",
+        "image": "registry.example.com/ringfour/robot-check@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "native_requirements": []
+      }
+    ],
+    "capabilities": {
+      "required": [
+        {
+          "capability": "imu"
+        }
+      ],
+      "optional": [
+        {
+          "capability": "cameras"
+        }
+      ]
+    },
+    "configuration": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sample_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "ratio": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "offset": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 0
+          },
+          "integral_number": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "tiny_number": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 0.000001
+          },
+          "mode": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 0.5,
+            "enum": [
+              0.25,
+              0.5
+            ]
+          }
+        },
+        "required": [
+          "sample_count",
+          "ratio",
+          "offset",
+          "integral_number",
+          "tiny_number",
+          "mode"
+        ]
+      },
+      "defaults": {
+        "sample_count": 3,
+        "ratio": 0.2,
+        "offset": -0.125,
+        "integral_number": 1,
+        "tiny_number": 1e-7,
+        "mode": 0.25
+      },
+      "environment": {
+        "SAMPLE_COUNT": "sample_count",
+        "APP_RATIO": "ratio",
+        "APP_TINY": "tiny_number"
+      }
+    },
+    "runtime_settings": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "interval_ms": {
+            "type": "integer",
+            "minimum": 50,
+            "maximum": 2000
+          },
+          "gain": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 2
+          }
+        },
+        "required": [
+          "interval_ms",
+          "gain"
+        ]
+      },
+      "defaults": {
+        "interval_ms": 250,
+        "gain": 1.25
+      }
+    }
+  },
+  "configuration_values": {
+    "sample_count": 4,
+    "ratio": 0.1,
+    "offset": -0.25,
+    "integral_number": 1,
+    "tiny_number": 0.000001,
+    "mode": 0.5
+  },
+  "runtime_settings_values": {
+    "interval_ms": 125,
+    "gain": 1.75
+  },
+  "expected_environment": {
+    "SAMPLE_COUNT": "4",
+    "APP_RATIO": "0.1",
+    "APP_TINY": "0.000001"
+  },
+  "invalid_values": [
+    true,
+    "0.2",
+    -1.000001,
+    1.000001,
+    9007199254740992
+  ],
+  "canonical_digest": "sha256:558c8a8d018f95f7273a183002a3e6306de571a6eb667804a5c1781efeec4aff"
+}

@@ -26,6 +26,25 @@ test("v2 startup and live settings validate as complete independent objects", as
   assert.throws(() => validateManifest({...manifest, runtime_settings: {...manifest.runtime_settings, defaults: {interval_ms: 50, extra: true}}}), /invalid_config/);
 });
 
+test("bounded floating-point configuration round-trips across manifest and settings contracts", async () => {
+  const fixture = await load("floating-point");
+  const manifest = validateManifest(fixture.manifest);
+  assert.equal(manifestDigest(manifest), fixture.canonical_digest);
+  assert.deepEqual(validateConfiguration(manifest, fixture.configuration_values), fixture.configuration_values);
+  assert.deepEqual(validateResource("apps/v1/api.schema.json#/$defs/configuration", fixture.configuration_values), fixture.configuration_values);
+  assert.deepEqual(validateConfiguration({configuration: manifest.runtime_settings}, fixture.runtime_settings_values), fixture.runtime_settings_values);
+  assert.equal(canonicalJson({a: 0.000001, b: 0.0000001, c: -0.125, d: 1.0}), '{"a":0.000001,"b":1e-7,"c":-0.125,"d":1}');
+  const rendered = Object.fromEntries(Object.entries(manifest.configuration.environment).map(([name, key]) => [name, String(fixture.configuration_values[key])]));
+  assert.deepEqual(rendered, fixture.expected_environment);
+
+  for (const invalid of fixture.invalid_values) {
+    assert.throws(() => validateConfiguration(manifest, {...fixture.configuration_values, ratio: invalid}));
+  }
+  for (const invalid of [Infinity, NaN, Number.MAX_VALUE]) {
+    assert.throws(() => validateConfiguration(manifest, {...fixture.configuration_values, ratio: invalid}));
+  }
+});
+
 test("v2 environment mappings are declared, bounded and reserved names are refused", async t => {
   const manifest = await load("manifest");
   for (const fixture of await load("rejected")) {

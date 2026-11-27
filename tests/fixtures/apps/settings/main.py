@@ -1,6 +1,7 @@
 """Sensor-independent App exercising the packaged settings/artifact clients."""
 
 import json
+import math
 import os
 import signal
 import threading
@@ -24,6 +25,9 @@ def output(event, **fields):
 def apply(candidate):
     if candidate["sample_interval_ms"] == 777:
         raise SettingsRejected("The fixture deliberately rejects 777 ms.")
+    gain = candidate.get("gain")
+    if type(gain) not in (int, float) or not math.isfinite(gain) or not -1 <= gain <= 1:
+        raise SettingsRejected("Gain must be a finite number from -1 to 1.")
     with lock:
         values.update(candidate)
     output("settings.handler", **candidate)
@@ -52,10 +56,15 @@ try:
     while not initialized.wait(0.1) and not stopped.is_set():
         pass
     if not stopped.is_set():
-        output("settings.ready", startup_sample_count=os.environ.get("SAMPLE_COUNT"))
+        output(
+            "settings.ready",
+            startup_sample_count=os.environ.get("SAMPLE_COUNT"),
+            startup_angular_speed_rad_s=os.environ.get("ANGULAR_SPEED_RAD_S"),
+        )
         logbook.info(
             "Settings fixture ready",
             startup_sample_count=os.environ.get("SAMPLE_COUNT"),
+            startup_angular_speed_rad_s=os.environ.get("ANGULAR_SPEED_RAD_S"),
         )
         while not stopped.wait(0.1):
             pass

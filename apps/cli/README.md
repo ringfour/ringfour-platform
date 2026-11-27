@@ -129,3 +129,27 @@ implementation and acceptance status.
 The mission, dev, script execution, legacy artifact and diagnostic fixture commands
 were retired in AP-14/AP-15. Use the `app` command group for App lifecycle,
 logs, files and interactions. Historical instructions remain in the archive.
+
+## App development fastlane
+
+`app init` now creates an editable Dockerfile with shared dependencies/models,
+`development` and default `release` targets. Prepare/publish/install the image
+once using `app build --development`. In Studio's robot page, select that App
+and Enable development mode, then from the source directory run:
+
+```sh
+ringfour-cli app dev connect --robot ROBOT_UUID
+ringfour-cli app dev sync
+ringfour-cli app dev restart --follow
+```
+
+Repeat sync/restart for code edits, reusing the image. `app dev status`, `logs`
+and `stop` inspect/end that App-scoped session. The LAN source connection is
+HTTPS with a Platform-pinned certificate and short-lived token; normal App
+permissions/history/logs/files remain in use. This is not the retired mission
+`dev` command group or the fixed Runner.
+
+See [the complete development guide](../../../docs/human-testing/app-development.md)
+for image/model layout, rebuilding dependencies, session ownership, TTL, virtual
+ports and a production release. Initial image transfer still uses the normal
+registry; the fast path transfers source snapshots only.

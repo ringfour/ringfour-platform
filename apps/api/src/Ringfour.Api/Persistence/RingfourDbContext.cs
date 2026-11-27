@@ -1,3 +1,4 @@
+using Ringfour.Api.Development;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ringfour.Api.Persistence;
@@ -36,8 +37,12 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
     public DbSet<RobotAppInventory> RobotAppInventories => Set<RobotAppInventory>();
     public DbSet<AppDeviceReport> AppDeviceReports => Set<AppDeviceReport>();
 
+    public DbSet<AppDevelopmentSession> AppDevelopmentSessions => Set<AppDevelopmentSession>();
+    public DbSet<AppDevelopmentEndpoint> AppDevelopmentEndpoints => Set<AppDevelopmentEndpoint>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.ConfigureAppDevelopment();
         modelBuilder.Entity<HumanInteraction>(entity =>
         {
             entity.ToTable("human_interactions");
@@ -102,9 +107,9 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.HasIndex(item => new { item.RobotId, item.LocalSequence }).IsUnique();
             entity.HasIndex(item => new { item.RobotId, item.ReceivedAt, item.Id });
             entity.HasOne(item => item.Robot).WithMany().HasForeignKey(item => item.RobotId).OnDelete(DeleteBehavior.Restrict);
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.installation.removed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))"));
             entity.ToTable(table => table.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')"));
-            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND (app_operation_id IS NOT NULL OR type = 'app.settings.selected' OR type = 'app.settings.ended_before_confirmation') AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))"));
+            entity.ToTable(table => table.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND (app_operation_id IS NOT NULL OR type = 'app.settings.selected' OR type = 'app.settings.ended_before_confirmation') AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.installation.removed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))"));
         });
         modelBuilder.Entity<LogbookCheckpoint>(entity =>
         {
@@ -149,6 +154,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.Property(organization => organization.Id).HasColumnName("id");
             entity.Property(organization => organization.Name).HasColumnName("name");
             entity.Property(organization => organization.CreatedAt).HasColumnName("created_at");
+            entity.Property(organization => organization.DeletedAt).HasColumnName("deleted_at");
         });
 
         modelBuilder.Entity<Membership>(entity =>
@@ -211,7 +217,10 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.Property(robot => robot.Name).HasColumnName("name");
             entity.Property(robot => robot.CreatedAt).HasColumnName("created_at");
             entity.Property(robot => robot.EnrolledAt).HasColumnName("enrolled_at");
+            entity.Property(robot => robot.ReleasedAt).HasColumnName("released_at");
+            entity.Property(robot => robot.DeletedAt).HasColumnName("deleted_at");
             entity.Property(robot => robot.ProfileRef).HasColumnName("profile_ref");
+            entity.Property(robot => robot.Appearance).HasColumnName("appearance");
             entity.HasIndex(robot => robot.OrganizationId);
             entity.HasOne(robot => robot.Organization)
                 .WithMany()
@@ -291,8 +300,8 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             entity.Property(audit => audit.ActorUserId).HasColumnName("actor_user_id");
             entity.ToTable(table => table.HasCheckConstraint(
                 "ck_robot_audit_events_type",
-                "type IN ('robot_created', 'enrollment_token_issued', 'enrolled'," +
-                " 'credential_rotated', 'credential_revoked')"));
+                "type IN ('robot_created', 'appearance_updated', 'enrollment_token_issued', 'enrolled'," +
+                " 'credential_rotated', 'credential_revoked', 'robot_unenrolled', 'robot_deleted')"));
             entity.HasIndex(audit => new { audit.RobotId, audit.OccurredAt, audit.Id });
             entity.HasOne(audit => audit.Robot)
                 .WithMany(robot => robot.AuditEvents)
@@ -332,6 +341,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
         {
             e.Property(x => x.RunsSupported).HasColumnName("runs_supported");
             e.Property(x => x.InstallationsSupported).HasColumnName("installations_supported");
+            e.Property(x => x.UninstallSupported).HasColumnName("uninstall_supported");
             e.Property(x => x.ManifestV2Supported).HasColumnName("manifest_v2_supported");
             e.Property(x => x.LiveSettingsSupported).HasColumnName("live_settings_supported");
             e.ToTable("robot_app_inventory"); e.HasKey(x => x.RobotId);
@@ -433,7 +443,8 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.Property(x => x.CreatedAt).HasColumnName("created_at"); e.Property(x => x.AvailableRevisionId).HasColumnName("available_revision_id");
             e.Property(x => x.InstalledBinding).HasColumnName("installed_binding").HasColumnType("jsonb"); e.Property(x => x.Candidate).HasColumnName("candidate").HasColumnType("jsonb"); e.Property(x => x.LastObservedAt).HasColumnName("last_observed_at");
             e.Property(x => x.SelectedSettingsRevisionId).HasColumnName("selected_settings_revision_id");
-            e.HasIndex(x => new { x.RobotId, x.AppId }).IsUnique();
+            e.Property(x => x.RemovedAt).HasColumnName("removed_at");
+            e.HasIndex(x => new { x.RobotId, x.AppId }).IsUnique().HasFilter("removed_at IS NULL");
             e.HasAlternateKey(x => new { x.Id, x.RobotId, x.OrganizationId });
             e.HasAlternateKey(x => new { x.Id, x.AppId });
             e.HasOne<Robot>().WithMany().HasForeignKey(x => new { x.RobotId, x.OrganizationId }).HasPrincipalKey(x => new { x.Id, x.OrganizationId }).OnDelete(DeleteBehavior.Restrict);

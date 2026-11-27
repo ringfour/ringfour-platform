@@ -1,0 +1,425 @@
+/* Website-derived Studio styling: website/packages/design/tokens.css and
+   website/apps/web/src/{apps,product-pages}.css. Keep Lovable page composition.
+   Craft pass informed by unslop by Damir Sokolovsky (@heydamir), CC BY 4.0:
+   https://github.com/heydamir/unslop */
+.studio-shell {
+  --color-background: #080808;
+  --color-surface: #111111;
+  --color-inset: #191919;
+  --color-border: #2b2b2b;
+  --color-input: #ffffff29;
+  --color-muted-foreground: #b8b8b8;
+  --studio-transition: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.studio-shell .studio-container {
+  max-width: none;
+  padding: 32px clamp(24px, 2vw, 40px) 56px;
+}
+.studio-shell .studio-container > :not(:last-child) {
+  margin-block-end: 32px;
+}
+.studio-shell :is(h1, h2, h3) {
+  font-weight: 500;
+}
+.studio-shell .studio-container h1 {
+  font-size: clamp(32px, 3vw, 44px);
+  line-height: 1.12;
+  letter-spacing: -0.045em;
+  font-weight: 400;
+}
+.studio-shell :is(h2, h3) {
+  line-height: 1.25;
+}
+.studio-shell .studio-container h2 {
+  letter-spacing: -0.02em;
+}
+.studio-shell :is(.app-eyebrow, .app-publisher) {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.studio-shell p {
+  text-wrap: pretty;
+}
+.studio-shell :is(.studio-surface, .app-panel, .rf-table-wrap) {
+  box-shadow: none;
+  border-color: var(--color-border);
+}
+.studio-shell .studio-inset {
+  background: #ffffff03;
+}
+.studio-shell
+  :is(.studio-list-surface, .studio-output-link) {
+  background: transparent;
+  border-inline: 0;
+  border-block-end: 0;
+}
+.studio-shell .studio-list-surface > :is(a, article) {
+  padding: 20px 4px;
+}
+.studio-shell .studio-output-link {
+  padding: 24px 0;
+}
+.studio-shell .studio-execution-card {
+  background: #ffffff03;
+}
+.studio-shell .studio-execution-card > .studio-rule {
+  display: none;
+}
+.studio-shell .studio-execution-card h2 {
+  font-size: clamp(24px, 2.4vw, 32px);
+  font-weight: 400;
+}
+.studio-shell .studio-execution-card > div:has(h2) {
+  padding: 32px;
+}
+
+/* Navigation layout and selected tabs are owned by studio-chrome.css. */
+.studio-shell nav svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.5;
+}
+
+.studio-shell :is(.button-primary, .button-secondary, .button-danger) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font: 500 14px / 1.5 var(--font-sans);
+  box-shadow: none;
+  transition:
+    color var(--studio-transition),
+    background var(--studio-transition),
+    border-color var(--studio-transition);
+}
+.studio-shell .button-secondary {
+  border-color: var(--color-input);
+  background: transparent;
+  color: var(--color-foreground);
+}
+.studio-shell .button-secondary:hover:not(:disabled) {
+  border-color: #ffffff47;
+  background: #ffffff05;
+}
+.studio-shell .button-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #0b1114;
+}
+.studio-shell .button-primary:hover:not(:disabled) {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.studio-shell .button-danger {
+  color: var(--color-danger);
+  background: transparent;
+  border-color: #f397884d;
+}
+.studio-shell .button-danger:hover:not(:disabled) {
+  background: #f397880a;
+  border-color: var(--color-danger);
+}
+.studio-shell
+  :is(
+    .studio-field,
+    .app-field input:not([type="checkbox"]):not([type="radio"]),
+    .app-field select,
+    .app-field textarea
+  ) {
+  min-height: 40px;
+  border: 1px solid var(--color-input);
+  border-radius: 4px;
+  background-color: #ffffff03;
+  color: var(--color-foreground);
+  font-size: 14px;
+  line-height: 1.5;
+  box-shadow: none;
+  transition:
+    border-color var(--studio-transition),
+    background-color var(--studio-transition);
+}
+.studio-shell :is(input, textarea)::placeholder {
+  color: #8e999f;
+}
+.studio-shell
+  :is(.studio-field, .app-field input, .app-field select):hover:not(:disabled) {
+  border-color: #ffffff47;
+}
+.studio-shell :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 3px;
+}
+.studio-shell .app-field {
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+}
+.studio-shell .app-field input:is([type="checkbox"], [type="radio"]) {
+  accent-color: var(--color-accent);
+}
+.studio-shell select option {
+  background: var(--color-surface);
+}
+
+/* App headers borrow the website's large, lightly weighted editorial title. */
+.studio-resource-header {
+  padding-block: 0 4px;
+}
+.studio-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  text-decoration: none;
+}
+.studio-back-link:hover {
+  color: var(--color-foreground);
+}
+.studio-app-identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding-block: 20px 24px;
+}
+.studio-app-copy {
+  min-width: 0;
+  max-width: 72ch;
+}
+.studio-resource-meta {
+  margin: 0 0 16px;
+  color: var(--color-muted-foreground);
+  font: 400 12px / 1.5 var(--font-mono);
+}
+.studio-resource-meta .app-publisher {
+  font: inherit;
+}
+.studio-shell .studio-resource-header h1 {
+  margin: 0;
+  font-size: clamp(36px, 4.1vw, 56px);
+  line-height: 1.06;
+  letter-spacing: -0.055em;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.studio-resource-description {
+  max-width: 62ch;
+  margin: 16px 0 0;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--color-muted-foreground);
+}
+.studio-header-artwork {
+  width: 88px;
+  height: 88px;
+  margin-block-start: 36px;
+  border-color: var(--color-border);
+}
+.studio-app-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 8px;
+}
+.studio-app-target label {
+  font-size: 12px;
+  font-weight: 400;
+}
+.studio-app-target select {
+  max-width: 240px;
+}
+
+.studio-listing-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  align-items: start;
+  gap: 48px;
+  padding-block: 8px 32px;
+  border-block-end: 1px solid var(--color-border);
+}
+.studio-listing-header .studio-app-identity {
+  padding-block: 0;
+}
+.studio-listing-actions {
+  padding-block-start: 36px;
+}
+.studio-listing-actions > p {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+/* The website's catalog cards let artwork and type carry the hierarchy. */
+.studio-shell :is(.studio-app-card, .studio-store-card) {
+  padding: 24px 0 28px;
+  border: 0;
+  border-block-end: 1px solid var(--color-border);
+  background: transparent;
+}
+.studio-shell :is(.studio-app-card, .studio-store-card):hover {
+  border-color: #ffffff47;
+}
+.studio-shell .studio-app-card h2 {
+  font-size: 24px;
+  font-weight: 500;
+}
+.studio-shell .studio-app-card > p:last-child {
+  padding-block-start: 8px;
+  border: 0;
+}
+.studio-shell .studio-app-card img {
+  border-color: var(--color-border);
+}
+.studio-shell .studio-store-card h3 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+.studio-shell .studio-store-feature {
+  border: 0;
+  border-block-end: 1px solid var(--color-border);
+  background: transparent;
+}
+.studio-shell .studio-store-feature > div {
+  gap: 40px;
+  padding: 12px 0 32px;
+}
+.studio-shell .studio-store-feature h2 {
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+}
+
+/* Tables and settings use open rows with subdued, consistent dividers. */
+.studio-shell .rf-table-wrap {
+  border-inline: 0;
+  background: transparent;
+}
+.studio-shell .rf-table-wrap th {
+  background: #ffffff03;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+}
+.studio-shell .rf-table-wrap :is(th, td) {
+  padding: 16px;
+}
+.studio-shell .rf-table-wrap td {
+  font-size: 14px;
+}
+.studio-shell .rf-table-wrap td :is(.font-bold, .font-semibold) {
+  font-weight: 500;
+}
+.studio-shell .rf-table-wrap tbody tr:hover {
+  background: #ffffff03;
+}
+.studio-shell .rf-badge {
+  font-size: 12px;
+}
+.studio-shell .app-settings-snapshots section {
+  background: transparent;
+  border-inline: 0;
+  border-block-end: 0;
+  padding: 20px 0;
+}
+.studio-shell .app-settings-snapshots {
+  gap: 32px;
+}
+.studio-shell :is(.app-settings-notice, .app-settings-pending) {
+  background: #ffffff03;
+  border-inline-start-width: 2px;
+}
+.studio-shell .app-files-heading h2 {
+  font-size: 22px;
+  font-weight: 500;
+}
+.studio-shell :is(.app-files-heading, .app-settings-heading) p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.studio-shell .app-files-breadcrumbs button {
+  padding: 4px 0;
+  border: 0;
+  font-size: 13px;
+}
+.studio-shell .studio-dialog {
+  padding: 32px;
+  border-radius: 0;
+  border-color: #ffffff29;
+  box-shadow: 0 24px 80px #0006;
+}
+.studio-shell .studio-dialog h2 {
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.studio-shell .studio-dialog::backdrop {
+  background: #03080bb3;
+}
+
+@media (max-width: 1000px) {
+  .studio-app-target {
+    width: 100%;
+  }
+  .studio-listing-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .studio-listing-actions {
+    padding-block-start: 0;
+  }
+}
+@media (max-width: 640px) {
+  .studio-shell .studio-container {
+    padding: 28px 20px 56px;
+  }
+  .studio-shell .studio-container > :not(:last-child) {
+    margin-block-end: 28px;
+  }
+  .studio-app-identity {
+    gap: 20px;
+    padding-block: 24px 28px;
+  }
+  .studio-header-artwork {
+    width: 56px;
+    height: 56px;
+    margin-block-start: 32px;
+  }
+  .studio-shell .studio-resource-header h1 {
+    font-size: 36px;
+  }
+  .studio-resource-description {
+    font-size: 15px;
+  }
+  .studio-app-target select {
+    max-width: min(240px, 60vw);
+  }
+  .studio-shell .studio-execution-card > div:has(h2) {
+    padding: 24px;
+  }
+  .studio-shell .studio-dialog {
+    padding: 24px;
+  }
+  .studio-shell .rf-table-wrap :is(th, td) {
+    padding: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-shell *,
+  .studio-shell *::before,
+  .studio-shell *::after {
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}

@@ -615,5 +615,24 @@
         "kind": "anonymous"
       }
     }
+  },
+  {
+    "name": "applied_configuration_page",
+    "schema": "apps/v1/api.schema.json#/$defs/configuration_revision_page",
+    "value": {
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000010",
+          "installation_id": "00000000-0000-4000-8000-000000000009",
+          "revision_id": "00000000-0000-4000-8000-000000000006",
+          "values": {
+            "sample_count": 3
+          },
+          "created_by": "00000000-0000-4000-8000-000000000020",
+          "created_at": "2026-11-23T10:00:01Z"
+        }
+      ],
+      "next_cursor": null
+    }
   }
 ]

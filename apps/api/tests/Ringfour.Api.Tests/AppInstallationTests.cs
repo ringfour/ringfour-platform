@@ -26,7 +26,7 @@ public sealed partial class AppInstallationTests(PostgresFixture postgres)
         public JsonObject Input => new(){["revision_id"]=Revision["id"]!.DeepClone(),["share_id"]=null,["configuration"]=Revision["manifest"]!["configuration"]!["defaults"]!.DeepClone()};
         public async ValueTask DisposeAsync(){Socket.Abort();Socket.Dispose();Owner.Dispose();Device.Dispose();await Factory.DisposeAsync();await Registry.DisposeAsync();}
     }
-    private async Task<Scenario> Setup(bool supported=true, bool manifestV2=false, bool? negotiatedManifestV2=null, bool liveSettings=false, bool automaticDispatch=false)
+    private async Task<Scenario> Setup(bool supported=true, bool manifestV2=false, bool? negotiatedManifestV2=null, bool liveSettings=false, bool automaticDispatch=false, bool uninstallSupported=false)
     {
         var registry=new RegistryFixture();var options=registry.Configuration().ToDictionary(x=>x.Key,x=>x.Value);options["Apps:InstallationsEnabled"]="true";options["Apps:LiveSettingsEnabled"]=liveSettings.ToString();options["Apps:InstallationSweepMilliseconds"]="3600000";
         var factory=new ApiFactory(postgres.ConnectionString,extraConfiguration:options,automaticAppDispatch:automaticDispatch);var owner=factory.CreateAuthenticatedClient("auth0|"+Guid.NewGuid());
@@ -34,11 +34,11 @@ public sealed partial class AppInstallationTests(PostgresFixture postgres)
         var(_,token)=await RobotTests.IssueToken(owner,robot);var(credential,secret)=await DeviceEnrollmentTests.Enroll(factory,token);
         var socket=await DeviceSocket.ConnectAsync(factory,robot,credential,secret);using var welcome=await DeviceSocket.ReceiveAsync(socket);var session=welcome.Payload().GetProperty("session_id").GetGuid();
         var machine=factory.CreateClient();machine.DefaultRequestHeaders.Add("x-ringfour-credential-id",credential.ToString());machine.DefaultRequestHeaders.Add("x-ringfour-credential-secret",secret);machine.DefaultRequestHeaders.Add("x-ringfour-device-session",session.ToString());var ns=Guid.NewGuid();
-        await Json(await machine.PostAsJsonAsync("/v1/device/app-protocol/negotiate",new {session_id=session,deployment_namespace=ns,supported_app_protocol_versions=new[]{1},supports_app_installations=supported,supports_app_runs=supported,supports_manifest_v2=negotiatedManifestV2??manifestV2,supports_live_settings=liveSettings}));
+        await Json(await machine.PostAsJsonAsync("/v1/device/app-protocol/negotiate",new {session_id=session,deployment_namespace=ns,supported_app_protocol_versions=new[]{1},supports_app_installations=supported,supports_app_runs=supported,supports_manifest_v2=negotiatedManifestV2??manifestV2,supports_live_settings=liveSettings,supports_app_uninstall=uninstallSupported}));
         var report=Fixture("base101_inventory");report["deployment_namespace"]=ns.ToString();report["report_id"]=Guid.NewGuid().ToString();await Json(await machine.PutAsJsonAsync("/v1/device/app-inventory",report));
         var manifestPath=manifestV2?"contracts/fixtures/apps/v2/manifest.json":"contracts/fixtures/apps/v1/manifest.json";
         var manifest=JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,manifestPath)))!.AsObject();manifest["app_key"]="check-"+Guid.NewGuid().ToString("N");manifest["targets"]![0]!["image"]=registry.Image;
-        var revision=await Json(await Post(owner,$"/v1/organizations/{org}/app-revisions",new JsonObject{["manifest"]=manifest,["visibility"]="listed"}));
+        var revision=await Json(await Post(owner,$"/v1/organizations/{org}/app-revisions",new JsonObject{["manifest"]=manifest,["visibility"]="unlisted"}));
         return new Scenario{Factory=factory,Registry=registry,Owner=owner,Device=machine,Socket=socket,Robot=robot,Organization=org,Namespace=ns,Revision=revision};
     }
     private static async Task<JsonObject> Command(Scenario s,JsonObject accepted)
@@ -388,7 +388,7 @@ public sealed partial class AppInstallationTests(PostgresFixture postgres)
         targetManifest["release"]="0.2.0";
         targetManifest["runtime_settings"]!["schema"]=JsonNode.Parse("{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"period_seconds\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":10}},\"required\":[\"period_seconds\"]}");
         targetManifest["runtime_settings"]!["defaults"]=JsonNode.Parse("{\"period_seconds\":1}");
-        var nextRevision=await Json(await Post(s.Owner,$"/v1/organizations/{s.Organization}/app-revisions",new JsonObject { ["manifest"]=targetManifest,["visibility"]="listed" }));
+        var nextRevision=await Json(await Post(s.Owner,$"/v1/organizations/{s.Organization}/app-revisions",new JsonObject { ["manifest"]=targetManifest,["visibility"]="unlisted" }));
         var updateBody=new JsonObject { ["expected_revision_id"]=originalBinding["revision_id"]!.DeepClone(),
             ["expected_configuration_revision_id"]=originalBinding["configuration_revision_id"]!.DeepClone(),
             ["revision_id"]=nextRevision["id"]!.DeepClone(),["share_id"]=null,
@@ -419,7 +419,7 @@ public sealed partial class AppInstallationTests(PostgresFixture postgres)
         Assert.Equal(750,restoredSettings["selected_for_next_start"]!["values"]!["interval_ms"]!.GetValue<int>());
         var noSettingsManifest=s.Revision["manifest"]!.DeepClone().AsObject();
         noSettingsManifest["release"]="0.3.0";noSettingsManifest.Remove("runtime_settings");
-        var noSettingsRevision=await Json(await Post(s.Owner,$"/v1/organizations/{s.Organization}/app-revisions",new JsonObject { ["manifest"]=noSettingsManifest,["visibility"]="listed" }));
+        var noSettingsRevision=await Json(await Post(s.Owner,$"/v1/organizations/{s.Organization}/app-revisions",new JsonObject { ["manifest"]=noSettingsManifest,["visibility"]="unlisted" }));
         var restoredBinding=(await Json(await s.Owner.GetAsync(path)))["installed"]!;
         var unsupportedUpdate=new JsonObject { ["expected_revision_id"]=restoredBinding["revision_id"]!.DeepClone(),
             ["expected_configuration_revision_id"]=restoredBinding["configuration_revision_id"]!.DeepClone(),

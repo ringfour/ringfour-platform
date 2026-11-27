@@ -250,6 +250,18 @@ class ConnectionManager:
             await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
             self.app_work.set()
             return
+        if command.get("kind") == "app.uninstall":
+            if not self._settings.apps_enabled or self.app_executor is None:
+                raise ProtocolError("App uninstall consumer is not enabled")
+            app_installations.app_validation.validate(command["payload"], "device", "uninstall_command")
+            operation, _ = operations.record_command(self._settings.db_path, state.robot_id, command)
+            replayed_ids.add(operation.operation_id)
+            await self._queue(outbound, state, "ack", {"operation_id": operation.operation_id})
+            try:
+                await app_installations.process_uninstall(self._settings, self.app_executor, operation, self.app_headers)
+            except (httpx.HTTPError, app_installations.PreparationError, sqlite3.Error, ValueError):
+                raise ProtocolError("App uninstall/report delivery unavailable; reconcile on reconnect") from None
+            return
         if command.get("kind", "").startswith("app."):
             if command["kind"] == "app.settings.apply":
                 if not self._settings.apps_enabled or self.app_executor is None:

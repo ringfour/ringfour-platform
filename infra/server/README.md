@@ -15,8 +15,9 @@ The wrapper generates a stable random PostgreSQL password if one is not
 already set. If invoking Compose directly, provide `POSTGRES_PASSWORD` yourself.
 
 The API and Console are published on `${API_PORT:-8080}` and
-`${CONSOLE_PORT:-5173}`. Set `CONSOLE_ORIGIN` to the registered Auth0 SPA
-origin if it differs from the default. PostgreSQL is reachable only on the
+`${CONSOLE_PORT:-5173}`. The browser stays on the address it opened; register
+each supported origin in the Auth0 SPA. `CONSOLE_ORIGIN` controls API-generated
+email links, not browser redirects. PostgreSQL is reachable only on the
 Compose network. For local use, storage defaults to the persistent
 filesystem volume. For a hosted deployment, set `STORAGE_BACKEND=s3`,
 `STORAGE_S3_ENDPOINT`, `STORAGE_S3_REGION`, and `STORAGE_S3_BUCKET`; provide
@@ -40,7 +41,7 @@ PostgreSQL is already running, run from the repository root:
 ./up.sh -d --no-deps adminer
 ```
 
-Open **http://localhost:8083** and sign in with:
+Open **http://localhost:9080** and sign in with:
 
 | Field | Value |
 |---|---|
@@ -53,7 +54,8 @@ Open **http://localhost:8083** and sign in with:
 The PostgreSQL `ringfour` account can also edit data and schemas; Adminer follows
 that account's permissions. Select a table, then **Select data** to browse rows.
 Adminer binds only to the host loopback interface. Set `ADMINER_PORT` in `.env`
-to change the default port `8083`.
+to change the default port `9080`. This is outside the virtual robots’ allocated
+port range and keeps their device-status ports available.
 
 Organization invitations use SMTP through MailKit. Configure `SMTP_HOST`,
 `SMTP_PORT` (587 for STARTTLS or 465 for implicit TLS), `SMTP_USERNAME`,
@@ -87,7 +89,27 @@ pull-only tokens lasting at most five minutes; Basic-only private pulls are not
 supported. Additional policies can be supplied through the API configuration's
 `Apps:Registries` array in other deployment recipes.
 
+Set `APPS_OFFICIAL_PUBLISHER_ORGANIZATION_ID` to the trusted Ringfour publisher
+workspace UUID. Public App Store publication is refused for every other
+workspace; ordinary publishers can publish with private (`unlisted`) visibility.
+For a registry policy bound to one publisher, use the same UUID for
+`APPS_REGISTRY_PUBLISHER_ORGANIZATION_ID`. The value is server configuration
+and is never read from an App manifest.
+
 Follow [AP-05 human testing](../../docs/human-testing/AP-05.md) to reload the API
 and verify two-workspace publication/sharing/imports. The operator performs that
-stack operation. No virtual reload or database migration is required. This
-configuration does not enable App installation or start/stop dispatch.
+stack operation. Changing the publisher setting alone needs only a Platform
+reload. Deploying AP-18 code also requires both API migrations and the updated
+Daemon; see [AP-18 human testing](../../docs/human-testing/AP-18.md).
+
+
+## Studio serving mode
+
+The Console service now builds the Dockerfile's `production` target. Public Auth0
+SPA settings are build arguments; `API_PROXY_TARGET` stays a
+runtime setting. The public port is still `${CONSOLE_PORT:-5173}`, mapped to
+Nginx port 80. This avoids Vite module delivery and React development effect replay
+in ordinary use. The Dockerfile's `development` target is opt-in; `npm run dev`
+remains the source-preview workflow. Rebuild Console when its code or public SPA
+configuration changes. See [Studio layout](../../docs/studio-layout.md) and
+[AP-21 evidence](../../docs/evidence/AP-21.md).

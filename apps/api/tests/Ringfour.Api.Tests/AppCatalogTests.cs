@@ -31,7 +31,7 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         if (definition is not null)
         {
             var options = new BuildOptions { SchemaRegistry = new SchemaRegistry() };
-            foreach (var file in new[] { "manifest", "api" }) JsonSchema.FromText(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, $"contracts/schemas/apps/v1/{file}.schema.json")), options);
+            foreach (var file in new[] { "v1/manifest", "v2/manifest", "v1/api" }) JsonSchema.FromText(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, $"contracts/schemas/apps/{file}.schema.json")), options);
             var schema = JsonSchema.FromText("{\"$ref\":\"https://contracts.ringfour.dev/apps/v1/api.schema.json#/$defs/" + definition + "\"}", options);
             using var document = JsonDocument.Parse(text); Assert.True(schema.Evaluate(document.RootElement).IsValid, text);
         }
@@ -42,6 +42,34 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         var text = await response.Content.ReadAsStringAsync(); Assert.Equal(status, (int)response.StatusCode);
         ContractSchema.AssertValid("errors/v2/app-error.schema.json", text);
         Assert.Equal(code, JsonNode.Parse(text)!["error"]!["code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Public_publication_requires_official_entitlement_and_label_is_server_derived()
+    {
+        await using var registry = new RegistryFixture();
+        await using var factory = new ApiFactory(postgres.ConnectionString, extraConfiguration: registry.Configuration());
+        using var publisher = factory.CreateAuthenticatedClient("auth0|" + Guid.NewGuid());
+        using var consumer = factory.CreateAuthenticatedClient("auth0|" + Guid.NewGuid());
+        var org = await OrganizationTests.CreateOrganization(publisher, "Official candidate");
+        await OrganizationTests.CreateOrganization(consumer, "Consumer");
+        var body = new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "listed" };
+        var route = $"/v1/organizations/{org}/app-revisions";
+        await Error(await Post(publisher, route, body), 403, "forbidden");
+        body["visibility"] = "unlisted";
+        var privateRelease = await Json(await Post(publisher, route, body));
+        await Error(await consumer.GetAsync($"/v1/app-revisions/{privateRelease["id"]}"), 404, "not_found");
+        factory.Services.GetRequiredService<IConfiguration>()["Apps:OfficialPublisherOrganizationId"] = org.ToString();
+        body["visibility"] = "listed";
+        await Error(await Post(publisher, route, body), 409, "revision_conflict");
+        body["manifest"]!["release"] = "0.2.0";
+        var release = await Json(await Post(publisher, route, body));
+        var app = await Json(await consumer.GetAsync($"/v1/apps/{release["app_id"]}"), "app");
+        Assert.Equal("ringfour", app["publisher_type"]!.ToString());
+        await Error(await consumer.GetAsync($"/v1/app-revisions/{privateRelease["id"]}"), 404, "not_found");
+        await postgres.ExecuteAsync("UPDATE memberships SET role = 'Operator' WHERE organization_id = @org", ("org", org));
+        body["manifest"]!["release"] = "0.3.0";
+        await Error(await Post(publisher, route, body), 403, "forbidden");
     }
 
     [Fact]
@@ -64,6 +92,7 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         using var c = factory.CreateAuthenticatedClient("auth0|" + Guid.NewGuid());
         var orgA = await OrganizationTests.CreateOrganization(a, "Publisher"); var orgB = await OrganizationTests.CreateOrganization(b, "Consumer");
         var orgC = await OrganizationTests.CreateOrganization(c, "Other");
+        factory.Services.GetRequiredService<IConfiguration>()["Apps:OfficialPublisherOrganizationId"] = orgA.ToString();
         var body = new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "listed" }; var key = Guid.NewGuid().ToString();
         var route = $"/v1/organizations/{orgA}/app-revisions";
         var revision = await Json(await Post(a, route, body, key), "revision"); var count = registry.Requests;
@@ -132,7 +161,7 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         await using var factory = new ApiFactory(postgres.ConnectionString, extraConfiguration: failure == "unlisted_host" ? null : registry.Configuration());
         using var a = factory.CreateAuthenticatedClient("auth0|" + Guid.NewGuid()); var org = await OrganizationTests.CreateOrganization(a, "Fail closed");
         factory.Services.GetRequiredService<IConfiguration>()["Apps:Registries:0:PublisherOrganizationId"] = org.ToString();
-        await Error(await Post(a, $"/v1/organizations/{org}/app-revisions", new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "listed" }), 503, "revision_unavailable");
+        await Error(await Post(a, $"/v1/organizations/{org}/app-revisions", new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "unlisted" }), 503, "revision_unavailable");
         Assert.Equal(0L, (await postgres.QueryAsync("SELECT count(*) FROM apps WHERE publisher_organization_id = @org", ("org", org)))[0][0]);
         Assert.Equal(0L, (await postgres.QueryAsync("SELECT count(*) FROM app_idempotency_records WHERE target = @target", ("target", org.ToString())))[0][0]);
     }
@@ -147,7 +176,7 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         var org = await OrganizationTests.CreateOrganization(owner, "Device owner"); var user = await RobotTests.UserId(owner);
         factory.Services.GetRequiredService<IConfiguration>()["Apps:Registries:0:PublisherOrganizationId"] = org.ToString();
         var robot = await RobotTests.CreateRobot(owner, org, "Pull device");
-        var revision = await Json(await Post(owner, $"/v1/organizations/{org}/app-revisions", new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "listed" }));
+        var revision = await Json(await Post(owner, $"/v1/organizations/{org}/app-revisions", new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "unlisted" }));
         var revisionId = Guid.Parse(revision["id"]!.GetValue<string>()); var appId = Guid.Parse(revision["app_id"]!.GetValue<string>());
         var imported = await Json(await Post(owner, $"/v1/organizations/{org}/app-imports", new JsonObject { ["revision_id"] = revisionId.ToString(), ["share_id"] = null }));
         var installation = Guid.NewGuid(); var operation = Guid.NewGuid(); var config = Guid.NewGuid(); var now = DateTimeOffset.UtcNow;
@@ -218,6 +247,7 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         await using var registry = new RegistryFixture(); await using var factory = new ApiFactory(postgres.ConnectionString, extraConfiguration: registry.Configuration());
         using var a = factory.CreateAuthenticatedClient("auth0|" + Guid.NewGuid()); using var b = factory.CreateAuthenticatedClient("auth0|" + Guid.NewGuid());
         var orgA = await OrganizationTests.CreateOrganization(a, "Paged publisher"); var orgB = await OrganizationTests.CreateOrganization(b, "Paged consumer");
+        factory.Services.GetRequiredService<IConfiguration>()["Apps:OfficialPublisherOrganizationId"] = orgA.ToString();
         var marker = "find-" + Guid.NewGuid().ToString("N"); var route = $"/v1/organizations/{orgA}/app-revisions";
         var body = new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "listed" }; body["manifest"]!["display"]!["name"] = marker;
         var responses = await Task.WhenAll(Post(a, route, body), Post(a, route, body));
@@ -254,7 +284,7 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         var manifest = Manifest(registry.Image); manifest["display"]!["description"] = new string('\u03bb', 4096);
         manifest["configuration"] = JsonNode.Parse("{\"schema\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"first\":{\"type\":\"string\"},\"second\":{\"type\":\"string\"}},\"required\":[\"first\",\"second\"]},\"defaults\":{}}");
         manifest["configuration"]!["defaults"]!["first"] = new string('\u03bb', 3900); manifest["configuration"]!["defaults"]!["second"] = new string('\u03bb', 3900);
-        var body = new JsonObject { ["manifest"] = manifest, ["visibility"] = "listed" };
+        var body = new JsonObject { ["manifest"] = manifest, ["visibility"] = "unlisted" };
         var raw = body.ToJsonString(new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         Assert.True(Encoding.UTF8.GetByteCount(raw) < 65536); Assert.True(body.ToJsonString().Length > 65536);
         var request = new HttpRequestMessage(HttpMethod.Post, $"/v1/organizations/{org}/app-revisions") { Headers = { { "Idempotency-Key", "unicode" } },

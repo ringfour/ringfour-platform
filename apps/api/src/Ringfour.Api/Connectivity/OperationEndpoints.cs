@@ -42,7 +42,7 @@ public static class OperationEndpoints
             candidate => candidate.RobotId == robot.Id, cancellationToken);
         return new RobotStatusResponse(
             robot.Id,
-            ComputeOnline(presence?.LastSeenAt, DateTimeOffset.UtcNow, threshold),
+            robot.EnrolledAt is not null && ComputeOnline(presence?.LastSeenAt, DateTimeOffset.UtcNow, threshold),
             presence?.LastSeenAt,
             presence?.DaemonVersion,
             presence?.ProtocolVersion);

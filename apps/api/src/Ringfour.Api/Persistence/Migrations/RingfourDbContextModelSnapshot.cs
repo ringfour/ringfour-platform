@@ -22,6 +22,108 @@ namespace Ringfour.Api.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ringfour.Api.Development.AppDevelopmentEndpoint", b =>
+                {
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<string>("CertificateSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("certificate_sha256");
+
+                    b.Property<Guid>("CredentialId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credential_id");
+
+                    b.Property<string>("DaemonUrl")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("daemon_url");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("RobotId");
+
+                    b.HasIndex("CredentialId");
+
+                    b.ToTable("app_development_endpoints", (string)null);
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Development.AppDevelopmentSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ArchiveSha256")
+                        .HasMaxLength(71)
+                        .HasColumnType("character varying(71)")
+                        .HasColumnName("archive_sha256");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<int>("Generation")
+                        .HasColumnType("integer")
+                        .HasColumnName("generation");
+
+                    b.Property<DateTimeOffset?>("GrantExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("grant_expires_at");
+
+                    b.Property<string>("GrantHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("grant_hash");
+
+                    b.Property<Guid>("InstallationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("installation_id");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<Guid>("RobotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("robot_id");
+
+                    b.Property<Guid?>("SourceOperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_operation_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstallationId");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("RobotId")
+                        .IsUnique()
+                        .HasFilter("closed_at IS NULL");
+
+                    b.ToTable("app_development_sessions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_app_development_generation", "generation >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Ringfour.Api.Persistence.AppArtifact", b =>
                 {
                     b.Property<Guid>("Id")
@@ -321,6 +423,10 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("organization_id");
 
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at");
+
                     b.Property<Guid>("RobotId")
                         .HasColumnType("uuid")
                         .HasColumnName("robot_id");
@@ -338,7 +444,8 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.HasIndex("AvailableRevisionId", "AppId");
 
                     b.HasIndex("RobotId", "AppId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("removed_at IS NULL");
 
                     b.HasIndex("RobotId", "OrganizationId");
 
@@ -1243,11 +1350,11 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.ToTable("logbook_events", null, t =>
                         {
-                            t.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))");
+                            t.HasCheckConstraint("ck_logbook_sequence", "(local_sequence BETWEEN 1 AND 9007199254740991) OR (local_sequence IS NULL AND type IN ('human.interaction.requested','human.interaction.answered','human.interaction.timed_out','human.interaction.cancelled','mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped','app.installation.changed','app.installation.removed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))");
 
                             t.HasCheckConstraint("ck_logbook_state", "state IN ('accepted','running','succeeded','failed','cancelled')");
 
-                            t.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND (app_operation_id IS NOT NULL OR type = 'app.settings.selected' OR type = 'app.settings.ended_before_confirmation') AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))");
+                            t.HasCheckConstraint("ck_logbook_version", "(schema_version = 1 AND ((type = 'device.operation.state_changed' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NOT NULL AND execution_id IS NULL AND payload IS NULL) OR (type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (type = 'agent.motion.event' AND operation_id IS NULL AND state IS NULL AND execution_id IS NULL AND payload IS NOT NULL) OR (type LIKE 'human.interaction.%' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL) OR (type IN ('mission.revision_selected','mission.started','mission.completed','mission.failed','mission.stopped') AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL AND local_sequence IS NULL))) OR (schema_version = 2 AND type = 'mission.logbook.entry' AND (operation_id IS NOT NULL OR app_operation_id IS NOT NULL) AND state IS NULL AND execution_id IS NOT NULL AND payload IS NOT NULL) OR (schema_version = 3 AND (app_operation_id IS NOT NULL OR type = 'app.settings.selected' OR type = 'app.settings.ended_before_confirmation') AND operation_id IS NULL AND app_installation_id IS NOT NULL AND state IS NULL AND payload IS NOT NULL AND local_sequence IS NULL AND type IN ('app.installation.changed','app.installation.removed','app.run.started','app.run.completed','app.run.failed','app.run.stopped','app.run.interrupted','app.settings.selected','app.settings.application_requested','app.settings.applied','app.settings.rejected','app.settings.ended_before_confirmation'))");
                         });
                 });
 
@@ -1291,6 +1398,10 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1321,7 +1432,6 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnName("created_at");
 
                     b.Property<string>("Email")
-                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("email");
 
@@ -1334,7 +1444,6 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnName("invited_by_user_id");
 
                     b.Property<string>("NormalizedEmail")
-                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("normalized_email");
 
@@ -1384,9 +1493,17 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Appearance")
+                        .HasColumnType("text")
+                        .HasColumnName("appearance");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
 
                     b.Property<DateTimeOffset?>("EnrolledAt")
                         .HasColumnType("timestamp with time zone")
@@ -1404,6 +1521,10 @@ namespace Ringfour.Api.Persistence.Migrations
                     b.Property<string>("ProfileRef")
                         .HasColumnType("text")
                         .HasColumnName("profile_ref");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
 
                     b.HasKey("Id");
 
@@ -1471,6 +1592,10 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("supported");
 
+                    b.Property<bool>("UninstallSupported")
+                        .HasColumnType("boolean")
+                        .HasColumnName("uninstall_supported");
+
                     b.HasKey("RobotId");
 
                     b.ToTable("robot_app_inventory", null, t =>
@@ -1513,7 +1638,7 @@ namespace Ringfour.Api.Persistence.Migrations
 
                     b.ToTable("robot_audit_events", null, t =>
                         {
-                            t.HasCheckConstraint("ck_robot_audit_events_type", "type IN ('robot_created', 'enrollment_token_issued', 'enrolled', 'credential_rotated', 'credential_revoked')");
+                            t.HasCheckConstraint("ck_robot_audit_events_type", "type IN ('robot_created', 'appearance_updated', 'enrollment_token_issued', 'enrolled', 'credential_rotated', 'credential_revoked', 'robot_unenrolled', 'robot_deleted')");
                         });
                 });
 
@@ -1652,6 +1777,42 @@ namespace Ringfour.Api.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Development.AppDevelopmentEndpoint", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.RobotCredential", null)
+                        .WithMany()
+                        .HasForeignKey("CredentialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Robot", null)
+                        .WithMany()
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Ringfour.Api.Development.AppDevelopmentSession", b =>
+                {
+                    b.HasOne("Ringfour.Api.Persistence.AppInstallation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ringfour.Api.Persistence.Robot", null)
+                        .WithMany()
+                        .HasForeignKey("RobotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Ringfour.Api.Persistence.AppArtifact", b =>

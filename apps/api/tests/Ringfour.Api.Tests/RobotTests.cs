@@ -7,6 +7,45 @@ namespace Ringfour.Api.Tests;
 [Collection(PostgresCollection.Name)]
 public sealed class RobotTests(PostgresFixture postgres)
 {
+    [Fact]
+    public async Task Appearance_persists_is_owner_only_and_can_be_reset()
+    {
+        await using var factory = new ApiFactory(postgres.ConnectionString);
+        var ownerSub = UniqueSub();
+        using var owner = factory.CreateAuthenticatedClient(ownerSub);
+        using var developer = factory.CreateAuthenticatedClient(UniqueSub());
+        using var outsider = factory.CreateAuthenticatedClient(UniqueSub());
+        var orgId = await OrganizationTests.CreateOrganization(owner, "Robot images");
+        await owner.PostAsJsonAsync($"/v1/organizations/{orgId}/members",
+            new { user_id = await UserId(developer), role = "developer" }, RingfourJson.Options);
+        var created = await owner.PostAsJsonAsync($"/v1/organizations/{orgId}/robots",
+            new { name = "pictured robot", appearance = "base101" }, RingfourJson.Options);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var initial = await created.Content.ReadAsStringAsync();
+        ContractSchema.AssertValid("robots/v1/robot.schema.json", initial);
+        var robotId = JsonDocument.Parse(initial).RootElement.GetProperty("id").GetGuid();
+        Assert.Equal("base101", JsonDocument.Parse(initial).RootElement.GetProperty("appearance").GetString());
+        var path = $"/v1/robots/{robotId}/appearance";
+        await AssertError(await developer.PutAsJsonAsync(path, new { appearance = "rover" }), HttpStatusCode.Forbidden, "forbidden");
+        await AssertError(await outsider.PutAsJsonAsync(path, new { appearance = "rover" }), HttpStatusCode.NotFound, "not_found");
+        await AssertError(await owner.PutAsJsonAsync(path, new { appearance = "data:image/svg+xml;base64,PHN2Zy8+" }), HttpStatusCode.BadRequest, "invalid_input");
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync(path, new { })).StatusCode);
+        var updated = await owner.PutAsJsonAsync(path, new { appearance = "drone" });
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+        var read = await owner.GetStringAsync($"/v1/robots/{robotId}");
+        Assert.Equal("drone", JsonDocument.Parse(read).RootElement.GetProperty("appearance").GetString());
+        ContractSchema.AssertValid("robots/v1/robot-list-response.schema.json", await owner.GetStringAsync($"/v1/organizations/{orgId}/robots"));
+        // New application instance sees the persisted visual identity.
+        await using var restarted = new ApiFactory(postgres.ConnectionString);
+        using var reader = restarted.CreateAuthenticatedClient(ownerSub);
+        var recovered = await reader.GetStringAsync($"/v1/robots/{robotId}");
+        Assert.Equal("drone", JsonDocument.Parse(recovered).RootElement.GetProperty("appearance").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync(path, new { appearance = (string?)null })).StatusCode);
+        read = await owner.GetStringAsync($"/v1/robots/{robotId}");
+        Assert.Equal(JsonValueKind.Null, JsonDocument.Parse(read).RootElement.GetProperty("appearance").ValueKind);
+        Assert.Equal(2, (await postgres.QueryAsync("SELECT type FROM robot_audit_events WHERE robot_id=@id AND type='appearance_updated'", ("@id", robotId))).Count);
+    }
+
     private static string UniqueSub() => $"auth0|{Guid.NewGuid():N}";
 
     internal static async Task<Guid> UserId(HttpClient client)

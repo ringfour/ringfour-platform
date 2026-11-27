@@ -1,3 +1,4 @@
+using Ringfour.Api.Development;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
@@ -22,7 +23,9 @@ public static class AppInstallationEndpoints
         group.MapPost("/app-installations/{installationId:guid}/configure", Configure);
         group.MapPost("/app-installations/{installationId:guid}/update", Update);
         group.MapPost("/app-installations/{installationId:guid}/rollback", Rollback);
+        group.MapPost("/app-installations/{installationId:guid}/uninstall", Uninstall);
         group.MapGet("/app-installations/{installationId:guid}/configuration-revisions/{configurationRevisionId:guid}", Configuration);
+        group.MapGet("/app-installations/{installationId:guid}/configuration-revisions", Configurations);
         group.MapGet("/app-operations/{operationId:guid}", Operation);
     }
 
@@ -30,16 +33,53 @@ public static class AppInstallationEndpoints
     private static Task<IResult> Configure(Guid installationId, HttpContext c, RingfourDbContext db, IConfiguration config, CancellationToken ct) => Change("configure", null, installationId, c, db, config, ct);
     private static Task<IResult> Update(Guid installationId, HttpContext c, RingfourDbContext db, IConfiguration config, CancellationToken ct) => Change("update", null, installationId, c, db, config, ct);
     private static Task<IResult> Rollback(Guid installationId, HttpContext c, RingfourDbContext db, IConfiguration config, CancellationToken ct) => Change("rollback", null, installationId, c, db, config, ct);
-
-    internal static async Task RequireIdle(RingfourDbContext db, Guid robot, CancellationToken ct)
+    private static async Task<IResult> Uninstall(Guid installationId, HttpContext c, RingfourDbContext db, IConfiguration config, CancellationToken ct)
     {
-        if (await db.RobotExecutionSlots.AnyAsync(x => x.RobotId == robot, ct))
+        var existing = await db.AppInstallations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == installationId, ct)
+            ?? throw ApiException.NotFound("Installation is not accessible.");
+        var (user, robot) = await RobotAccess.RequireRobotAccess(c, db, existing.RobotId, OrgRole.Developer, ct);
+        var body = await AppProtocol.Read(c.Request, "request_uninstall", ct);
+        return await AppCatalogEndpoints.Mutate(c, db, user, robot.OrganizationId, "app.uninstall", installationId.ToString(), body, 202, async () =>
+        {
+            if (!config.GetValue("Apps:InstallationsEnabled", false)) throw new ApiException(503, "daemon_upgrade_required", "Deploy and enable both installation consumers first.");
+            await db.Robots.FromSqlInterpolated($"SELECT * FROM robots WHERE id = {robot.Id} FOR UPDATE").AsNoTracking().SingleAsync(ct);
+            await RequireIdle(db, robot.Id, ct);
+            var installation = await db.AppInstallations.SingleAsync(x => x.Id == installationId, ct);
+            if (installation.RemovedAt is not null || installation.InstalledBinding is null)
+                throw ApiException.Conflict("installation_removed", "This installation is already removed.");
+            if (await db.AppOperations.AnyAsync(x => x.InstallationId == installation.Id && Pending.Contains(x.State), ct))
+                throw ApiException.Conflict("stale_installation", "An installation change is already pending.");
+            var inventory = await db.RobotAppInventories.AsNoTracking().SingleOrDefaultAsync(x => x.RobotId == robot.Id, ct);
+            if (inventory is null || !inventory.InstallationsSupported || !inventory.UninstallSupported)
+                throw ApiException.Conflict("daemon_upgrade_required", "The active Daemon must negotiate App uninstall support.");
+            var installed = JsonNode.Parse(installation.InstalledBinding)!.AsObject();
+            if (!JsonNode.DeepEquals(body["expected_revision_id"], installed["revision_id"]) ||
+                !JsonNode.DeepEquals(body["expected_configuration_revision_id"], installed["configuration_revision_id"]))
+                throw ApiException.Conflict("stale_installation", "Installed revision/configuration changed.");
+            var now = DateTimeOffset.UtcNow;
+            var operation = new AppOperation { Id = Guid.NewGuid(), OrganizationId = robot.OrganizationId, RobotId = robot.Id,
+                InstallationId = installation.Id, Kind = "uninstall", State = "queued", Phase = "queued",
+                RequestedByUserId = user.Id, RequestedAt = now, DeadlineAt = now.AddMinutes(10) };
+            var command = new JsonObject { ["app_protocol_version"] = 1, ["deployment_namespace"] = inventory.DeploymentNamespace.ToString(),
+                ["installation_id"] = installation.Id.ToString(), ["expected_revision_id"] = installed["revision_id"]!.DeepClone(),
+                ["expected_configuration_revision_id"] = installed["configuration_revision_id"]!.DeepClone() };
+            AppProtocol.Validate(command.ToJsonString(), "uninstall_command");
+            operation.Command = command.ToJsonString(); db.AppOperations.Add(operation);
+            return new JsonObject { ["installation_id"] = installation.Id.ToString(), ["operation_id"] = operation.Id.ToString(), ["run_id"] = null };
+        }, ct);
+    }
+
+    internal static async Task RequireIdle(RingfourDbContext db, Guid robot, CancellationToken ct, bool allowDevelopment = false)
+    {
+        if ((!allowDevelopment && await db.AppDevelopmentSessions.AnyAsync(x => x.RobotId == robot && x.ClosedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow, ct)) ||
+            await db.RobotExecutionSlots.AnyAsync(x => x.RobotId == robot, ct))
             throw ApiException.Conflict("execution_conflict", "The robot must be idle to change an installed binding.");
     }
 
-    internal static async Task RequireNoPendingMutation(RingfourDbContext db, Guid robot, CancellationToken ct)
+    internal static async Task RequireNoPendingMutation(RingfourDbContext db, Guid robot, CancellationToken ct, bool allowDevelopment = false)
     {
-        if (await db.RobotExecutionSlots.AnyAsync(x => x.RobotId == robot, ct) ||
+        if ((!allowDevelopment && await db.AppDevelopmentSessions.AnyAsync(x => x.RobotId == robot && x.ClosedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow, ct)) ||
+            await db.RobotExecutionSlots.AnyAsync(x => x.RobotId == robot, ct) ||
             await db.AppOperations.AnyAsync(x => x.RobotId == robot && Pending.Contains(x.State) && x.RunId == null, ct))
             throw ApiException.Conflict("execution_conflict", "An App installation change is pending.");
     }
@@ -72,7 +112,7 @@ public static class AppInstallationEndpoints
             if (kind == "install")
             {
                 var imported = await AppCatalogEndpoints.EnsureImport(db, user, robot.OrganizationId, body, ct);
-                var prior = await db.AppInstallations.SingleOrDefaultAsync(x => x.RobotId == robot.Id && x.AppId == imported.AppId, ct);
+                var prior = await db.AppInstallations.SingleOrDefaultAsync(x => x.RobotId == robot.Id && x.AppId == imported.AppId && x.RemovedAt == null, ct);
                 if (prior?.InstalledBinding is not null) throw ApiException.Conflict("installation_exists", "Use the existing installation's update operation.");
                 if (prior is not null && await db.AppOperations.AnyAsync(x => x.InstallationId == prior.Id && Pending.Contains(x.State), ct))
                     throw ApiException.Conflict("stale_installation", "The initial installation is pending.");
@@ -107,7 +147,7 @@ public static class AppInstallationEndpoints
                 var configId = Guid.Parse(body["configuration_revision_id"]!.GetValue<string>());
                 configuration = await db.AppConfigurationRevisions.AsNoTracking().SingleOrDefaultAsync(x => x.Id == configId && x.InstallationId == installation.Id && x.RevisionId == revisionId, ct)
                     ?? throw ApiException.NotFound("Configuration is not accessible.");
-                var applied = await db.AppOperations.AsNoTracking().Where(x => x.InstallationId == installation.Id && x.State == "succeeded" && x.Phase == "applied" && x.Command != null).Select(x => x.Command!).ToListAsync(ct);
+                var applied = await db.AppOperations.AsNoTracking().Where(x => x.InstallationId == installation.Id && x.State == "succeeded" && x.Phase == "applied" && x.Kind != "uninstall" && x.Command != null).Select(x => x.Command!).ToListAsync(ct);
                 if (!applied.Any(x => JsonNode.Parse(x)!["release"]!["configuration_revision_id"]!.GetValue<string>() == configId.ToString()))
                     throw ApiException.Conflict("stale_installation", "Rollback requires a previously applied retained configuration.");
                 ValidateConfiguration(manifest, JsonNode.Parse(configuration.Values)!);
@@ -188,7 +228,7 @@ public static class AppInstallationEndpoints
     }
 
     internal static JsonObject InstallationJson(AppInstallation i) => new() { ["id"] = i.Id.ToString(), ["organization_id"] = i.OrganizationId.ToString(), ["robot_id"] = i.RobotId.ToString(),
-        ["app_id"] = i.AppId.ToString(), ["created_by"] = i.CreatedByUserId.ToString(), ["created_at"] = AppProtocol.Timestamp(i.CreatedAt), ["available_revision_id"] = i.AvailableRevisionId?.ToString(),
+        ["app_id"] = i.AppId.ToString(), ["created_by"] = i.CreatedByUserId.ToString(), ["created_at"] = AppProtocol.Timestamp(i.CreatedAt), ["removed_at"] = Stamp(i.RemovedAt), ["available_revision_id"] = i.AvailableRevisionId?.ToString(),
         ["installed"] = i.InstalledBinding is null ? null : JsonNode.Parse(i.InstalledBinding), ["candidate"] = i.Candidate is null ? null : JsonNode.Parse(i.Candidate), ["last_observed_at"] = Stamp(i.LastObservedAt) };
     internal static string? Stamp(DateTimeOffset? value) => value is null ? null : AppProtocol.Timestamp(value.Value);
     internal static JsonObject OperationJson(AppOperation o) => new() { ["id"] = o.Id.ToString(), ["organization_id"] = o.OrganizationId.ToString(), ["robot_id"] = o.RobotId.ToString(),
@@ -196,7 +236,7 @@ public static class AppInstallationEndpoints
         ["requested_by"] = o.RequestedByUserId.ToString(), ["requested_at"] = AppProtocol.Timestamp(o.RequestedAt), ["deadline_at"] = AppProtocol.Timestamp(o.DeadlineAt),
         ["acknowledged_at"] = Stamp(o.AcknowledgedAt), ["observed_at"] = Stamp(o.ObservedAt), ["received_at"] = Stamp(o.ReceivedAt), ["completed_at"] = Stamp(o.CompletedAt), ["failure"] = o.Failure is null ? null : JsonNode.Parse(o.Failure) };
     private static async Task<AppInstallation> Read(Guid id, HttpContext c, RingfourDbContext db, CancellationToken ct)
-    { var i = await db.AppInstallations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw ApiException.NotFound("Installation is not accessible."); await RobotAccess.RequireRobotAccess(c, db, i.RobotId, OrgRole.Operator, ct); return i; }
+    { var i = await db.AppInstallations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw ApiException.NotFound("Installation is not accessible."); await RobotAccess.RequireRobotAccess(c, db, i.RobotId, OrgRole.Operator, ct, includeDeleted: true); return i; }
     private static async Task<IResult> Get(Guid installationId, HttpContext c, RingfourDbContext db, CancellationToken ct) => Results.Json(InstallationJson(await Read(installationId, c, db, ct)));
     private static async Task<IResult> List(Guid robotId, string? cursor, int? limit, HttpContext c, RingfourDbContext db, CancellationToken ct)
     {
@@ -210,6 +250,17 @@ public static class AppInstallationEndpoints
     }
     private static async Task<IResult> Operation(Guid operationId, HttpContext c, RingfourDbContext db, CancellationToken ct)
     { var o = await db.AppOperations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == operationId, ct) ?? throw ApiException.NotFound("Operation is not accessible."); await Read(o.InstallationId, c, db, ct); return Results.Json(OperationJson(o)); }
+    private static async Task<IResult> Configurations(Guid installationId, string? cursor, int? limit, HttpContext c, RingfourDbContext db, CancellationToken ct)
+    {
+        await Read(installationId, c, db, ct);
+        if (limit is < 1 or > 100 || cursor?.Length > 1024) throw ApiException.InvalidInput("Invalid page limit/cursor.");
+        var (at, id) = Pagination.DecodeCursor(cursor); var size = limit ?? 50;
+        var query = db.AppConfigurationRevisions.FromSqlInterpolated($"SELECT c.* FROM app_configuration_revisions c WHERE c.installation_id = {installationId} AND EXISTS (SELECT 1 FROM app_operations o WHERE o.installation_id = c.installation_id AND o.state = 'succeeded' AND o.phase = 'applied' AND o.command->'release'->>'configuration_revision_id' = c.id::text)").AsNoTracking();
+        if (at is not null) query = query.Where(x => x.CreatedAt > at || (x.CreatedAt == at && x.Id.CompareTo(id!.Value) > 0));
+        var rows = await query.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).Take(size + 1).ToListAsync(ct);
+        var page = rows.Take(size).ToList();
+        return Results.Json(new { items = page.Select(r => new { id = r.Id, installation_id = r.InstallationId, revision_id = r.RevisionId, values = JsonNode.Parse(r.Values), created_by = r.CreatedByUserId, created_at = AppProtocol.Timestamp(r.CreatedAt) }), next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.CreatedAt, x => x.Id) });
+    }
     private static async Task<IResult> Configuration(Guid installationId, Guid configurationRevisionId, HttpContext c, RingfourDbContext db, CancellationToken ct)
     {
         await Read(installationId, c, db, ct);

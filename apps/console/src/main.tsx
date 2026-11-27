@@ -12,18 +12,9 @@ import "./index.css";
 const domain = import.meta.env.VITE_AUTH0_DOMAIN as string | undefined;
 const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID as string | undefined;
 const audience = import.meta.env.VITE_AUTH0_AUDIENCE as string | undefined;
-const consoleOrigin = import.meta.env.VITE_CONSOLE_ORIGIN as string | undefined;
-const redirectUri = consoleOrigin || window.location.origin;
-
-// Auth0 SPA origins are exact. Canonicalize before the SDK starts so login,
-// callback and silent authorization all use the registered local origin.
-if (consoleOrigin && window.location.origin !== consoleOrigin) {
-  const destination = new URL(
-    `${window.location.pathname}${window.location.search}${window.location.hash}`,
-    consoleOrigin,
-  );
-  window.location.replace(destination);
-}
+// Keep the browser's origin for local and LAN access. Auth0 validates it
+// against the application's registered callback and web origins.
+const redirectUri = window.location.origin;
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {

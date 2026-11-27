@@ -56,7 +56,7 @@ async function getAccessTokenOrRedirect(
   }
 }
 
-// Calls the Platform API through the dev proxy (/api) with the caller's
+// Calls the Platform API through the same-origin proxy (/api) with the caller's
 // access token. Throws Error with the envelope message on non-2xx.
 export async function apiFetch(
   getAccessToken: () => Promise<string>,

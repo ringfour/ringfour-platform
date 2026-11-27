@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "./views/lovable-layout.css";
+@import "./views/studio-theme.css";
+@import "./views/studio-chrome.css";
+@import "./views/studio-content.css";
 
 /*
  * Ringfour interface system tokens (source of truth: ringfour/design/design_system).
@@ -39,15 +43,15 @@
 
   /* Functional accents: orange = brand/actions, teal = ready/success, red = error. */
   --color-accent: #e47a00;
-  --color-accent-text: #ffb15a;
+  --color-accent-text: var(--color-accent);
   --color-ready: #36b5a0;
   --color-ready-text: #66d6c0;
-  --color-warning: #ffb15a;
+  --color-warning: var(--color-accent);
   --color-danger: #f39788;
 
-  --text-xs: 0.875rem;
-  --text-sm: 1rem;
-  --text-base: 1.125rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
 
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-heading: "Space Grotesk", var(--font-sans);
@@ -72,7 +76,7 @@ body {
 }
 
 @theme {
-  --color-primary: #e47a00;
+  --color-primary: var(--color-accent);
   --color-primary-foreground: #0b1114;
   --color-destructive: #f39788;
   --color-muted: #191919;
@@ -118,7 +122,7 @@ button:disabled {
   cursor: not-allowed;
 }
 :focus-visible {
-  outline: 2px solid #ffb15a;
+  outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
 .console-shell {
@@ -176,7 +180,7 @@ button:disabled {
   margin-top: auto;
   padding-top: 18px;
 }
-.console-nav button {
+.console-nav :is(button, a) {
   width: 100%;
   min-height: 40px;
   display: flex;
@@ -191,17 +195,17 @@ button:disabled {
   font-size: 1rem;
   font-weight: 500;
 }
-.console-nav button:hover {
+.console-nav :is(button, a):hover {
   color: #f5f5f5;
   background: #171717;
 }
-.console-nav button[aria-current="page"] {
+.console-nav :is(button, a)[aria-current="page"] {
   color: var(--color-accent-text);
   background: #1c1813;
   border-color: #46321d;
 }
-.console-nav button[aria-current="page"] svg {
-  color: #ff9c39;
+.console-nav :is(button, a)[aria-current="page"] svg {
+  color: var(--color-accent);
 }
 .nav-active-dot {
   margin-left: auto;
@@ -414,7 +418,7 @@ button:disabled {
   white-space: nowrap;
 }
 .hitl-overview--attention .hitl-overview__state {
-  color: #ffad51;
+  color: var(--color-accent);
 }
 .hitl-overview__empty,
 .hitl-overview__error {
@@ -458,7 +462,7 @@ button:disabled {
 }
 .hitl-request__submitted {
   margin: 8px 0 0;
-  color: #e6a45e;
+  color: var(--color-accent);
   font-size: 0.8125rem;
 }
 .hitl-request__actions {
@@ -469,7 +473,7 @@ button:disabled {
 }
 .hitl-request__actions .button-secondary:not(:disabled):hover {
   border-color: #a75e20;
-  color: #ffb15a;
+  color: var(--color-accent);
 }
 @media (max-width: 760px) {
   .hitl-request {
@@ -589,7 +593,7 @@ button:disabled {
   background: #14271f;
 }
 .orange-icon {
-  color: #ffb15a;
+  color: var(--color-accent);
   border-color: #604021;
   background: #2b1c12;
 }
@@ -646,7 +650,7 @@ button:disabled {
   margin-left: 5px;
 }
 .text-action {
-  color: #ffb15a;
+  color: var(--color-accent);
   border: 0;
   background: none;
   padding: 2px;
@@ -655,7 +659,7 @@ button:disabled {
   white-space: nowrap;
 }
 .text-action:hover {
-  color: #ffc58b;
+  color: var(--color-accent);
   text-decoration: underline;
 }
 .text-action span {
@@ -694,7 +698,7 @@ button:disabled {
   outline: 0;
 }
 .search-field:focus-within {
-  outline: 2px solid #ffb15a;
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 .search-field input::placeholder {
@@ -747,12 +751,12 @@ button:disabled {
   gap: 13.75px;
   white-space: nowrap;
 }
-.robot-avatar{
+.robot-avatar {
   width: 34px;
   height: 34px;
   display: grid;
   place-items: center;
-  color: #ef9b4d;
+  color: var(--color-accent);
   background: #261c14;
   border: 1px solid #4b3625;
   font:
@@ -761,15 +765,15 @@ button:disabled {
   flex: none;
 }
 .robot-cell strong,
-.robot-cell small{
+.robot-cell small {
   display: block;
 }
-.robot-cell strong{
+.robot-cell strong {
   color: #f2f2f2;
   font-size: 1rem;
   font-weight: 500;
 }
-.robot-cell small{
+.robot-cell small {
   margin-top: 5px;
   color: #a0a0a0;
   font: 0.8125rem var(--font-mono);
@@ -792,7 +796,7 @@ button:disabled {
   border-radius: 4px;
 }
 .table-link:hover {
-  color: #ffb15a;
+  color: var(--color-accent);
   border-color: #b66d2d;
 }
 .table-empty {
@@ -917,14 +921,14 @@ button:disabled {
     margin-top: 0;
     padding-top: 0;
   }
-  .console-nav button {
+  .console-nav :is(button, a) {
     width: auto;
     min-width: fit-content;
     padding: 0 11px;
     border-radius: 4px 4px 0 0;
     font-size: 0.9375rem;
   }
-  .console-nav button svg {
+  .console-nav :is(button, a) svg {
     width: 16px;
     height: 16px;
   }
@@ -1013,7 +1017,7 @@ button:disabled {
   font-size: 0.875rem;
 }
 .login-signup strong {
-  color: #ffb15a;
+  color: var(--color-accent);
 }
 .login-foot {
   display: flex;
@@ -2137,7 +2141,7 @@ button:disabled {
   justify-content: space-between;
   gap: 15px;
   border-bottom: 1px solid #49351d;
-  color: #ffb15a;
+  color: var(--color-accent);
   font-size: 0.875rem;
   font-weight: 500;
   letter-spacing: 0;
@@ -2272,8 +2276,8 @@ button:disabled {
   opacity: 0.5;
 }
 .button-primary:not(:disabled):hover {
-  background: #f58a13;
-  border-color: #f58a13;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 .console-menu-toggle {
   display: none;
@@ -2295,7 +2299,7 @@ button:disabled {
 .console-topbar strong {
   font-weight: 500;
 }
-.console-nav button svg {
+.console-nav :is(button, a) svg {
   width: 18px;
   height: 18px;
   flex: none;
@@ -2422,7 +2426,7 @@ button:disabled {
     overflow: visible;
     gap: 5px;
   }
-  .console-nav button {
+  .console-nav :is(button, a) {
     min-height: 40px;
     border-radius: var(--radius-field);
   }

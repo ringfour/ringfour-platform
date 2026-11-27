@@ -96,7 +96,7 @@ test("loads identity and organizations when authenticated", async () => {
   vi.stubGlobal("fetch", fetchSpy);
 
   render(<App />);
-  await userEvent.click(screen.getByRole("button", { name: "Organizations" }));
+  await userEvent.click(screen.getByRole("link", { name: "Organizations" }));
 
   expect(await screen.findByText("user-1")).toBeTruthy();
   expect(
@@ -164,14 +164,16 @@ test("creates an organization and inspects membership", async () => {
   );
 
   render(<App />);
-  await userEvent.click(screen.getByRole("button", { name: "Organizations" }));
+  await userEvent.click(screen.getByRole("link", { name: "Organizations" }));
   await screen.findByText("Acme Robotics", { selector: "button span" });
 
   await userEvent.type(
     screen.getByPlaceholderText(/new organization name/i),
     "Acme Robotics",
   );
-  await userEvent.click(screen.getByRole("button", { name: /create/i }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Create organization" }),
+  );
   expect(posts).toContain(JSON.stringify({ name: "Acme Robotics" }));
 
   await userEvent.click(
@@ -236,6 +238,7 @@ test("opens an App run from a deep link and follows its robot link", async () =>
         return jsonResponse({
           data_base64: btoa("sample output"),
           next_offset: 13,
+          sealed: true,
           truncated: false,
         });
       return jsonResponse({
@@ -246,12 +249,60 @@ test("opens an App run from a deep link and follows its robot link", async () =>
   );
   render(<App />);
   expect(
-    await screen.findByRole("heading", { name: "Run details" }),
+    await screen.findByRole("heading", { name: "Robot Check" }),
   ).toBeTruthy();
   expect(
-    screen
-      .getByRole("link", { name: /Open Inspection arm/ })
-      .getAttribute("href"),
+    screen.getByRole("link", { name: "Inspection arm" }).getAttribute("href"),
   ).toBe("/robots/robot?workspace=org");
-  expect(await screen.findByText(/sample output/)).toBeTruthy();
+  expect((await screen.findAllByText(/sample output/)).length).toBe(2);
+});
+
+test("organization dropdown respects cancelled navigation and switches to the target collection", async () => {
+  authState = { isAuthenticated: true, isLoading: false };
+  window.history.replaceState(null, "", "/robots/robot-a?workspace=org");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (path === "/api/v1/organizations")
+        return jsonResponse({
+          items: [
+            { id: "org", name: "Current organization", role: "owner" },
+            { id: "other", name: "Other organization", role: "operator" },
+          ],
+          next_cursor: null,
+        });
+      if (path === "/api/v1/robots/robot-a")
+        return jsonResponse({
+          id: "robot-a",
+          organization_id: "org",
+          name: "Robot A",
+        });
+      return jsonResponse({ items: [], next_cursor: null });
+    }),
+  );
+  render(<App />);
+  await screen.findByRole("option", { name: "Other organization" });
+  const picker = screen.getByRole("combobox", {
+    name: "Organization",
+  }) as HTMLSelectElement;
+  const cancel = (event: Event) => event.preventDefault();
+  window.addEventListener("ringfour:navigation", cancel);
+  try {
+    await userEvent.selectOptions(picker, "other");
+    expect(window.location.pathname).toBe("/robots/robot-a");
+    expect(new URLSearchParams(window.location.search).get("workspace")).toBe(
+      "org",
+    );
+    expect(picker.value).toBe("org");
+  } finally {
+    window.removeEventListener("ringfour:navigation", cancel);
+  }
+  await userEvent.selectOptions(picker, "other");
+  expect(window.location.pathname).toBe("/robots");
+  expect(new URLSearchParams(window.location.search).get("workspace")).toBe(
+    "other",
+  );
+  expect(picker.value).toBe("other");
+  expect(await screen.findByRole("heading", { name: "Robots" })).toBeTruthy();
 });

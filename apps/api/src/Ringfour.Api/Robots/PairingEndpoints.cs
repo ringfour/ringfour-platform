@@ -22,7 +22,7 @@ public static partial class PairingEndpoints
     public sealed record StartResponse(Guid RequestId, DateTimeOffset ExpiresAt);
     public sealed record PollRequest(string? CredentialSecret);
     public sealed record PollResponse(string State, Guid? RobotId, Guid? OrganizationId, Guid? CredentialId);
-    public sealed record ClaimRequest(string? Code, Guid? RobotId, string? Name);
+    public sealed record ClaimRequest(string? Code, Guid? RobotId, string? Name, string? Appearance = null);
 
     public static void MapPairingEndpoints(this IEndpointRouteBuilder app)
     {
@@ -92,6 +92,7 @@ public static partial class PairingEndpoints
     {
         var user = await IdentityAccess.ResolveOrCreateUser(db, IdentityAccess.RequireSubject(http), ct);
         await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Owner, ct);
+        RobotAppearance.Validate(body.Appearance);
         var code = body.Code?.Replace("-", "", StringComparison.Ordinal).ToUpperInvariant();
         if (code is null || !CodePattern().IsMatch(code) || (body.RobotId is null) == (body.Name is null) ||
             (body.Name is not null && (string.IsNullOrWhiteSpace(body.Name) || body.Name.Length > 200)))
@@ -109,7 +110,7 @@ public static partial class PairingEndpoints
         {
             robot = await db.Robots.FromSqlInterpolated($"SELECT * FROM robots WHERE id = {body.RobotId.Value} FOR UPDATE").SingleOrDefaultAsync(ct)
                 ?? throw ApiException.NotFound("Robot not found.");
-            if (robot.OrganizationId != orgId) throw ApiException.NotFound("Robot not found.");
+            if (robot.OrganizationId != orgId || robot.DeletedAt is not null) throw ApiException.NotFound("Robot not found.");
             if (robot.EnrolledAt is not null) throw ApiException.Conflict("conflict", "Robot is already enrolled.");
         }
         else
@@ -125,6 +126,7 @@ public static partial class PairingEndpoints
                 ActorUserId = user.Id
             });
         }
+        if (body.Appearance is not null) robot.Appearance = body.Appearance;
         var credential = new RobotCredential { Id = Guid.NewGuid(), RobotId = robot.Id, SecretHash = pair.CredentialHash, CreatedAt = now };
         db.RobotCredentials.Add(credential);
         robot.EnrolledAt = now;

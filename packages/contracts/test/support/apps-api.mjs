@@ -5,7 +5,7 @@ import { canonicalJson } from "./app-manifest.mjs";
 
 const base = "https://contracts.ringfour.dev/";
 const ajv = addContractFormats(new Ajv2020({strict: true, allErrors: true}));
-for (const path of ["apps/v1/manifest.schema.json", "apps/v2/manifest.schema.json", "apps/v2/authoring.schema.json", "apps/v2/settings.schema.json", "errors/v2/app-error.schema.json", "apps/v1/api.schema.json", "apps/v1/requests.schema.json", "interactions/v2/app-interaction.schema.json", "artifacts/v2/app-artifact.schema.json", "artifacts/v3/app-artifact-page.schema.json", "logbook/v3/app-history-page.schema.json", "device/apps/v1/protocol.schema.json", "device/v1/command.schema.json"]) {
+for (const path of ["apps/development/protocol.schema.json", "apps/v1/manifest.schema.json", "apps/v2/manifest.schema.json", "apps/v2/authoring.schema.json", "apps/v2/settings.schema.json", "errors/v2/app-error.schema.json", "apps/v1/api.schema.json", "apps/v1/requests.schema.json", "interactions/v2/app-interaction.schema.json", "artifacts/v2/app-artifact.schema.json", "artifacts/v3/app-artifact-page.schema.json", "logbook/v3/app-history-page.schema.json", "device/apps/v1/protocol.schema.json", "device/v1/command.schema.json"]) {
   ajv.addSchema(JSON.parse(await readFile(new URL(`../../schemas/${path}`, import.meta.url))));
 }
 const fail = code => { throw new Error(code); };

@@ -115,6 +115,15 @@ def init_project(destination, app_key, repository, archive=None):
             target["repository"] = repository
         validate_authoring(document)
         atomic_json(stage / "app.json", document)
+        dockerfile = stage / "Dockerfile"
+        text = dockerfile.read_text()
+        if 'eu.ringfour.development-source' not in text:
+            before, separator, after = text.partition("WORKDIR /app\n")
+            if separator:
+                lines = before.splitlines()
+                last = max(i for i, line in enumerate(lines) if line.startswith("FROM "))
+                lines[last] += " AS dependencies"
+                dockerfile.write_text("\n".join(lines) + '\n\nFROM dependencies AS development\nRUN mkdir -p /app /workspace && chown 10001:10001 /workspace\nWORKDIR /workspace\nLABEL eu.ringfour.development-source="/workspace"\nUSER 10001:10001\nENTRYPOINT ["python", "/workspace/main.py"]\n\nFROM dependencies AS release\n' + separator + after)
         atomic_json(stage / "template-origin.json", pointer)
         if destination.exists():
             raise ValueError("Destination already exists")
@@ -200,7 +209,7 @@ def _runtime_version(value):
     return (int(major), int(minor), int(patch), 0 if dev is not None else 1, int(dev or 0))
 
 
-def build_project(root, bundle=None):
+def build_project(root, bundle=None, *, development=False):
     document = validate_authoring(read_json(root / "app.json"))
     source_hash, names = source_snapshot(root, document)
     state = root / ".ringfour"
@@ -219,7 +228,7 @@ def build_project(root, bundle=None):
     targets = []
     for target in document["targets"]:
         architecture = target["architecture"]
-        tag = "ringfour-app-build:" + source_hash + "-" + architecture
+        tag = "ringfour-app-build:" + source_hash + "-" + architecture + ("-development" if development else "")
         with tempfile.TemporaryDirectory(prefix="ringfour-app-build-") as temporary:
             context = Path(temporary) / "context"
             context.mkdir()
@@ -240,6 +249,7 @@ def build_project(root, bundle=None):
             docker(
                 "buildx",
                 "build",
+                *(["--target", "development"] if development else []),
                 "--platform",
                 target["os"] + "/" + architecture,
                 "--provenance=false",

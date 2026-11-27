@@ -1,0 +1,10 @@
+{
+  "nginx": "nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236",
+  "production_bundle": true,
+  "deep_link_fallback": true,
+  "missing_asset_404": true,
+  "api_proxy": true,
+  "unauthenticated_api_401": true,
+  "sign_in_screen": true,
+  "live_auth0_acceptance": false
+}

@@ -11,7 +11,10 @@ describe("readLiveRuns", () => {
         }),
     );
 
-    await readLiveRuns(async () => "test-token", "/v1/organizations/org/app-runs");
+    await readLiveRuns(
+      async () => "test-token",
+      "/v1/organizations/org/app-runs",
+    );
 
     const urls = fetchMock.mock.calls.map(([input]) => String(input));
     expect(urls).toContain(

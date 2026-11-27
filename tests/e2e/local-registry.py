@@ -310,7 +310,7 @@ def main():
                 response = client.post(
                     f"/v1/organizations/{org}/app-revisions",
                     headers={"Idempotency-Key": prefix},
-                    json={"manifest": document, "visibility": "listed"},
+                    json={"manifest": document, "visibility": "unlisted"},
                 )
                 response.raise_for_status()
                 published_revision = response.json()

@@ -34,6 +34,10 @@ internal static class DeviceAuth
 
         var robot = await db.Robots.SingleAsync(
             candidate => candidate.Id == credential.RobotId, cancellationToken);
+        if (robot.DeletedAt is not null || (robot.ReleasedAt is not null && credential.CreatedAt <= robot.ReleasedAt))
+            throw ApiException.InvalidToken("The robot credential is invalid, expired, or revoked.");
+        if (!await db.Organizations.AnyAsync(org => org.Id == robot.OrganizationId && org.DeletedAt == null, cancellationToken))
+            throw ApiException.InvalidToken("The robot credential is invalid, expired, or revoked.");
         return (robot, credential);
     }
 
@@ -41,7 +45,7 @@ internal static class DeviceAuth
         Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret)))
             .ToLowerInvariant();
 
-    private static bool FixedTimeEquals(string leftHex, string rightHex) =>
+    internal static bool FixedTimeEquals(string leftHex, string rightHex) =>
         CryptographicOperations.FixedTimeEquals(
             Convert.FromHexString(leftHex), Convert.FromHexString(rightHex));
 }

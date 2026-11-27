@@ -10,16 +10,22 @@ export function AppOperationStatus({
   operationId,
   token,
   onTerminal,
+  installationId,
+  organizationId,
 }: {
   operationId: string;
   token: Token;
   onTerminal?: () => void;
+  installationId?: string;
+  organizationId?: string;
 }) {
   const [operation, setOperation] = useState<AppOperation | null>(null);
   const [error, setError] = useState("");
   const notified = useRef("");
   useEffect(() => {
     let active = true;
+    setOperation(null);
+    setError("");
     let timer: number | undefined;
     const load = async () => {
       try {
@@ -28,6 +34,13 @@ export function AppOperationStatus({
           `/v1/app-operations/${operationId}`,
         );
         if (!active) return;
+        if (
+          (installationId && value.installation_id !== installationId) ||
+          (organizationId && value.organization_id !== organizationId)
+        )
+          throw new Error(
+            "This operation is unavailable in the selected installation or workspace.",
+          );
         setOperation(value);
         setError("");
         if (["queued", "accepted", "running"].includes(value.state))
@@ -40,12 +53,14 @@ export function AppOperationStatus({
           onTerminal?.();
         }
       } catch (cause) {
-        if (active)
+        if (active) {
+          timer = window.setTimeout(load, 1500);
           setError(
             cause instanceof Error
               ? cause.message
               : "Operation status unavailable.",
           );
+        }
       }
     };
     void load();
@@ -53,7 +68,7 @@ export function AppOperationStatus({
       active = false;
       window.clearTimeout(timer);
     };
-  }, [onTerminal, operationId, token]);
+  }, [onTerminal, operationId, installationId, organizationId, token]);
   return (
     <p
       className="app-operation-status"

@@ -1,3 +1,4 @@
+using Ringfour.Api.Development;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Ringfour.Api.Errors;
@@ -38,8 +39,9 @@ public static class AppRunEndpoints
             AppRun run;
             if (kind == "start")
             {
-                await AppInstallationEndpoints.RequireIdle(db, robot.Id, ct);
-                await AppInstallationEndpoints.RequireNoPendingMutation(db, robot.Id, ct);
+                var development = await AppDevelopmentEndpoints.StartSnapshot(c, db, robot, user, id, body, ct);
+                await AppInstallationEndpoints.RequireIdle(db, robot.Id, ct, allowDevelopment: true);
+                await AppInstallationEndpoints.RequireNoPendingMutation(db, robot.Id, ct, allowDevelopment: true);
                 var binding = current.InstalledBinding is null ? null : JsonNode.Parse(current.InstalledBinding);
                 if (binding is null || !JsonNode.DeepEquals(body["expected_revision_id"], binding["revision_id"]) || !JsonNode.DeepEquals(body["expected_configuration_revision_id"], binding["configuration_revision_id"]))
                     throw ApiException.Conflict("stale_installation", "Installed revision/configuration changed.");
@@ -85,6 +87,7 @@ public static class AppRunEndpoints
                     ["runtime_settings"] = runtimeSettingsValues?.DeepClone(),
                     ["initial_settings_application_id"] = initialSettingsApplicationId?.ToString(),
                     ["image"] = binding["image"]!.DeepClone() };
+                if (development is not null) snapshot["development"] = development;
                 run = new AppRun { Id = Guid.NewGuid(), OrganizationId = robot.OrganizationId, RobotId = robot.Id, InstallationId = id, StartOperationId = operation.Id,
                     Snapshot = snapshot.ToJsonString(), RequestedByUserId = user.Id, RequestedAt = now };
                 operation.Command = new JsonObject { ["app_protocol_version"] = 1, ["deployment_namespace"] = inventory.DeploymentNamespace.ToString(), ["installation_id"] = id.ToString(), ["run_id"] = run.Id.ToString(), ["snapshot"] = snapshot }.ToJsonString();
@@ -144,7 +147,7 @@ public static class AppRunEndpoints
     internal static async Task<AppRun> Read(Guid id, HttpContext c, RingfourDbContext db, CancellationToken ct)
     {
         var run = await db.AppRuns.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw ApiException.NotFound("Run is not accessible.");
-        await RobotAccess.RequireRobotAccess(c, db, run.RobotId, OrgRole.Operator, ct); return run;
+        await RobotAccess.RequireRobotAccess(c, db, run.RobotId, OrgRole.Operator, ct, includeDeleted: true); return run;
     }
     private static async Task<IResult> Get(Guid runId, HttpContext c, RingfourDbContext db, CancellationToken ct) => Results.Json(RunJson(await Read(runId, c, db, ct)));
     private static async Task<IResult> List(Guid orgId, Guid? robot_id, Guid? installation_id, Guid? app_id,

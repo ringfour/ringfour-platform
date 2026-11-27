@@ -28,13 +28,18 @@
           "type": "object",
           "maxProperties": 32,
           "additionalProperties": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "string",
                 "maxLength": 4096
               },
               {
                 "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "number",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },

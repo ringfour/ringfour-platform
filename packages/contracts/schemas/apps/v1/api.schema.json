@@ -36,13 +36,18 @@
         }
       },
       "additionalProperties": {
-        "oneOf": [
+        "anyOf": [
           {
             "type": "string",
             "maxLength": 4096
           },
           {
             "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "number",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
@@ -79,6 +84,13 @@
             "pattern": "\\s"
           }
         },
+        "publisher_type": {
+          "enum": [
+            "ringfour",
+            "workspace"
+          ],
+          "description": "Server-derived publisher label; never read from a manifest."
+        },
         "app_key": {
           "type": "string",
           "maxLength": 100,
@@ -108,6 +120,10 @@
           "type": "string",
           "format": "date-time",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+        },
+        "publisher_name": {
+          "type": "string",
+          "description": "Publisher workspace display name, supplied by the server."
         }
       }
     },
@@ -148,8 +164,12 @@
         },
         "manifest": {
           "oneOf": [
-            { "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json" },
-            { "$ref": "https://contracts.ringfour.dev/apps/v2/manifest.schema.json" }
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v1/manifest.schema.json"
+            },
+            {
+              "$ref": "https://contracts.ringfour.dev/apps/v2/manifest.schema.json"
+            }
           ]
         },
         "manifest_digest": {
@@ -679,6 +699,16 @@
           "format": "date-time",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
         },
+        "removed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "available_revision_id": {
           "anyOf": [
             {
@@ -797,6 +827,7 @@
             "configure",
             "update",
             "rollback",
+            "uninstall",
             "start",
             "stop"
           ]
@@ -1329,21 +1360,78 @@
         "configuration_environment": {
           "type": "object",
           "maxProperties": 32,
-          "propertyNames": { "pattern": "^[A-Z_][A-Z0-9_]*$" },
-          "additionalProperties": { "type": "string", "maxLength": 4096 }
+          "propertyNames": {
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
         },
         "runtime_settings_revision_id": {
-          "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }]
+          "anyOf": [
+            {
+              "$ref": "#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "runtime_settings": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "maxProperties": 32
         },
         "initial_settings_application_id": {
-          "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }]
+          "anyOf": [
+            {
+              "$ref": "#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "image": {
           "$ref": "#/$defs/image"
+        },
+        "development": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "session_id",
+            "generation",
+            "archive_sha256",
+            "expires_at"
+          ],
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "minLength": 36,
+              "maxLength": 36,
+              "not": {
+                "pattern": "\\s"
+              }
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "archive_sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+            }
+          }
         }
       }
     },
@@ -2120,6 +2208,35 @@
                   "pattern": "^[A-Za-z0-9._~+/-]+=*$"
                 }
               }
+            }
+          ]
+        }
+      }
+    },
+    "configuration_revision_page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/configuration_revision"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
             }
           ]
         }

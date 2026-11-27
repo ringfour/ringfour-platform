@@ -82,6 +82,10 @@ export function validateConfiguration(manifest, values) {
       rule.minimum ??= -Number.MAX_SAFE_INTEGER;
       rule.maximum ??= Number.MAX_SAFE_INTEGER;
     }
+    if (rule.type === "number") {
+      rule.minimum ??= -Number.MAX_SAFE_INTEGER;
+      rule.maximum ??= Number.MAX_SAFE_INTEGER;
+    }
   }
   const validate = ajv.compile(schema);
   if (!validate(values)) fail(`invalid_config: ${ajv.errorsText(validate.errors)}`);

@@ -45,6 +45,9 @@ public static class AppInventoryEndpoints
         var versions = System.Text.Json.JsonSerializer.Serialize(offers);
         var runSupport = body["supports_app_runs"]?.GetValue<bool>() ?? false;
         var installationSupport = body["supports_app_installations"]?.GetValue<bool>() ?? false;
+        var uninstallSupport = body["supports_app_uninstall"]?.GetValue<bool>() ?? false;
+        if (uninstallSupport && !installationSupport)
+            throw ApiException.InvalidInput("App uninstall support requires installation support.");
         var manifestV2Support = body["supports_manifest_v2"]?.GetValue<bool>() ?? false;
         var liveSettingsSupport = body["supports_live_settings"]?.GetValue<bool>() ?? false;
         var fence = manager.AppSessionFence(robot.Id);
@@ -57,7 +60,7 @@ public static class AppInventoryEndpoints
             var row = await db.RobotAppInventories.SingleOrDefaultAsync(x => x.RobotId == robot.Id, ct);
             if (row is not null && row.DeploymentNamespace != ns)
                 throw ApiException.Conflict("ownership_conflict", "Enrollment is already bound to a deployment namespace.");
-            if (row?.SessionId == sessionId && (!JsonNode.DeepEquals(JsonNode.Parse(row.OfferedVersions), JsonNode.Parse(versions)) || row.InstallationsSupported != installationSupport || row.RunsSupported != runSupport || row.ManifestV2Supported != manifestV2Support || row.LiveSettingsSupported != liveSettingsSupport))
+            if (row?.SessionId == sessionId && (!JsonNode.DeepEquals(JsonNode.Parse(row.OfferedVersions), JsonNode.Parse(versions)) || row.InstallationsSupported != installationSupport || row.UninstallSupported != uninstallSupport || row.RunsSupported != runSupport || row.ManifestV2Supported != manifestV2Support || row.LiveSettingsSupported != liveSettingsSupport))
                 throw ApiException.Conflict("ownership_conflict", "Negotiation offers changed within this session.");
             if (row is null)
             {
@@ -67,7 +70,7 @@ public static class AppInventoryEndpoints
             if (row.SessionId != sessionId)
             {
                 row.SessionId = sessionId; row.NegotiatedAt = DateTimeOffset.UtcNow;
-                row.OfferedVersions = versions; row.Supported = offers.Contains(1L); row.InstallationsSupported = installationSupport; row.RunsSupported = runSupport;
+                row.OfferedVersions = versions; row.Supported = offers.Contains(1L); row.InstallationsSupported = installationSupport; row.UninstallSupported = uninstallSupport; row.RunsSupported = runSupport;
                 row.ManifestV2Supported = manifestV2Support; row.LiveSettingsSupported = liveSettingsSupport;
             }
             await db.SaveChangesAsync(ct);
@@ -138,6 +141,7 @@ public static class AppInventoryEndpoints
             ["support"] = negotiated ? row!.Supported ? "supported" : "upgrade_required" : "not_negotiated",
             ["supports_manifest_v2"] = negotiated ? row!.ManifestV2Supported : null,
             ["supports_live_settings"] = negotiated ? row!.LiveSettingsSupported : null,
+            ["supports_app_uninstall"] = negotiated ? row!.UninstallSupported : null,
             ["negotiated_at"] = row is null ? null : AppProtocol.Timestamp(row.NegotiatedAt),
             ["deployment_namespace"] = row?.DeploymentNamespace.ToString(), ["report_sequence"] = row?.ReportSequence ?? 0,
             ["received_at"] = row?.ReceivedAt is null ? null : AppProtocol.Timestamp(row.ReceivedAt.Value),

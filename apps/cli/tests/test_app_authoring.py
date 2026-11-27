@@ -121,12 +121,8 @@ def test_independent_validator_matches_manifest_semantics_and_canonical_digest()
 
 
 def test_v2_authoring_and_manifest_validate_with_environment_and_live_settings():
-    authoring = json.loads(
-        (CONTRACTS / "fixtures/apps/v2/authoring.json").read_text()
-    )
-    manifest = json.loads(
-        (CONTRACTS / "fixtures/apps/v2/manifest.json").read_text()
-    )
+    authoring = json.loads((CONTRACTS / "fixtures/apps/v2/authoring.json").read_text())
+    manifest = json.loads((CONTRACTS / "fixtures/apps/v2/manifest.json").read_text())
     assert validate_authoring(authoring) == authoring
     assert validate_manifest(manifest) == manifest
 
@@ -150,7 +146,8 @@ def test_live_settings_build_refuses_bundle_without_settings_runtime(project):
         '{"x":1,"x":2}',
         '{"x":NaN}',
         '{"x":"\\ud800"}',
-        '{"x":1.5}',
+        '{"x":1e400}',
+        '{"x":1e-400}',
         '{"x":' + "9" * 400 + "}",
     ],
 )
@@ -159,6 +156,39 @@ def test_raw_reader_rejects_duplicate_unicode_and_unsafe_numbers(tmp_path, raw):
     path.write_text(raw)
     with pytest.raises(ValueError):
         read_json(path)
+
+
+def test_bounded_float_manifest_and_canonical_digest_fixture(tmp_path):
+    from jsonschema import Draft202012Validator, ValidationError
+
+    fixture = json.loads(
+        (CONTRACTS / "fixtures/apps/v2/floating-point.json").read_text()
+    )
+    manifest = validate_manifest(fixture["manifest"])
+    assert "sha256:" + fingerprint(manifest) == fixture["canonical_digest"]
+    configuration = tmp_path / "configuration.json"
+    configuration.write_text(json.dumps(fixture["configuration_values"]))
+    values = read_json(configuration)
+    schema = copy.deepcopy(manifest["configuration"]["schema"])
+    for rule in schema["properties"].values():
+        if rule["type"] == "number":
+            rule.setdefault("minimum", -9007199254740991)
+            rule.setdefault("maximum", 9007199254740991)
+    Draft202012Validator(schema).validate(values)
+    assert values == fixture["configuration_values"]
+
+    for raw in ('{"ratio":1e400}', '{"ratio":1e-400}'):
+        configuration.write_text(raw)
+        with pytest.raises(ValueError):
+            read_json(configuration)
+    for invalid in (
+        {**values, "ratio": True},
+        {**values, "ratio": "0.2"},
+        {**values, "ratio": 1.000001},
+        {**values, "ratio": 9007199254740992},
+    ):
+        with pytest.raises(ValidationError):
+            Draft202012Validator(schema).validate(invalid)
 
 
 @pytest.mark.parametrize(
@@ -277,7 +307,7 @@ def test_cli_publication_retry_uses_same_request_key_and_retires_legacy_group(
     for _ in range(2):
         result = CliRunner().invoke(main.app, ["app", "publish", str(root), "--json"])
         assert result.exit_code == 0, result.output
-        assert json.loads(result.output)["id"] == "revision"
+        assert json.loads(result.stdout)["id"] == "revision"
     assert requests[0][2]["headers"] == requests[1][2]["headers"]
     assert requests[0][2]["json"] == requests[1][2]["json"]
     assert CliRunner().invoke(main.app, ["mission", "--help"]).exit_code == 2

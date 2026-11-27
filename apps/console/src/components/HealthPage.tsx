@@ -11,7 +11,9 @@ type ServiceHealth = {
   checks?: Record<string, string>;
 };
 
-const SERVICES: { name: string; base: string }[] = [{ name: "api", base: "/api" }];
+const SERVICES: { name: string; base: string }[] = [
+  { name: "api", base: "/api" },
+];
 
 async function fetchServiceHealth(
   name: string,

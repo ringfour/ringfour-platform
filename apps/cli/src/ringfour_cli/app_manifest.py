@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import re
+from decimal import Decimal, DecimalException
 from importlib.resources import files
 from pathlib import PurePosixPath
 
@@ -12,16 +13,82 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 MAX_INTEGER = 9007199254740991
+MAX_NUMBER = MAX_INTEGER
+
+
+def _parse_number(token):
+    try:
+        exact = Decimal(token)
+        value = float(exact)
+        if not exact.is_finite() or abs(exact) > MAX_NUMBER or not math.isfinite(value):
+            raise ValueError
+        if exact != 0 and value == 0:
+            raise ValueError
+        return int(value) if value.is_integer() and abs(value) <= MAX_NUMBER else value
+    except (DecimalException, OverflowError) as error:
+        raise ValueError(
+            "App number is outside the finite safe numeric range"
+        ) from error
+
+
+def _number_text(value):
+    if type(value) is int:
+        if abs(value) > MAX_NUMBER:
+            raise ValueError("App number is outside the safe numeric range")
+        return str(value)
+    if type(value) is not float or not math.isfinite(value) or abs(value) > MAX_NUMBER:
+        raise ValueError("App number is outside the finite safe numeric range")
+    if value == 0:
+        return "0"
+    if value.is_integer():
+        return str(int(value))
+    raw = repr(value).lower()
+    sign = "-" if raw.startswith("-") else ""
+    raw = raw.lstrip("-")
+    mantissa, _, exponent = raw.partition("e")
+    power = int(exponent) if exponent else 0
+    point = mantissa.find(".")
+    position = (len(mantissa) if point < 0 else point) + power
+    digits = mantissa.replace(".", "")
+    leading = len(digits) - len(digits.lstrip("0"))
+    digits = digits[leading:]
+    position -= leading
+    digits = digits.rstrip("0") or "0"
+    if 0 < position <= 21:
+        rendered = (
+            digits + "0" * (position - len(digits))
+            if len(digits) <= position
+            else digits[:position] + "." + digits[position:]
+        )
+    elif -6 < position <= 0:
+        rendered = "0." + "0" * (-position) + digits
+    else:
+        exponent = position - 1
+        rendered = (
+            digits[0]
+            + ("." + digits[1:] if len(digits) > 1 else "")
+            + "e"
+            + ("+" if exponent >= 0 else "")
+            + str(exponent)
+        )
+    return sign + rendered
 
 
 def canonical(value):
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    )
+    if isinstance(value, dict):
+        return (
+            "{"
+            + ",".join(
+                json.dumps(key, ensure_ascii=False) + ":" + canonical(value[key])
+                for key in sorted(value)
+            )
+            + "}"
+        )
+    if isinstance(value, list):
+        return "[" + ",".join(canonical(item) for item in value) + "]"
+    if type(value) in (int, float):
+        return _number_text(value)
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
 
 
 def fingerprint(value):
@@ -44,10 +111,14 @@ def _scalars(value):
         return {_scalars(key): _scalars(item) for key, item in value.items()}
     elif isinstance(value, list):
         return [_scalars(item) for item in value]
-    elif type(value) in (int, float):
-        if abs(value) > MAX_INTEGER or not math.isfinite(value) or int(value) != value:
+    elif type(value) is int:
+        if abs(value) > MAX_INTEGER:
             raise ValueError("Only safe JSON integers are supported")
-        return int(value)
+    elif type(value) is float:
+        if not math.isfinite(value) or abs(value) > MAX_NUMBER:
+            raise ValueError("App number is outside the finite safe numeric range")
+        if value.is_integer():
+            return int(value)
     return value
 
 
@@ -57,13 +128,21 @@ def read_json(path):
             raw = stream.read(65537)
         if len(raw) > 65536:
             raise ValueError("App JSON exceeds 65536 bytes")
-        return _scalars(json.loads(raw.decode("utf-8"), object_pairs_hook=_unique))
+        return _scalars(
+            json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=_unique,
+                parse_float=_parse_number,
+            )
+        )
     except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
         raise ValueError("Invalid App UTF-8 JSON") from error
 
 
 def _structure(value, name):
-    version_suffix = "-v2" if isinstance(value, dict) and value.get("schema_version") == 2 else ""
+    version_suffix = (
+        "-v2" if isinstance(value, dict) and value.get("schema_version") == 2 else ""
+    )
     schema = json.loads(
         files("ringfour_cli")
         .joinpath("data", name + version_suffix + ".schema.json")
@@ -111,6 +190,9 @@ def _validate_configuration(configuration, label):
         if rule["type"] == "integer":
             rule.setdefault("minimum", -MAX_INTEGER)
             rule.setdefault("maximum", MAX_INTEGER)
+        if rule["type"] == "number":
+            rule.setdefault("minimum", -MAX_NUMBER)
+            rule.setdefault("maximum", MAX_NUMBER)
         if "enum" in rule:
             bounds = {key: item for key, item in rule.items() if key != "enum"}
             if any(

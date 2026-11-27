@@ -298,6 +298,52 @@ paths:
         '409': *device_id007
         '413': *device_id008
         '503': *device_id009
+  /v1/app-installations/{installation_id}/configuration-revisions:
+    get:
+      tags: [apps]
+      operationId: listAppliedAppConfigurations
+      x-implementation-status: implemented
+      description: Retained configurations confirmed applied to this exact installation, for rollback review. Workspace operator read authority; mutations still require developer authority and current binding guards.
+      parameters:
+      - {name: installation_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: cursor, in: query, schema: {type: string}}
+      - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200':
+          description: Applied configurations in stable creation order
+          content:
+            application/json:
+              schema: {$ref: ../schemas/apps/v1/api.schema.json#/$defs/configuration_revision_page}
+        '400':
+          description: App API error
+          content:
+            application/json:
+              schema: {$ref: ../schemas/errors/v2/app-error.schema.json}
+        '401':
+          description: App API error
+          content:
+            application/json:
+              schema: {$ref: ../schemas/errors/v2/app-error.schema.json}
+        '403':
+          description: App API error
+          content:
+            application/json:
+              schema: {$ref: ../schemas/errors/v2/app-error.schema.json}
+        '404':
+          description: App API error
+          content:
+            application/json:
+              schema: {$ref: ../schemas/errors/v2/app-error.schema.json}
+        '409':
+          description: App API error
+          content:
+            application/json:
+              schema: {$ref: ../schemas/errors/v2/app-error.schema.json}
+        '503':
+          description: App API error
+          content:
+            application/json:
+              schema: {$ref: ../schemas/errors/v2/app-error.schema.json}
   /v1/app-installations/{installation_id}/configuration-revisions/{configuration_revision_id}:
     get:
       tags: [apps]
@@ -976,6 +1022,41 @@ paths:
           application/json:
             schema:
               $ref: ../schemas/apps/v1/requests.schema.json#/$defs/rollback
+  /v1/app-installations/{installation_id}/uninstall:
+    post:
+      tags:
+      - apps
+      operationId: uninstallAppInstallation
+      x-implementation-status: implemented
+      description: Owner/developer removes the stopped installation through the negotiated Daemon. The installation identity, run history, and published files are retained; reinstall creates a new installation identity so delayed commands cannot target it.
+      parameters:
+      - name: installation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AppIdempotencyKey'
+      responses:
+        '202':
+          description: Durably accepted; inspect operation and observed resource state
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/apps/v1/api.schema.json#/$defs/installation_accepted
+        '400': *id002
+        '401': *id003
+        '403': *id004
+        '404': *id005
+        '409': *id006
+        '413': *id007
+        '503': *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/apps/v1/requests.schema.json#/$defs/uninstall
   /v1/app-installations/{installation_id}/start:
     post:
       tags:
@@ -1675,6 +1756,40 @@ paths:
                   $ref: "../fixtures/identity/v1/organizations-list.json"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+  /v1/organizations/{org_id}:
+    delete:
+      tags: [identity]
+      operationId: deleteOrganization
+      summary: Delete an organization (Owner only)
+      description: |
+        Explicit owner-authorized deletion, including when the caller is the sole
+        remaining member. Console asks for confirmation. All memberships are removed,
+        robot credentials and pending invitations/enrollment tokens are revoked,
+        live device sessions are disconnected, and new shares are revoked.
+        The organization disappears from members' workspaces. Users and their other
+        organizations are unchanged. A tombstone and immutable history/revisions are
+        retained to preserve audit evidence and Apps already imported by other orgs;
+        the deleted publisher is removed from Store discovery.
+        Stop and uninstall Apps and wait for pending operations before deletion.
+        Installed Apps, active runs or pending operations return 409 organization_has_apps.
+        A non-member, unknown organization or repeated deletion returns 404.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "204":
+          description: Organization deleted and access revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Stop/uninstall Apps and finish pending operations first.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/errors/v1/error.schema.json"
   /v1/organizations/{org_id}/members:
     get:
       tags: [identity]
@@ -1731,6 +1846,40 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+  /v1/organizations/{org_id}/members/me:
+    delete:
+      tags: [identity]
+      operationId: leaveOrganization
+      summary: Leave an organization
+      description: |
+        Removes only the authenticated caller's membership. Available to Operator,
+        Developer and Owner members. No request body is required; the target is
+        always the authenticated caller.
+        The caller immediately loses organization access, while the organization,
+        robots, Apps and historical evidence remain unchanged. A sole owner must
+        first make another member an Owner, or explicitly delete the organization if
+        they are its sole member; leaving as the last owner returns 409
+        with error code last_owner. Concurrent leaves/removals/demotions are
+        serialized per organization to preserve at least one owner.
+        A non-member, unknown organization or repeated leave returns 404.
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "204":
+          description: The caller's membership was removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The caller is the organization's last owner.
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/errors/v1/error.schema.json"
+              examples:
+                lastOwner:
+                  $ref: "../fixtures/errors/v1/last-owner.json"
   /v1/organizations/{org_id}/members/{user_id}:
     patch:
       tags: [identity]
@@ -1800,6 +1949,45 @@ paths:
               examples:
                 lastOwner:
                   $ref: "../fixtures/errors/v1/last-owner.json"
+  /v1/organizations/{org_id}/invitation-codes:
+    post:
+      tags: [identity]
+      operationId: createOrganizationInvitationCode
+      summary: Create a shareable invitation code without email (Owner only)
+      description: |
+        Creates a seven-day, single-use code for the chosen role. Any authenticated
+        account holding the code can preview and accept it using the existing
+        /v1/invitations/preview and /v1/invitations/accept token request bodies.
+        No email address, verified-email lookup or SMTP service is required.
+        Only a hash is stored; the code is returned once at creation, never in
+        invitation lists. Owners can revoke the invitation through its existing
+        invitation ID. Database invitation IDs alone cannot grant membership.
+        Repeated acceptance by the same still-current member returns their existing
+        membership; a different account receives invitation_accepted. Existing
+        members cannot use an invitation code to raise their role.
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/identity/v1/create-invitation-code-request.schema.json'
+      responses:
+        '201':
+          description: Invitation metadata and one-time copyable code.
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/identity/v1/invitation-code-response.schema.json'
+        '400':
+          $ref: '#/components/responses/InvalidInput'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/organizations/{org_id}/invitations:
     get:
       tags: [identity]
@@ -1943,7 +2131,10 @@ paths:
       tags: [identity]
       operationId: acceptOrganizationInvitation
       summary: Accept an organization invitation
-      description: Requires an Auth0 account with a verified email matching the invitation.
+      description: |
+        Requires a signed-in Auth0 account. Email-delivered invitations require a
+        verified email matching the recipient. Owner-created invitation codes do
+        not require an email address or SMTP; the code is the single-use grant.
       requestBody:
         required: true
         content:
@@ -2023,7 +2214,90 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}/unenroll:
+    post:
+      tags: [robots]
+      operationId: unenrollRobot
+      summary: Unenroll a robot (Owner only)
+      description: |
+        Revokes all robot credentials and unused enrollment tokens, disconnects
+        the device, clears current enrollment/support and keeps the robot record
+        and history. Idle installations are detached automatically, preserving
+        revisions and run history. Requires no active runs, pending operations
+        or execution slots; otherwise 409 robot_has_apps with the blocking reason. Restart the updated
+        Daemon once after releasing it; it verifies the durable release receipt,
+        archives the previous local database and starts fresh pairing. Network
+        failures, ordinary credential revocation and unknown credentials never
+        authorize clearing local enrollment. A future binding gets a new namespace.
+      parameters:
+        - $ref: '#/components/parameters/RobotId'
+      responses:
+        '204':
+          description: Enrollment released. The robot record remains available.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/device/enrollment-state:
+    post:
+      tags: [robots]
+      operationId: getDeviceEnrollmentState
+      summary: Read a credential-scoped enrollment release receipt
+      description: |
+        Proof is the credential ID and its matching secret, even when that exact
+        credential is revoked/expired. This only reveals its enrollment state;
+        it grants no robot/App access or mutation. Explicit owner release applies
+        to credentials issued at or before the robot's release time, including
+        after a different device enrolls into the same robot record. Normal
+        credential revocation/expiry returns enrolled, never a reset instruction.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/robots/v1/device-authenticate-request.schema.json'
+      responses:
+        '200':
+          description: Authenticated state receipt with no secret.
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/robots/v1/enrollment-state-response.schema.json'
+        '400':
+          $ref: '#/components/responses/InvalidInput'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
   /v1/robots/{robot_id}:
+    delete:
+      tags: [robots]
+      operationId: deleteRobot
+      summary: Delete a robot (Owner only)
+      description: |
+        Releases enrollment as above and removes the robot from active lists and
+        direct robot/access routes. Immutable history/provenance is retained and
+        remains readable through run/history endpoints by organization members.
+        A deleted robot cannot be enrolled or paired again. A Daemon can be paired
+        to a new robot/org after restarting and verifying its release receipt.
+        Idle installations are detached automatically. Active runs, execution slots
+        or pending operations return 409 robot_has_apps with the blocking reason.
+      parameters:
+        - $ref: '#/components/parameters/RobotId'
+      responses:
+        '204':
+          description: Robot deleted and enrollment released.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     get:
       tags: [robots]
       operationId: getRobot
@@ -2045,6 +2319,29 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/robots/{robot_id}/appearance:
+    put:
+      tags: [robots]
+      operationId: updateRobotAppearance
+      summary: Owner replaces or resets a robot image or icon
+      description: New Console metadata design. Persists across device reconnects; never modifies the Agent profile. Null resets to the default icon. Only the robot's workspace owner can write; non-members receive 404.
+      parameters:
+        - $ref: "#/components/parameters/RobotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../schemas/robots/v1/update-appearance-request.schema.json" }
+      responses:
+        "200":
+          description: Updated robot
+          content:
+            application/json:
+              schema: { $ref: "../schemas/robots/v1/robot.schema.json" }
+        "400": { $ref: "#/components/responses/InvalidInput" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/robots/{robot_id}/enrollment-tokens:
     post:
       tags: [robots]
@@ -2459,6 +2756,173 @@ paths:
         '409': *id006
         '413': *id007
         '503': *id008
+  /v1/robots/{robot_id}/app-development:
+    get:
+      tags: [robots]
+      summary: App development get app-development
+      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      parameters:
+        - in: path
+          name: robot_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Development state or accepted action.
+        "204":
+          description: Mutation completed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    post:
+      tags: [robots]
+      summary: App development post app-development
+      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      parameters:
+        - in: path
+          name: robot_id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/apps/development/protocol.schema.json#/$defs/open"
+      responses:
+        "200":
+          description: Development state or accepted action.
+        "204":
+          description: Mutation completed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [robots]
+      summary: App development delete app-development
+      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      parameters:
+        - in: query
+          name: expected_session_id
+          required: true
+          schema: {type: string, format: uuid}
+        - in: path
+          name: robot_id
+          required: true
+          schema: {type: string, format: uuid}
+        - in: query
+          name: expected_session_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Development state or accepted action.
+        "204":
+          description: Mutation completed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/robots/{robot_id}/app-development/grants:
+    post:
+      tags: [robots]
+      summary: App development post grant
+      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      parameters:
+        - in: path
+          name: robot_id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/apps/development/protocol.schema.json#/$defs/grant"
+      responses:
+        "200":
+          description: Development state or accepted action.
+        "204":
+          description: Mutation completed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/device/app-development:
+    get:
+      tags: [robots]
+      summary: App development get app-development
+      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      responses:
+        "200":
+          description: Development state or accepted action.
+        "204":
+          description: Mutation completed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/device/app-development/endpoint:
+    put:
+      tags: [robots]
+      summary: App development put endpoint
+      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/apps/development/protocol.schema.json#/$defs/endpoint"
+      responses:
+        "200":
+          description: Development state or accepted action.
+        "204":
+          description: Mutation completed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/device/app-development/{session_id}/source:
+    post:
+      tags: [robots]
+      summary: App development post source
+      description: See docs/app-development-contract.md. Device routes require matching credential ID/secret headers.
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../schemas/apps/development/protocol.schema.json#/$defs/source"
+      responses:
+        "200":
+          description: Development state or accepted action.
+        "204":
+          description: Mutation completed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
 components:
   securitySchemes:
     deviceCredentialId:

@@ -11,11 +11,13 @@ public static class RobotEndpoints
 {
     public static void MapRobotEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapRobotLifecycleEndpoints();
         var group = endpoints.MapGroup("/v1").RequireAuthorization();
 
         group.MapPost("/organizations/{orgId:guid}/robots", CreateRobot);
         group.MapGet("/organizations/{orgId:guid}/robots", ListRobots);
         group.MapGet("/robots/{robotId:guid}", GetRobot);
+        group.MapPut("/robots/{robotId:guid}/appearance", UpdateAppearance);
         group.MapPost("/robots/{robotId:guid}/enrollment-tokens", IssueEnrollmentToken);
         group.MapGet("/robots/{robotId:guid}/credentials", ListCredentials);
         group.MapPost("/robots/{robotId:guid}/credentials", RotateCredential);
@@ -68,6 +70,8 @@ public static class RobotEndpoints
         await IdentityAccess.RequireMembership(
             db, orgId, user.Id, OrgRole.Owner, cancellationToken);
 
+        RobotAppearance.Validate(request.Appearance);
+
         var now = DateTimeOffset.UtcNow;
         var robot = new Robot
         {
@@ -77,6 +81,7 @@ public static class RobotEndpoints
             CreatedAt = now,
             EnrolledAt = null,
             ProfileRef = request.ProfileRef,
+            Appearance = request.Appearance,
         };
         db.Robots.Add(robot);
         Audit(db, robot.Id, RobotAuditTypes.RobotCreated, user.Id, now);
@@ -102,7 +107,7 @@ public static class RobotEndpoints
         var pageSize = Pagination.ClampLimit(limit);
 
         var query = db.Robots
-            .Where(robot => robot.OrganizationId == orgId)
+            .Where(robot => robot.OrganizationId == orgId && robot.DeletedAt == null)
             .OrderBy(robot => robot.CreatedAt)
             .ThenBy(robot => robot.Id)
             .AsQueryable();
@@ -129,6 +134,22 @@ public static class RobotEndpoints
     {
         var (_, robot) = await RobotAccess.RequireRobotAccess(
             httpContext, db, robotId, OrgRole.Operator, cancellationToken);
+        return RobotResponse.FromEntity(robot);
+    }
+
+    private static async Task<RobotResponse> UpdateAppearance(
+        HttpContext httpContext,
+        RingfourDbContext db,
+        Guid robotId,
+        UpdateRobotAppearanceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (user, robot) = await RobotAccess.RequireRobotAccess(
+            httpContext, db, robotId, OrgRole.Owner, cancellationToken);
+        RobotAppearance.Validate(request.Appearance);
+        robot.Appearance = request.Appearance;
+        Audit(db, robot.Id, RobotAuditTypes.AppearanceUpdated, user.Id, DateTimeOffset.UtcNow);
+        await db.SaveChangesAsync(cancellationToken);
         return RobotResponse.FromEntity(robot);
     }
 
@@ -203,6 +224,9 @@ public static class RobotEndpoints
 
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM robots WHERE id = {robot.Id} FOR UPDATE", cancellationToken);
+        await db.Entry(robot).ReloadAsync(cancellationToken);
+        if (robot.DeletedAt is not null || robot.EnrolledAt is null)
+            throw ApiException.Conflict("robot_unenrolled", "The robot's enrollment changed; refresh before rotating credentials.");
 
         var current = await db.RobotCredentials
             .Where(credential =>
@@ -326,6 +350,9 @@ public static class RobotEndpoints
                 UPDATE enrollment_tokens
                 SET consumed_at = now()
                 WHERE token_hash = {tokenHash} AND consumed_at IS NULL AND expires_at > now()
+                    AND EXISTS (SELECT 1 FROM robots r JOIN organizations o ON o.id = r.organization_id
+                        WHERE r.id = enrollment_tokens.robot_id AND r.deleted_at IS NULL AND o.deleted_at IS NULL
+                            AND (r.released_at IS NULL OR enrollment_tokens.created_at > r.released_at))
                 RETURNING id AS "Id", robot_id AS "RobotId"
                 """)
             .AsEnumerable()

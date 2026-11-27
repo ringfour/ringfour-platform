@@ -24,7 +24,7 @@ def test_upgrade_discards_legacy_state_and_preserves_enrollment_and_app_binding(
         conn.execute("INSERT INTO app_installations(installation_id,robot_id,app_id,updated_at) VALUES ('installed','robot','app','2026-11-25')")
         conn.execute("INSERT INTO device_operations VALUES ('legacy','robot','script.execution.start',1,'{}','accepted','2026-11-25','2026-11-25',NULL)")
         conn.execute("INSERT INTO script_sync(execution_id) VALUES ('legacy')")
-    assert migrate(db) == [22]
+    assert migrate(db) == [22, 23]
     assert migrate(db) == []
     with connect(db) as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}

@@ -127,6 +127,7 @@
             "enum": [
               "app.logbook.entry",
               "app.installation.changed",
+              "app.installation.removed",
               "app.run.started",
               "app.run.completed",
               "app.run.failed",
@@ -203,7 +204,8 @@
               "properties": {
                 "type": {
                   "enum": [
-                    "app.installation.changed"
+                    "app.installation.changed",
+              "app.installation.removed"
                   ]
                 }
               },

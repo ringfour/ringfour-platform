@@ -1,0 +1,71 @@
+/* Home shows robot work, attention and recent outcomes in one continuous page. */
+.home-page {
+  width: 100%;
+  padding: 40px var(--rf-content-gutter) 64px;
+  display: grid;
+  gap: var(--rf-space-8);
+  overflow-wrap: anywhere;
+}
+.home-page .ops-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--rf-space-6);
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+.home-page .ops-header h1 {
+  margin: 0;
+  font: 500 clamp(2rem, 3vw, 2.75rem) / 1.1 var(--font-heading);
+}
+.home-page .ops-header p {
+  margin: var(--rf-space-3) 0 0;
+  color: var(--color-muted-foreground);
+}
+.home-page h2 {
+  margin: 0;
+  font: 500 1.5rem / 1.2 var(--font-heading);
+}
+.home-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--rf-space-4);
+  margin-bottom: var(--rf-space-4);
+}
+.home-attention-row,
+.home-run-row {
+  padding: var(--rf-space-5) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.home-attention-row h3,
+.home-attention-row p {
+  margin: 0 0 var(--rf-space-3);
+}
+.home-run-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--rf-space-6);
+}
+.home-run-row p {
+  margin: var(--rf-space-2) 0 0;
+  color: var(--color-muted-foreground);
+}
+.home-page :is(.home-attention, .home-robots, .home-recent) {
+  margin-top: 0;
+}
+.home-page .studio-machine {
+  border-inline-start: 1px solid var(--color-border);
+}
+@media (max-width: 700px) {
+  .home-page {
+    padding-top: 24px;
+  }
+  .home-run-row {
+    align-items: start;
+    flex-direction: column;
+    gap: var(--rf-space-3);
+  }
+}
