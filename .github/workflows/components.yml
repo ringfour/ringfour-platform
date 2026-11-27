@@ -10,6 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: '10.0.x'
       - uses: astral-sh/setup-uv@v6
@@ -87,14 +89,17 @@ jobs:
             sh -n "$script"
           done
           python -m py_compile scripts/package-cli-release.py
-      - shell: pwsh
+      - name: Check PowerShell installer syntax
         run: |
-          $tokens = $null
-          $errors = $null
-          $null = [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path ./cli-installer.ps1), [ref]$tokens, [ref]$errors
-          )
-          if ($errors) { throw ($errors -join "`n") }
+          docker run --rm -i --entrypoint pwsh mcr.microsoft.com/powershell:latest \
+            -NoLogo -NoProfile -NonInteractive -Command '
+              $tokens = $null
+              $errors = $null
+              $null = [System.Management.Automation.Language.Parser]::ParseInput(
+                [Console]::In.ReadToEnd(), "cli-installer.ps1", [ref]$tokens, [ref]$errors
+              )
+              if ($errors) { throw ($errors -join "`n") }
+            ' < cli-installer.ps1
 
   release-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
