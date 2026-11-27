@@ -171,6 +171,11 @@ def docker(*arguments):
 
 def verify_bundle(bundle, document):
     sums = bundle / "SHA256SUMS"
+    if not sums.is_file():
+        raise ValueError(
+            f"App wheel bundle is missing at {bundle}. "
+            "Run the Ringfour CLI installer or pass the pinned bundle directory with --wheels."
+        )
     if hash_file(sums) != document["wheel_bundle"]["sha256"]:
         raise ValueError("Wheel bundle checksum manifest mismatch")
     paths = {}

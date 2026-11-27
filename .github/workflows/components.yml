@@ -89,17 +89,7 @@ jobs:
             sh -n "$script"
           done
           python -m py_compile scripts/package-cli-release.py
-      - name: Check PowerShell installer syntax
-        run: |
-          docker run --rm -i --entrypoint pwsh mcr.microsoft.com/powershell:latest \
-            -NoLogo -NoProfile -NonInteractive -Command '
-              $tokens = $null
-              $errors = $null
-              $null = [System.Management.Automation.Language.Parser]::ParseInput(
-                [Console]::In.ReadToEnd(), "cli-installer.ps1", [ref]$tokens, [ref]$errors
-              )
-              if ($errors) { throw ($errors -join "`n") }
-            ' < cli-installer.ps1
+          python -m py_compile scripts/build-python-artifacts.py
 
   release-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -118,10 +108,44 @@ jobs:
       IMAGE_PREFIX: ghcr.io/ringfour/ringfour-platform
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Read App wheel bundle pins
+        id: bundle
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          release = json.loads(Path("packages/python-artifacts/release.json").read_text())
+          sdk = next(package for package in release["packages"] if package["name"] == "ringfour-sdk")
+          print(f"sdk_commit={sdk['commit']}")
+          print(f"uv_version={release['uv_version']}")
+          print(f"version={release['bundle_version']}")
+          PY
+      - uses: actions/checkout@v4
+        with:
+          repository: ringfour/ringfour-sdk
+          ref: ${{ steps.bundle.outputs.sdk_commit }}
+          token: ${{ secrets.RINGFOUR_SDK_READ_TOKEN || github.token }}
+          persist-credentials: false
+          path: .ci-sources/ringfour-sdk
       - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ steps.bundle.outputs.uv_version }}
+      - name: Build App wheel bundle
+        env:
+          BUNDLE_VERSION: ${{ steps.bundle.outputs.version }}
+        run: |
+          ln -s "$GITHUB_WORKSPACE" .ci-sources/ringfour-platform
+          python scripts/build-python-artifacts.py --source-root .ci-sources \
+            --output ".ci-sources/bundles/$BUNDLE_VERSION"
+          mkdir -p dist
+          tar -C .ci-sources/bundles -czf dist/python-artifacts.tar.gz "$BUNDLE_VERSION"
+          rm -rf .ci-sources
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -177,7 +201,7 @@ jobs:
           tar -C dist -czf deployment.tar.gz compose.yml deployment.sh .env.example README.md images.env
           mv deployment.tar.gz dist/
           rm dist/compose.yml dist/deployment.sh dist/.env.example dist/README.md dist/images.env
-          (cd dist && sha256sum ./*.whl ./deployment.tar.gz ./daemon-image.txt ./robot-update.* | sed 's|  \./|  |' > SHA256SUMS)
+          (cd dist && sha256sum ./*.whl ./python-artifacts.tar.gz ./deployment.tar.gz ./daemon-image.txt ./robot-update.* | sed 's|  \./|  |' > SHA256SUMS)
           export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
           export CONSOLE_ORIGIN=http://127.0.0.1:5173
           export API_PORT= CONSOLE_PORT=

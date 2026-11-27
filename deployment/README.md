@@ -30,6 +30,9 @@ The workflow uses its GitHub token for publication. Set GHCR package
 visibility to public for anonymous host pulls, or provision read-only
 registry authentication on all pulling hosts. GitHub Releases hosts the
 separate CLI wheel and deployment assets.
+GitHub Actions builds the SDK and runtime wheel bundle from the commits pinned
+in `packages/python-artifacts/release.json`. For a private SDK repository, set
+`RINGFOUR_SDK_READ_TOKEN` to a token with read access to its contents.
 
 ## CLI
 
@@ -39,8 +42,7 @@ On supported glibc Linux or macOS machines with curl:
 curl -fsSL https://raw.githubusercontent.com/ringfour/ringfour-platform/main/cli-installer.sh | sh
 ```
 
-On native Windows, run `cli-installer.ps1` from the repository. Both installers
-verify the wheel and use uv to provision Python 3.13 and an isolated CLI
+The installer verifies the wheel and uses uv to provision Python 3.13 and an isolated CLI
 environment. Run `ringfour-cli login` after installation. Linux desktop and
 headless login needs a working OS keyring backend. The API and Auth0 defaults
 can be overridden with the existing CLI configuration or environment.

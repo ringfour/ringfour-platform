@@ -14,9 +14,11 @@ curl -fsSL https://raw.githubusercontent.com/ringfour/ringfour-platform/main/cli
 ringfour-cli login
 ```
 
-On native Windows use [cli-installer.ps1](../../cli-installer.ps1). Release
-builds include public Auth0 and API defaults. The environment and per-user
+Release builds include public Auth0 and API defaults. The environment and per-user
 configuration can override them.
+The installer also installs the SDK and runtime wheel bundle used by
+`ringfour-cli app build .`. The CLI looks up the bundle version pinned in
+`app.json` under `${XDG_DATA_HOME:-$HOME/.local/share}/ringfour/python-artifacts`.
 
 From the Platform checkout, run the CLI directly:
 

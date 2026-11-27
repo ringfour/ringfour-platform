@@ -5,7 +5,7 @@ Verify `sha256sum --check SHA256SUMS` before use and retain the manifest from
 the trusted producer. Checksums travel with the bundle; they are integrity pins,
 not a signature proving who supplied it.
 
-For CPython 3.13 on glibc Linux amd64, run these commands from the root of the generated or extracted bundle:
+For CPython 3.13 on glibc Linux amd64, from this directory:
 
 ```sh
 uv venv --python 3.13 .venv
@@ -22,8 +22,8 @@ availability is recorded separately from execution qualification.
 Standalone image, with the SDK only:
 
 ```sh
-docker build -t ringfour-sdk:local .
-docker run --rm --network none ringfour-sdk:local
+docker build -t ringfour-sdk:ap04 .
+docker run --rm --network none ringfour-sdk:ap04
 ```
 
 Add `--build-arg INSTALL_RUNTIME=true` to install the optional Platform clients.
