@@ -213,13 +213,17 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_ASSET_DIR: ${{ runner.temp }}/platform-release-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Prepare release asset directory
+        id: assets
+        run: printf 'directory=%s\n' "$(mktemp -d "$RUNNER_TEMP/platform-release.XXXXXX")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: platform-release
-          path: ${{ env.RELEASE_ASSET_DIR }}
+          path: ${{ steps.assets.outputs.directory }}
       - name: Publish complete build
+        env:
+          RELEASE_ASSET_DIR: ${{ steps.assets.outputs.directory }}
         run: |
           if [ "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" != "$GITHUB_SHA" ]; then
             echo 'A newer main commit is queued. Skipping publication.'
