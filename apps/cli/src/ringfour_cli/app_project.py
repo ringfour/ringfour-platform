@@ -12,6 +12,7 @@ import tempfile
 from importlib.resources import files
 from pathlib import Path
 
+from . import sdk_release
 from .app_manifest import (
     canonical,
     fingerprint,
@@ -216,6 +217,13 @@ def _runtime_version(value):
 
 def build_project(root, bundle=None, *, development=False):
     document = validate_authoring(read_json(root / "app.json"))
+    sdk = document.get("toolchain", {}).get("sdk")
+    sdk_wheel = None
+    if sdk:
+        dockerfile = (root / document["build"]["dockerfile"]).read_text()
+        if "sdk-wheel/*.whl" not in dockerfile:
+            raise ValueError("The Dockerfile must COPY sdk-wheel/*.whl and install the pinned SDK wheel")
+        sdk_wheel = sdk_release.fetch(sdk["version"], sdk["sha256"])
     source_hash, names = source_snapshot(root, document)
     state = root / ".ringfour"
     frozen = state / "releases" / (document["release"] + ".json")
@@ -251,6 +259,12 @@ def build_project(root, bundle=None, *, development=False):
                     shutil.copyfile(bundle / relative, destination)
                     if hash_file(destination) != paths[relative]:
                         raise ValueError("Wheel inputs changed while staging the build")
+            if sdk_wheel:
+                destination = context / "sdk-wheel" / sdk_wheel.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(sdk_wheel, destination)
+                if hash_file(destination) != sdk["sha256"]:
+                    raise ValueError("SDK wheel changed while staging the build")
             docker(
                 "buildx",
                 "build",
@@ -268,6 +282,16 @@ def build_project(root, bundle=None, *, development=False):
         image = json.loads(docker("image", "inspect", tag, "--format", "{{json .}}"))
         if (image["Os"], image["Architecture"]) != (target["os"], architecture):
             raise DockerError("Built image platform mismatch")
+        if sdk:
+            installed = docker(
+                "run", "--rm", "--network", "none", "--entrypoint", "python",
+                tag, "-c",
+                "from importlib.metadata import version; "
+                "from ringfour.version import PROTOCOL_VERSION; "
+                "print(version('ringfour-sdk'), PROTOCOL_VERSION)",
+            ).decode().strip()
+            if installed != f"{sdk['version']} 1":
+                raise DockerError("Built image does not contain the declared SDK version and protocol")
         targets.append({**target, "local_image": tag, "image_id": image["Id"]})
     result = {
         "format_version": 1,

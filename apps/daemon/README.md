@@ -19,6 +19,17 @@ Keep `/data` and its SQLite state across Daemon replacement. The local control
 listener serves runtime evidence on the private robot network; the status page
 is read-only.
 
+## Released toolchains
+
+`ringfour-daemon-toolchain sdk 1.0.0 SHA256` or
+`ringfour-daemon-toolchain agent 1.0.0 SHA256` fetches a wheel from the
+corresponding GitHub Release and verifies the release checksum list and exact
+operator-provided SHA-256. Verified wheels are cached by package and version.
+This diagnostic/cache command does not install a wheel or change the shared
+Agent. App starts compare a declared Agent minimum against a fresh Agent
+version report before creating an App container. Shared Agent updates remain
+operator managed.
+
 ## Develop
 
 ```sh

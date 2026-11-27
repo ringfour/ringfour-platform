@@ -26,7 +26,4 @@ if (
 
 version_file = package / "__init__.py"
 version = version_file.read_text().split('"')[1]
-run = int(os.environ["GITHUB_RUN_NUMBER"])
-attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
-version_file.write_text(f'__version__ = "{version}.dev{run * 10000 + attempt}"\n')
 (package / "release_defaults.json").write_text(json.dumps(defaults) + "\n")

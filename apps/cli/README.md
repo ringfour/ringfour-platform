@@ -16,9 +16,9 @@ ringfour-cli login
 
 Release builds include public Auth0 and API defaults. The environment and per-user
 configuration can override them.
-The installer also installs the SDK and runtime wheel bundle used by
-`ringfour-cli app build .`. The CLI looks up the bundle version pinned in
-`app.json` under `${XDG_DATA_HOME:-$HOME/.local/share}/ringfour/python-artifacts`.
+The installer installs the CLI wheel independently. App builds use the wheel
+bundle pinned in `app.json`, which can be installed separately under
+`${XDG_DATA_HOME:-$HOME/.local/share}/ringfour/python-artifacts`.
 
 From the Platform checkout, run the CLI directly:
 
@@ -55,6 +55,15 @@ ringfour-cli robot list
 Use `ringfour-cli org select <organization-id>` to select a workspace. `logout`
 removes the stored login and selected workspace. Auth0 tokens are kept in the
 user's credential store, not the config JSON.
+
+## CLI updates
+
+`ringfour-cli version` shows the installed version. `ringfour-cli update-check`
+checks the latest Platform release and caches its CLI version. Subsequent CLI
+commands can show a cached update notice without contacting GitHub.
+`ringfour-cli update` downloads and verifies the release wheel before invoking
+`uv tool install --force`. Auth0 credentials, configuration, App files and
+SDK wheel cache have their own locations.
 
 ## Clone a starter App
 

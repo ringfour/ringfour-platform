@@ -37,6 +37,14 @@ public static class AppCompatibility
         foreach (var fact in target["native_requirements"]!.AsArray())
             if (!platform["native_facts"]!.AsArray().Any(x => JsonNode.DeepEquals(x, fact)))
                 result["missing_native"]!.AsArray().Add(fact!.DeepClone());
+        var minimumAgent = manifest["toolchain"]?["agent"]?["min_version"]?.GetValue<string>();
+        if (minimumAgent is not null)
+        {
+            var reportedAgent = observation["source"]?["agent_version"]?.GetValue<string>();
+            if (!Version.TryParse(reportedAgent, out var installed) ||
+                !Version.TryParse(minimumAgent, out var required) || installed < required)
+                result["missing_native"]!.AsArray().Add($"agent >= {minimumAgent} (reported {reportedAgent ?? "unknown"})");
+        }
         result["status"] = result["missing_required"]!.AsArray().Count > 0 ? "missing_required" :
             result["missing_native"]!.AsArray().Count > 0 ? "native_requirement_unavailable" : "compatible";
         return result;

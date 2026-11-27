@@ -6,7 +6,6 @@ from pathlib import Path
 import httpx
 import pytest
 import websockets
-
 from ringfour_daemon.agent_inventory import (
     InventoryUnavailable,
     check_fresh,
@@ -50,6 +49,20 @@ def test_pinned_base101_welcome_and_engine_platform():
     assert engine_platform(Settings(db_path="unused", apps_enabled=False,  engine_os="linux", engine_architecture="aarch64")).architecture == "arm64"
     with pytest.raises(InventoryUnavailable):
         engine_platform(Settings(db_path="unused", apps_enabled=False, ))
+
+
+def test_declared_agent_version_requires_fresh_report():
+    manifest = json.loads((ROOT / "apps/v1/manifest.json").read_text())
+    manifest["toolchain"] = {"protocol": 1, "agent": {"min_version": "1.0.0"}}
+    platform = Platform.model_validate(fixture()["platform"])
+    old = welcome_observation(json.dumps(welcome()))
+    result = evaluate(manifest, old, platform)
+    assert result["status"] == "native_requirement_unavailable"
+    assert "reported unknown" in result["missing_native"][0]
+    response = welcome()
+    response["result"]["agent_version"] = "1.0.0"
+    current = welcome_observation(json.dumps(response))
+    assert evaluate(manifest, current, platform)["status"] == "compatible"
 
 
 @pytest.mark.parametrize("change,reason", [

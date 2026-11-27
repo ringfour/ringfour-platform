@@ -20,6 +20,42 @@ is `my-ringfour-app`. Run `ringfour-cli app validate .` from the checkout after
 editing `app.json`. See the [CLI guide](../apps/cli/README.md#clone-a-starter-app)
 for local and mirrored template repositories.
 
+## Independent App toolchain
+
+A schema v2 App may declare an exact SDK release wheel and an Agent minimum in
+`app.json`:
+
+```json
+"toolchain": {
+  "protocol": 1,
+  "sdk": {"version": "1.0.0", "sha256": "<wheel SHA-256 from the SDK release>"},
+  "agent": {"min_version": "1.0.0"}
+}
+```
+
+Use `ringfour-cli sdk-release 1.0.0` to find the wheel checksum after that
+release is published. The CLI verifies the GitHub Release checksum list and
+pinned wheel, caches versions side by side and checks the SDK's wire protocol.
+A configured Dockerfile must copy `sdk-wheel/*.whl` from the staged build
+context and install that wheel after its other Python dependencies. The CLI
+checks the image's installed SDK version and protocol before recording a build.
+For example, add these steps after the dependency installation:
+
+```dockerfile
+COPY sdk-wheel/*.whl /tmp/sdk-wheel/
+RUN python -m pip install --no-deps /tmp/sdk-wheel/*.whl
+```
+
+If the Dockerfile uses `.dockerignore`, allow `sdk-wheel/` into its build
+context. The App build command stages the verified wheel in that directory.
+Pin transitive dependencies in the App's Dockerfile or lock file. The published
+OCI image keeps those exact bytes.
+
+The Daemon compares an Agent minimum with a fresh reported Agent version before
+installation and each start. Older Agents with no version report are incompatible
+with an App that declares a minimum. The shared Agent is updated through the
+operator's maintenance process.
+
 `app init PATH --app-key KEY --repository REGISTRY/REPO` extracts the one Robot
 Check template from a versioned checksum-pinned archive, then applies the selected
 identity. The standalone example repository owns the source. The CLI packages a

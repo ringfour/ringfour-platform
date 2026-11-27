@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 ringfour-daemon = "ringfour_daemon.main:main"
+ringfour-daemon-toolchain = "ringfour_daemon.toolchain_release:main"
 
 [dependency-groups]
 dev = [

@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test } from "vitest";
-import { inventoryObservation, type RobotAppStatus } from "./robot-status";
+import {
+  daemonUpdate,
+  inventoryObservation,
+  type RobotAppStatus,
+} from "./robot-status";
 
 const fixtures = JSON.parse(
   readFileSync(
@@ -26,4 +30,36 @@ test("unavailable inventory retains qualified last observation, never a fabricat
   expect(status.inventory?.state).toBe("unavailable");
   expect(inventoryObservation(status)?.capabilities).toContain("imu");
   expect(inventoryObservation({ ...status, inventory: null })).toBeUndefined();
+});
+test("Daemon update states use current presence and comparable versions", () => {
+  const status = fixtures.find((item) => item.name === "online_status")!.value;
+  expect(
+    daemonUpdate({
+      ...status,
+      daemon_version: "1.0.0",
+      recommended_daemon_version: "1.0.0",
+    }),
+  ).toBe("current");
+  expect(
+    daemonUpdate({
+      ...status,
+      daemon_version: "0.1.0",
+      recommended_daemon_version: "1.0.0",
+    }),
+  ).toBe("update available");
+  expect(
+    daemonUpdate({
+      ...status,
+      daemon_version: "2.0.0",
+      recommended_daemon_version: "1.0.0",
+    }),
+  ).toBe("incompatible");
+  expect(
+    daemonUpdate({
+      ...status,
+      connectivity: "offline",
+      daemon_version: "0.1.0",
+      recommended_daemon_version: "1.0.0",
+    }),
+  ).toBe("unknown");
 });

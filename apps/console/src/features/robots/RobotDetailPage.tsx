@@ -1,4 +1,3 @@
-import { RobotDevelopment } from "./RobotDevelopment";
 import { AppOperationStatus } from "@/components/AppOperationStatus";
 import { PageHeading } from "@/components/PageHeading";
 import { StudioTime } from "@/components/StudioTime";
@@ -10,6 +9,7 @@ import {
   robotCredentialsPath,
   studioPath,
 } from "@/lib/location";
+import { daemonUpdate } from "@/lib/robot-status";
 import { RunHistoryRow } from "@/views/RunHistoryRow";
 import { RunStatus } from "@/views/RunStatus";
 import { StudioPage, StudioSection } from "@/views/StudioPage";
@@ -17,6 +17,7 @@ import { InstallationCompatibility } from "./InstallationCompatibility";
 import { RobotAppearanceEditor } from "./RobotAppearanceEditor";
 import { RobotArtwork } from "./RobotArtwork";
 import { RobotCapabilities } from "./RobotCapabilities";
+import { RobotDevelopment } from "./RobotDevelopment";
 import { type RobotDetailScope, useRobotDetails } from "./useRobotDetails";
 import "./robots.css";
 export function RobotDetailPage(props: RobotDetailScope) {
@@ -100,6 +101,19 @@ export function RobotDetailPage(props: RobotDetailScope) {
                   <StudioTime value={status.last_seen_at} />
                 </p>
               )}
+              {status && (
+                <p>
+                  <strong>Daemon</strong>{" "}
+                  {status.daemon_version ?? "Not reported"} ·{" "}
+                  {daemonUpdate(status)}
+                  {daemonUpdate(status) === "update available" && (
+                    <a href="https://github.com/ringfour/ringfour-platform/blob/main/deployment/README.md">
+                      {" "}
+                      Update instructions
+                    </a>
+                  )}
+                </p>
+              )}
             </>
           }
           actions={
@@ -167,8 +181,14 @@ export function RobotDetailPage(props: RobotDetailScope) {
         />
       )}
       {["owner", "developer"].includes(props.workspaceRole ?? "") && (
-        <RobotDevelopment robotId={robotId} token={token} installations={installations} apps={apps}
-          activeRun={!!activeRun} onChange={refreshAfterOperation} />
+        <RobotDevelopment
+          robotId={robotId}
+          token={token}
+          installations={installations}
+          apps={apps}
+          activeRun={!!activeRun}
+          onChange={refreshAfterOperation}
+        />
       )}
       <div className="studio-split">
         <StudioSection title="Installed Apps" titleId="installed-apps-heading">
@@ -309,7 +329,11 @@ export function RobotDetailPage(props: RobotDetailScope) {
             <RunHistoryRow
               key={run.id}
               title={apps[run.snapshot.app_id]?.name ?? "App"}
-              detail={run.snapshot.development ? `Development · source generation ${run.snapshot.development.generation}` : undefined}
+              detail={
+                run.snapshot.development
+                  ? `Development · source generation ${run.snapshot.development.generation}`
+                  : undefined
+              }
               openOnRow
               state={run.state}
               time={run.requested_at}

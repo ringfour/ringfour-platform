@@ -74,7 +74,8 @@ def welcome_observation(raw):
         return AgentObservation.model_validate({
             "observed_at": utc_now(),
             "source": {"kind": "agent_welcome", "protocol": 1,
-                       "profile": {key: profile[key] for key in ("name", "model", "version")}},
+                       "profile": {key: profile[key] for key in ("name", "model", "version")},
+                       **({"agent_version": welcome["agent_version"]} if welcome.get("agent_version") else {})},
             "capabilities": welcome["capabilities"], "instances": welcome.get("instances", {}),
         })
     except InventoryUnavailable:
@@ -130,6 +131,12 @@ def evaluate(manifest, observation, platform):
         return {"status": "no_matching_image", "checked_at": utc_now(), "inventory_observed_at": observation.observed_at,
                 "target": None, "missing_required": [], "missing_optional": [], "missing_native": []}
     native = [] if target is None else [fact for fact in target["native_requirements"] if fact not in platform.native_facts]
+    minimum_agent = manifest.get("toolchain", {}).get("agent", {}).get("min_version")
+    reported_agent = observation.source.agent_version
+    if minimum_agent and (
+        not reported_agent or tuple(map(int, reported_agent.split("."))) < tuple(map(int, minimum_agent.split(".")))
+    ):
+        native.append(f"agent >= {minimum_agent} (reported {reported_agent or 'unknown'})")
     status = ("no_matching_image" if target is None else "missing_required" if missing else
               "native_requirement_unavailable" if native else "compatible")
     return {"status": status, "checked_at": utc_now(), "inventory_observed_at": observation.observed_at,

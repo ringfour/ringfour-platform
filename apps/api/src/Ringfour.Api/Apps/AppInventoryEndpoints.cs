@@ -138,6 +138,8 @@ public static class AppInventoryEndpoints
         return new JsonObject {
             ["robot_id"] = robot.Id.ToString(), ["connectivity"] = online ? "online" : "offline",
             ["last_seen_at"] = presence is null ? null : AppProtocol.Timestamp(presence.LastSeenAt),
+            ["daemon_version"] = presence?.DaemonVersion,
+            ["recommended_daemon_version"] = config["Apps:RecommendedDaemonVersion"] ?? "1.0.0",
             ["support"] = negotiated ? row!.Supported ? "supported" : "upgrade_required" : "not_negotiated",
             ["supports_manifest_v2"] = negotiated ? row!.ManifestV2Supported : null,
             ["supports_live_settings"] = negotiated ? row!.LiveSettingsSupported : null,

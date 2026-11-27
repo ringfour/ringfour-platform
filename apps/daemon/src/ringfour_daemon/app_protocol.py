@@ -97,6 +97,7 @@ class Source(ProtocolModel):
     kind: Literal["agent_welcome"]
     protocol: Version
     profile: Profile
+    agent_version: Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class AgentObservation(ProtocolModel):
@@ -173,6 +174,8 @@ class InventoryReport(ProtocolModel):
 
 
 class RobotAppStatus(ProtocolModel):
+    daemon_version: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    recommended_daemon_version: str | None = Field(default=None, exclude_if=lambda value: value is None)
     robot_id: Id
     connectivity: Literal["online", "offline"]
     last_seen_at: Timestamp | None

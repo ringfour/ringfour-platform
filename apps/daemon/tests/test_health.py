@@ -25,7 +25,7 @@ def test_liveness_reports_ok_without_dependencies(tmp_path):
     client = make_client(tmp_path, runner_handler=lambda r: httpx.Response(503))
     response = client.get("/health/live")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.1.0"}
+    assert response.json() == {"status": "ok", "version": "1.0.0"}
 
 
 def test_startup_fails_when_sqlite_directory_is_unusable(tmp_path):

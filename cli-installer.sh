@@ -16,11 +16,7 @@ printf '%s\n' "$tag" | grep -Eq '^main-[0-9]+-[0-9]+$' || {
 assets="$repo/releases/download/$tag"
 
 tmp=$(mktemp -d)
-stage=
-lock=
 cleanup() {
-  if [ -n "$lock" ]; then rmdir "$lock"; fi
-  if [ -n "$stage" ]; then rm -rf "$stage"; fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -30,8 +26,6 @@ case "$wheel" in
   ''|*[!a-zA-Z0-9._+-]*) echo "Expected one CLI wheel in release $tag" >&2; exit 1 ;;
 esac
 curl -fsSL "$assets/$wheel" -o "$tmp/$wheel"
-bundle=python-artifacts.tar.gz
-curl -fsSL "$assets/$bundle" -o "$tmp/$bundle"
 check_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum -c "$1"
@@ -41,38 +35,9 @@ check_sha256() {
 }
 (
   cd "$tmp"
-  for asset in "$wheel" "$bundle"; do
-    awk -v asset="$asset" '$2 == asset {print; count++} END {exit count != 1}' SHA256SUMS > asset.sha256
-    check_sha256 asset.sha256
-  done
+  awk -v asset="$wheel" '$2 == asset {print; count++} END {exit count != 1}' SHA256SUMS > asset.sha256
+  check_sha256 asset.sha256
 )
-
-bundle_root="${XDG_DATA_HOME-$HOME/.local/share}/ringfour/python-artifacts"
-mkdir -p "$bundle_root"
-stage=$(mktemp -d "$bundle_root/.install.XXXXXX")
-tar -xzf "$tmp/$bundle" -C "$stage"
-set -- "$stage"/*
-if [ "$#" -ne 1 ] || [ ! -f "$1/SHA256SUMS" ]; then
-  echo "Invalid App wheel bundle in release $tag" >&2
-  exit 1
-fi
-version=${1##*/}
-destination="$bundle_root/$version"
-(cd "$1" && check_sha256 SHA256SUMS >/dev/null)
-lock_path="$bundle_root/.install.lock"
-mkdir "$lock_path" || { echo "Another App wheel bundle installation is in progress." >&2; exit 1; }
-lock="$lock_path"
-if [ -e "$destination" ] || [ -L "$destination" ]; then
-  cmp -s "$1/SHA256SUMS" "$destination/SHA256SUMS" || {
-    echo "A different App wheel bundle already exists at $destination" >&2
-    exit 1
-  }
-  (cd "$destination" && check_sha256 SHA256SUMS >/dev/null)
-else
-  mv "$1" "$destination"
-fi
-rmdir "$lock"
-lock=
 
 uv_bin=$(command -v uv || true)
 if [ -z "$uv_bin" ]; then

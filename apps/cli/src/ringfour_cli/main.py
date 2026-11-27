@@ -20,7 +20,7 @@ from keyring.errors import KeyringError
 from rich.console import Console
 from rich.table import Table
 
-from . import app_project, auth
+from . import __version__, app_project, auth, release_update, sdk_release
 from .app_manifest import fingerprint as app_fingerprint
 from .app_manifest import read_json as read_app_json
 from .app_manifest import validate_authoring, validate_manifest
@@ -103,7 +103,53 @@ def collect_health(
 @app.callback()
 def callback() -> None:
     """Ringfour developer CLI."""
+    notice = release_update.cached_notice()
+    if notice:
+        typer.echo(notice, err=True)
 
+
+@app.command()
+def version() -> None:
+    """Show the installed CLI version."""
+    typer.echo(__version__)
+
+
+@app.command("update-check")
+def update_check() -> None:
+    """Check the latest verified CLI release."""
+    try:
+        release = release_update.check()
+    except (httpx.HTTPError, OSError, ValueError) as error:
+        typer.echo(f"Update check unavailable: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"Installed {__version__}; available {release['version']}")
+
+
+@app.command("sdk-release")
+def sdk_release_info(version: str) -> None:
+    """Show the SHA-256 to pin for an exact SDK release."""
+    try:
+        checksum = sdk_release.released_checksum(version)
+    except (httpx.HTTPError, OSError, ValueError) as error:
+        typer.echo(f"SDK release unavailable: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"ringfour-sdk {version} sha256 {checksum}")
+
+
+@app.command()
+def update() -> None:
+    """Install the latest checksummed CLI release."""
+    try:
+        release = release_update.update()
+    except (
+        httpx.HTTPError,
+        OSError,
+        ValueError,
+        subprocess.CalledProcessError,
+    ) as error:
+        typer.echo(f"Update failed: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"CLI {release['version']} installed")
 
 @app.command()
 def scaffold(

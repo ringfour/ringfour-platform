@@ -195,6 +195,7 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
     [InlineData("unavailable", "inventory_unavailable")]
     [InlineData("target", "no_matching_image")]
     [InlineData("native", "native_requirement_unavailable")]
+    [InlineData("agent_version", "native_requirement_unavailable")]
     [InlineData("manifest_v2", "daemon_upgrade_required")]
     public void Preview_is_fail_closed_and_matches_capability_semantics(string scenario, string expected)
     {
@@ -209,6 +210,8 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
         if (scenario == "unavailable") projection["inventory"] = new JsonObject { ["state"] = "unavailable" };
         if (scenario == "target") projection["platform"]!["architecture"] = "arm64";
         if (scenario == "native") manifest["targets"]![0]!["native_requirements"] = new JsonArray("cuda:12");
+        if (scenario == "agent_version") manifest["toolchain"] = new JsonObject { ["protocol"] = 1,
+            ["agent"] = new JsonObject { ["min_version"] = "1.0.0" } };
         if (scenario == "manifest_v2") { manifest["schema_version"] = 2; projection["supports_manifest_v2"] = false; }
         var result = AppCompatibility.Evaluate(manifest, projection, now);
         Assert.Equal(expected, result["status"]!.GetValue<string>());

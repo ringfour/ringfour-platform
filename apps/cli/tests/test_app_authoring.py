@@ -8,8 +8,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-from typer.testing import CliRunner
-
 from ringfour_cli import app_project, main
 from ringfour_cli.app_manifest import (
     fingerprint,
@@ -18,6 +16,7 @@ from ringfour_cli.app_manifest import (
     validate_manifest,
 )
 from ringfour_cli.config import Settings
+from typer.testing import CliRunner
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages/contracts"
 ORG = "11111111-1111-4111-8111-111111111111"
@@ -127,10 +126,61 @@ def test_v2_authoring_and_manifest_validate_with_environment_and_live_settings()
     assert validate_authoring(authoring) == authoring
     assert validate_manifest(manifest) == manifest
 
+    with_toolchain = copy.deepcopy(authoring)
+    with_toolchain["toolchain"] = {
+        "protocol": 1,
+        "sdk": {"version": "1.0.0", "sha256": "a" * 64},
+        "agent": {"min_version": "1.0.0"},
+    }
+    assert validate_authoring(with_toolchain) == with_toolchain
+    with_toolchain["toolchain"]["sdk"]["sha256"] = "invalid"
+    with pytest.raises(ValueError):
+        validate_authoring(with_toolchain)
+
     invalid = copy.deepcopy(authoring)
     invalid["runtime_settings"]["defaults"]["interval_ms"] = "250"
     with pytest.raises(ValueError):
         validate_authoring(invalid)
+
+
+def test_toolchain_build_requires_explicit_dockerfile_install(project):
+    root, bundle, calls, _state = project
+    document = read_json(root / "app.json")
+    document["schema_version"] = 2
+    document["toolchain"] = {"protocol": 1, "sdk": {"version": "1.0.0", "sha256": "a" * 64}}
+    (root / "app.json").write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="must COPY"):
+        app_project.build_project(root, bundle)
+    assert not calls
+
+
+def test_toolchain_build_stages_pinned_wheel_and_checks_image(project, monkeypatch, tmp_path):
+    root, bundle, _calls, _state = project
+    document = read_json(root / "app.json")
+    document["schema_version"] = 2
+    document["toolchain"] = {"protocol": 1, "sdk": {"version": "1.0.0", "sha256": "a" * 64}}
+    (root / "app.json").write_text(json.dumps(document))
+    (root / "Dockerfile").write_text("FROM scratch\nCOPY sdk-wheel/*.whl /tmp/sdk-wheel/\n")
+    wheel = tmp_path / "ringfour_sdk-1.0.0-py3-none-any.whl"
+    wheel.write_bytes(b"sdk bytes")
+    monkeypatch.setattr(app_project.sdk_release, "fetch", lambda *_: wheel)
+    original_docker = app_project.docker
+    staged = []
+
+    def docker_with_toolchain(*args):
+        if args[:2] == ("buildx", "build"):
+            staged.append((Path(args[-1]) / "sdk-wheel" / wheel.name).read_bytes())
+        if args[0] == "run":
+            return b"1.0.0 1\n"
+        return original_docker(*args)
+
+    monkeypatch.setattr(app_project, "docker", docker_with_toolchain)
+    with pytest.raises(ValueError, match="SDK wheel changed"):
+        app_project.build_project(root, bundle)
+    document["toolchain"]["sdk"]["sha256"] = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    (root / "app.json").write_text(json.dumps(document))
+    assert app_project.build_project(root, bundle)["release"] == document["release"]
+    assert staged == [b"sdk bytes"]
 
 
 def test_live_settings_build_refuses_bundle_without_settings_runtime(project):
