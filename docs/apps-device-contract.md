@@ -1,16 +1,12 @@
-# App device protocol v1 — new Ringfour design
+# App device protocol v1
 
-Status: AP-03 supplies session negotiation/inventory and AP-08 the owner-scoped
-engine. AP-07 supplies opt-in install-family dispatch, revision reads, preparation/
-application and installation observations. Run dispatch/observations remain AP-09.
-AP-18 adds negotiated uninstall support.
-The original v1 envelopes and legacy runtime are unchanged. See
+A session negotiates inventory, installation, run and uninstall support. See
 [installation gates/recovery](apps-installation.md) and [engine policy](apps-engine.md).
 
 ## Separate support negotiation
 
-AP-07 adds optional `supports_app_installations` and AP-18 adds optional
-`supports_app_uninstall` to the negotiation request. Omission means false;
+The negotiation request has optional `supports_app_installations` and
+`supports_app_uninstall` fields. Omission means false;
 uninstall support requires installation support. Inventory-only peers remain
 compatible, but cannot receive installation commands or submit installation
 observations. App mode verifies the engine before offering these capabilities;
@@ -39,9 +35,7 @@ explicitly; do not collapse this into missing capability or offline state.
 
 Filter replay as well as fresh dispatch: hold all `app.*` commands until current
 session negotiation succeeds. Replayed operation content, ID, payload version
-and deadline remain unchanged across sessions. Before AP-15, legacy commands continued
-on the original v1 path. The server and device implementation milestones must
-change their dispatch/replay consumers together before this gate is enabled.
+and deadline remain unchanged across sessions.
 
 ## Ownership and command payloads
 
@@ -51,8 +45,8 @@ devices, and new enrollment creates it in the same SQLite transaction as the
 identity binding. Replacement retaining the Daemon database retains this
 namespace; a different enrollment cannot adopt it silently. Enforce a single
 writer/fence for that enrollment/namespace.
-A session replacement invalidates the old session's authority. AP-08 supplies the lifetime database/namespace writer fence and serialized engine
-mutation journal; AP-07 uses it before enabling installation dispatch.
+A session replacement invalidates the old session's authority. The Daemon uses a lifetime database/namespace writer fence and serialized engine
+mutation journal; installation dispatch requires this fence.
 
 Canonical workload labels are:
 
@@ -97,19 +91,16 @@ unavailable inventory, native prerequisites and pull failure are distinct.
 On replay find the same durable run/container or terminal result. Never relaunch
 a possibly started run whose container is absent; report interruption with
 unknown exit/end time. An accepted start that is safely known never to have
-started may proceed through its persisted intent. AP-08 must journal these
+started may proceed through its persisted intent. The Daemon journals these
 boundaries before engine calls and preserve output before cleanup.
 
 ## Observed Agent inventory and target
 
-AP-03 implementation uses a minimal JSON-RPC 2.0 `hello` reader matching the
+The Daemon uses a minimal JSON-RPC 2.0 `hello` reader matching the
 SDK's existing protocol 1 over `unix://` or `ws://`/`wss://`. The call has a
 bounded timeout and 1 MiB welcome limit (the Agent may include a description).
 It projects only profile/capability/instance metadata and sends no robot action.
-`RINGFOUR_AGENT_URI` enables reporting. Until AP-08 verifies engine facts through
-the owner-scoped engine adapter, set `RINGFOUR_ENGINE_OS` and
-`RINGFOUR_ENGINE_ARCHITECTURE` from the actual deployment engine; unset values
-disable reporting, never substitute the Daemon's process architecture.
+`RINGFOUR_AGENT_URI` enables reporting. With Apps enabled, the Daemon obtains engine facts from its owner-scoped adapter. In inventory-only mode, configure `RINGFOUR_ENGINE_OS` and `RINGFOUR_ENGINE_ARCHITECTURE` for the deployment engine. Missing values make the target unavailable.
 `RINGFOUR_ENGINE_NATIVE_FACTS` is a comma-separated, operator-verified list.
 The Daemon refreshes inventory every 15 seconds by default and retains only
 observations as explanatory cache; each later install/start must call the fresh
@@ -225,5 +216,5 @@ CLI/Studio use the same status/code/observation fields; the typed summary reader
 share fixtures with the API contract tests. No first-party UI session or Gradio
 replacement is added.
 
-AP-15 retires non-App commands and legacy operation_status frames. App commands
+App commands
 are acknowledged through ack and their durable outcomes use App observations.

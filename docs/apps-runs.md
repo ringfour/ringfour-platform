@@ -1,9 +1,9 @@
-# App runs — AP-09 new design
+# App runs
 
-Start/stop use the AP-01 request, immutable run snapshot and device command
+Start/stop use the App start/stop request, immutable run snapshot and device command
 contracts. `POST /v1/app-installations/{id}/start` requires Operator access,
 Idempotency-Key and the expected installed revision/configuration. The robot row
-lock and shared execution slot serialize App, legacy and development execution.
+lock and shared execution slot serialize normal and development App runs.
 Start commits the snapshot and durable operation together; HTTP 202 and device
 acknowledgement mean accepted, never observed running.
 
@@ -23,5 +23,4 @@ intent; ambiguous start is never relaunched. Recheck fresh Agent capabilities,
 engine target and installed generation before create. Do not repull on start.
 
 Read routes are GET /v1/app-runs/{id} and the organization-scoped /app-runs list
-with robot_id, installation_id and app_id filters. Runtime/output delivery is
-AP-10. Human acceptance is batched after AP-10 per the operator's agreement.
+with robot_id, installation_id and app_id filters. See [runtime delivery](apps-runtime.md) for output and evidence.

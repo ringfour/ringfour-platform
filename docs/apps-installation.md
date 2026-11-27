@@ -1,12 +1,10 @@
-# Durable App installation — AP-07 new design
+# Durable App installation
 
-AP-08's owner-scoped engine is the prerequisite for this slice. Existing App v1
-API/device schemas govern install, configure, update and rollback; this document
-specifies their implementation, dispatch gates and persistence before writers.
+Installation uses the [owner-scoped engine](apps-engine.md) and the negotiated [device protocol](apps-device-contract.md).
 No install-family operation creates a run or invokes container create/start.
 
 API mutations require owner/developer, permanent idempotency and robot row locking.
-Import authorization is atomic with installation intent, using AP-05's exact
+Import authorization is atomic with installation intent, using the catalog’s exact
 publisher/destination share checks. Identity remains unique (robot, App); an
 existing installation is addressed explicitly for update, never silently replaced.
 Configuration requests are complete replacements: callers may send manifest
@@ -24,8 +22,8 @@ legacy/App/local-development execution state under SQLite's writer transaction.
 
 API `Apps:InstallationsEnabled` defaults false until API and Daemon consumers are
 deployed together. The optional negotiation request field
-`supports_app_installations` defaults false; only the enabled AP-07 Daemon offers
-true after obtaining actual engine metadata. An AP-03 inventory-only session
+`supports_app_installations` defaults false; only the enabled Daemon offers
+true after obtaining actual engine metadata. An inventory-only session
 cannot receive installation commands. Old hello/welcome and negotiation responses
 remain unchanged. Reconnect rechecks current-session support, namespace and
 credential revocation. Worker dispatch/replay uses the existing v1 command/ack.
@@ -35,7 +33,7 @@ outcome. Expired device work never begins new preparation/application.
 
 The Daemon fetches the operation-authorized manifest, validates its canonical
 hash/configuration/target, obtains a new bounded Agent observation before any
-pull, and obtains an ephemeral AP-05 pull grant. Pull/inspect is the only engine
+pull, and obtains an ephemeral registry pull grant. Pull/inspect is the only engine
 side effect. A staged journal survives replacement and lost acknowledgement.
 Before application a SQLite transaction rechecks installed generation, deadline
 and robot idleness, then atomically switches revision/image/configuration and
@@ -52,7 +50,7 @@ application requires the corresponding exact installed binding and idle robot.
 Late terminal reports cannot change an outcome or superseded installed binding.
 History/configuration remains readable through authorized installation resources.
 
-AP-07 also pins canonical UTF-8 with an independent emoji/line-separator fixture
+The contract pins canonical UTF-8 with an independent emoji/line-separator fixture
 across C#, Node, CLI and Daemon. The API retains Unicode scalars instead of the
 writer's supplementary-character escapes, and measures configuration byte limits
 using that canonical serialization. Existing ASCII fixture/image pins are unchanged.

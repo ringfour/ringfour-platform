@@ -1,10 +1,6 @@
-# AP17 contract decisions
+# App settings and published files
 
-Status: AP17.01 contract baseline. This addendum defines new App v2 and live
-settings interfaces. It does not alter the immutable v1 manifest, its digest,
-or existing run/configuration records. Implementation follows this contract;
-the project-root [AP17 specification](../../AP17.md) remains the product
-acceptance source.
+Manifest v2 adds startup environment mappings and live settings. Existing v1 manifests, digests and run records retain their meaning.
 
 ## Manifest v2
 

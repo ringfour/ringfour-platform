@@ -54,7 +54,7 @@ with field margins reset in header actions. Installed Apps reuse the Store card
 classes, imagery and publisher credit, with an installation-specific destination,
 robot name and run status on every card.
 
-The `uifix.md` pass uses `StudioPage` for a shared left-anchored 12-column body,
+Studio uses `StudioPage` for a shared left-anchored 12-column body,
 `StudioSection` for section cards and consistently bounded forms, and
 `RunHistoryRow`/`RunStatus` for Activity, Logbook and device history. App tabs
 return sections within `AppDetailFrame`'s existing page template. See

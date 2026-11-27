@@ -4,7 +4,7 @@
 | --- | --- |
 | [API](api/README.md) | Authenticated workspaces, App catalog, installations, hosted runs and history |
 | [CLI](cli/README.md) | Auth0 login, organization/device inspection and App authoring/publication |
-| [Console](console/README.md) | Authenticated internal web interface; App workflows are in AP-11 |
+| [Console](console/README.md) | Authenticated Studio for App and robot operations |
 | [Daemon](daemon/README.md) | Enrolled-device identity, operations, App engine and runtime evidence |
 
 Applications communicate through versioned contracts in
@@ -14,5 +14,4 @@ robot Daemons use their enrolled machine credentials.
 
 See the [repository overview](../README.md),
 [architecture](../docs/architecture.md), and
-[development setup](../docs/development.md). Historical mission-era user
-workflows are in the [archive](../docs/archive/legacy-mission-workflows/README.md).
+[development setup](../docs/development.md).

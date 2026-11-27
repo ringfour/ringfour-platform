@@ -1,9 +1,6 @@
 # App manifest v1 — new Ringfour design
 
-Status: AP-01 contract acceptance complete. AP-05 implements manifest semantic
-validation and registry-verified publication; installation/execution remain later
-slices. See the active plan for deployed acceptance. The normative input is
-[app-pivot.md](../../app-pivot.md), sections 1–9. The standalone Robot Check JSON
+The v1 manifest defines release metadata and semantic validation. For installation and execution see [App installation](apps-installation.md) and [hosted runs](apps-runs.md). The [authoring guide](apps-authoring.md) covers validation and publication. The standalone Robot Check JSON
 fixture is illustrative release metadata, not a published image or another
 example repository.
 
@@ -43,7 +40,7 @@ Consumers must also enforce these rules, in this order:
    tag, credentials, scheme or query. Registry resolution must verify that the
    persisted digest is a concrete matching image, not a multi-platform index.
    Tooling may resolve an authoring index before publishing this manifest;
-   AP-05 verifies the concrete manifest and configuration; authoring index resolution belongs to AP-06.
+   The API verifies the concrete manifest and configuration. The publishing client resolves the image index.
 4. Reject the same capability predicate in required and optional lists.
 5. Validate configuration schema semantics, then validate defaults as a complete
    configuration. Every required key must be declared. Bounds must be ordered;
@@ -63,7 +60,7 @@ establish an arm. Unknown strings such as `arm.motion` fail validation. These
 predicates describe inventory, not permissions, method availability or fresh
 sensor data. Missing optional predicates explain limitations without blocking;
 missing required inventory and unavailable current inventory are distinct
-future device outcomes. AP-03 adds current observed matching, not this slice.
+future device outcomes. The Daemon checks fresh inventory before install and start.
 
 ## Configuration and canonical content
 
@@ -105,6 +102,4 @@ API, CLI and Daemon readers use its exact UTF-8 canonical bytes/digest.
 
 [API/runtime contracts](apps-api-contract.md) now define actor and observation
 timestamps, idempotency, grants, staging/application transitions, stop
-preconditions and runtime run attribution. [Device negotiation/inventory](apps-device-contract.md) and cross-language
-fixture readers complete the AP-01 contract gate. No existing v1
-device/runtime response schema or active typed consumer changes here.
+preconditions and runtime run attribution. See the [device protocol](apps-device-contract.md) for negotiation and inventory.

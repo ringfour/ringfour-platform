@@ -1,14 +1,12 @@
-# App engine ownership — AP-08 new design
+# App engine ownership
 
-AP-07 depends on AP-08, as ordered in the pivot backlog. Implement the executor
-before enabling installation dispatch. The Docker Engine REST API is pinned to
+The Docker Engine REST API is pinned to
 v1.46 and accessed with the existing locked httpx client over an operator-provided
 Unix socket. API reference: https://docs.docker.com/reference/api/engine/version/v1.46/.
 No TCP engine, implicit context selection or engine socket in an App is supported.
 
 `RINGFOUR_APPS_ENABLED=true` enables the independent App engine readiness check
-and durable writer lock beside the SQLite database. Legacy readiness still checks
-Runner when disabled. `RINGFOUR_ENGINE_SOCKET` defaults to /var/run/docker.sock;
+and durable writer lock beside the SQLite database. `RINGFOUR_ENGINE_SOCKET` defaults to /var/run/docker.sock;
 `RINGFOUR_APP_NETWORK` and `RINGFOUR_AGENT_URI` are owner settings. The deployment
 operator supplies the socket mount and supplementary socket group; never chmod
 or restart infrastructure automatically. Engine OS/architecture come from /info,
@@ -35,8 +33,5 @@ and one owner network. The immutable image supplies ENTRYPOINT; no command or
 entrypoint override, socket, credentials or host bind is accepted. Configuration
 is copied as a read-only file into the root-owned application directory before start.
 Only the Agent URL/config path and explicitly bound runtime URLs/tokens may
-be passed. AP-10 now supplies run-scoped credentials and an owner-labeled
-artifact volume; see [App runtime](apps-runtime.md). AP-08-only fixtures may
-leave the runtime origin unset. Install preparation only pulls
-and inspects images, and never invokes create/start. AP-09 owns hosted run dispatch;
-AP-10 owns runtime delivery and upstream output/artifact synchronization.
+be passed. The Daemon supplies run-scoped credentials and an owner-labeled
+artifact volume; see [App runtime](apps-runtime.md). Install preparation pulls and inspects images. Only a run may create and start a workload. See [hosted runs](apps-runs.md) for dispatch.

@@ -1,7 +1,6 @@
 # Ringfour Studio
 
-`apps/console` is the deployable, authenticated Ringfour Studio. The owner
-approved this production target during AP-21. Auth0 and server workspace roles
+`apps/console` is the deployable, authenticated Ringfour Studio. Auth0 and server workspace roles
 remain mandatory in development and production.
 
 The Platform stack serves the compiled production Studio. For source development,
@@ -22,7 +21,7 @@ Auth0 settings as build arguments. Its host port remains 5173; Nginx listens on
 container port 80. The `development` target remains available for explicit source
 previews.
 Workspace and installation identity live in URLs; ordinary links support browser
-Back, refresh and direct entry. See the [AP-21 guide](../../docs/human-testing/AP-21.md).
+Back, refresh and direct entry.
 
 ## Production bundle and container
 
@@ -54,9 +53,7 @@ screen. `nginx.conf.template` defines the serving behavior.
 
 Vite development builds include development-time checks and effect replay. Use
 the compiled target for normal use and performance checks. Nginx compresses the
-JavaScript/CSS/SVG responses and caches hashed assets. The workspace operating
-rule normally reserves stack operations for the operator; the owner explicitly
-authorized the Console-only reload during the 25 November slowdown investigation.
+JavaScript/CSS/SVG responses and caches hashed assets. Stack operations are performed by the operator.
 
 ## Browser and production fixtures
 
@@ -67,12 +64,7 @@ uses Camera Snapshot Loop on virt2 and Robot B, an imported private App, and a
 small synthetic PNG to exercise receipt verification and preview. It creates
 no real API records and is not live Auth0/robot acceptance.
 
-`../../scripts/ap21-production-smoke.mjs` checks an already built fixture bundle
-in a disposable web container. It does not build or reload either running stack.
-The reproducible setup and limitations are in [AP-21 evidence](../../docs/evidence/AP-21.md).
-
-The old mission fixture script, source-overlay Dockerfile and static Studio
-prototype are retained under `docs/archive/legacy-mission-workflows/console`.
+From the Platform root, `node scripts/test-studio-browser.mjs` starts a disposable development preview and runs the same fixture. On Linux, set `RINGFOUR_BROWSER_LIBRARY_PATH` if Chromium needs libraries installed outside the system search path. Screenshots from the standalone demo are written to `apps/console/test-results/browser/`.
 
 ## Supplied Studio views
 
@@ -97,5 +89,4 @@ or a centered form inside App tabs.
 
 Use [the source guide](src/README.md) for the feature/module map, controller/view
 boundaries, `CollectionPage`/`StudioPage` templates and shared `SchemaFields`.
-[Frontend architecture](../../docs/frontend-architecture.md) records the refactor
-and the workflow for adding a screen without duplicating data/auth/form logic.
+The source guide also covers auth, state ownership and route tests.

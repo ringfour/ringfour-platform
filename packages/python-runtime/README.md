@@ -92,5 +92,3 @@ SOURCE_DATE_EPOCH=$(git log -1 --format=%ct -- packages/python-runtime) \
 ```
 
 Retain the source commit, build epoch, backend versions and wheel checksum.
-Runner-only runtime compatibility is documented in the
-[mission-era archive](../../docs/archive/legacy-mission-workflows/README.md).

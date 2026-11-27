@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 // Isolated browser fixture: no real Auth0, API, database, robot or storage writes.
 // This exercises actual Studio components; it is not live/human acceptance.
 const origin = process.env.CONSOLE_URL ?? "http://localhost:5173";
-const output = resolve(process.env.SCREENSHOT_DIR ?? new URL("../../../docs/evidence/ap21-browser", import.meta.url).pathname);
+const output = resolve(process.env.SCREENSHOT_DIR ?? new URL("../test-results/browser", import.meta.url).pathname);
 const date = new Date().toISOString();
 const org = { id: "workshop", name: "Ringfour Workshop", role: "owner" };
 const robots = [{ id: "virt2", organization_id: org.id, name: "virt2", appearance: "base101" }, { id: "robot-b", organization_id: org.id, name: "Robot B" }];

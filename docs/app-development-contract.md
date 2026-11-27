@@ -1,7 +1,6 @@
 # App development fastlane v1
 
-New Ringfour design, authorized 2026-11-27. This extends Apps and does not restore
-mission execution or the fixed Runner. Models and dependencies live in the image.
+A development session runs an installed App with source supplied over pinned HTTPS. Models and dependencies live in the image.
 
 An Owner or Developer opens a 300–28800 second session against an installed App
 on an idle enrolled robot. One unexpired open session per robot reserves the robot
@@ -61,3 +60,5 @@ polls so cached local authority is closed on the next successful poll; existing
 grant TTLs still bound disconnected source access. Disabling the Daemon listener
 closes its cached sessions and stops development runs instead of leaving them
 running without expiry enforcement.
+
+See the [App development guide](app-development.md) for setup and the source sync workflow.

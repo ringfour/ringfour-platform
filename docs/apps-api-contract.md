@@ -1,20 +1,12 @@
 # Apps API and runtime v1 — new Ringfour design
 
-Status: AP-01/02 contracts/persistence, AP-03 inventory, AP-04 local wheel
-packaging and AP-05 catalog/grants are implemented. AP-06 supplies authoring;
-AP-08 supplies the owner-scoped engine and AP-07 implements durable installation,
-configuration, update/rollback, machine revision reads and installation observations.
-AP-07 dispatch is opt-in and requires an installation-capable negotiated Daemon.
-Hosted start/stop and run/runtime observation consumers remain AP-09/AP-10 work.
-AP-05 deployment was confirmed; hosted registry/Auth0 and AP-07 operator deployment
-remain explicit external gates. See [installation design](apps-installation.md).
-[Manifest v1](apps-contract.md) defines release validation; the
-[active plan](milestones/apps-pivot.md) tracks implementation.
-[Device protocol v1](apps-device-contract.md) defines the separate exchange.
+The [manifest](apps-contract.md), [installation contract](apps-installation.md),
+[hosted runs](apps-runs.md), [runtime](apps-runtime.md) and
+[device protocol](apps-device-contract.md) describe the supported App workflows.
+Installation dispatch requires an installation-capable negotiated Daemon.
 
 OpenAPI: [hosted API](../packages/contracts/openapi/ringfour-api.v1.yaml) and
-[local runtime](../packages/contracts/openapi/ringfour-runtime.v1.yaml). Operations carry `x-implementation-status: implemented` or `contract-only`
-according to the active milestone.
+[local runtime](../packages/contracts/openapi/ringfour-runtime.v1.yaml). Operations carry `x-implementation-status: implemented` or `contract-only`.
 [Resource definitions](../packages/contracts/schemas/apps/v1/api.schema.json),
 [mutation inputs](../packages/contracts/schemas/apps/v1/requests.schema.json),
 and [App errors](../packages/contracts/schemas/errors/v2/app-error.schema.json)
@@ -32,7 +24,7 @@ shared application code.
 | Import | Server UUID; unique `(organization_id, revision_id)`. Retains original publisher, App and revision. Source is server-derived `store` or `direct_share` with grant ID. |
 | Installation | Server UUID; unique active `(robot_id, app_id)`. Removed records remain as historical tombstones with `removed_at`; reinstall creates a new UUID. Robot workspace and App identity never change. |
 | Configuration revision | Server UUID, append-only complete validated values bound to one installation and release schema, with actor/time. Never overwrite a prior version. |
-| Run | Server UUID and shared execution-row UUID for AP-02; references installation and an immutable snapshot. No mission record is required. |
+| Run | Server UUID and shared execution-row UUID; references installation and an immutable snapshot. No mission record is required. |
 | Operation | Server UUID for one durable action, independent of the run UUID. Start and stop reference their exact run. Install/configure/update/rollback/uninstall have `run_id: null`. |
 
 Owner/developer in publisher A may publish and grant/revoke revision shares.
@@ -51,8 +43,7 @@ guessed inaccessible private revision remains scoped 404. Store installs can
 create this authorized import in the same transaction as the installation and
 operation. An existing authorized import is reused. A later grant revocation
 prevents new imports through that grant; it does not revoke already imported
-revisions or rewrite provenance. Import deletion/revocation is not introduced
-in this slice. Cross-workspace or inaccessible object lookups return scoped
+revisions or rewrite provenance. An import retains its provenance. Cross-workspace or inaccessible object lookups return scoped
 404; insufficient action role in an accessible workspace returns 403.
 
 Publishing verifies registry media type, concrete platform digest and immutable
@@ -132,7 +123,7 @@ like "whatever is active". If a different nonterminal run is active, return
 `active_run_changed`; if the intended run has already ended, record a no-op
 success for that run without acting on a later one. Same-key retries always
 return the original operation. The device must independently enforce this
-binding, enrollment/deployment ownership and deadline (remaining device slice).
+binding, enrollment/deployment ownership and deadline.
 
 Run states are `accepted → running → succeeded | failed | stopped | interrupted`;
 fast outcomes can skip a delivered running observation. Preparation refusal can
@@ -165,7 +156,7 @@ request/receipt times. Unknown end time stays null on interruption even though
 `observed_at` its confirmation. `last_observed_at` retains the last successful
 installation observation across disconnects. It never proves current liveness.
 Current/offline connectivity and fresh Agent inventory are separate robot
-observations still to be specified in the device slice. Studio and CLI must
+observations in the device protocol. Studio and CLI must
 render last-known activity and its timestamp rather than relabeling an old
 observation as current running.
 
@@ -196,9 +187,7 @@ is explicit. `next_offset = offset + decoded length`; offsets must address the
 retained byte range. `sealed` means the local journal is final, not that all
 bytes are hosted. Stop must finalize output before cleanup; pending upload must
 not vanish with the container. App-scoped and global App Logbook filters return
-the same run/event UUIDs, with separate robot events retained. The new v3 page
-is additive; AP-10 must combine legacy and App history in the product read model
-without breaking the existing legacy history endpoint or its parser.
+the same run/event UUIDs, with separate robot events retained. See [runtime evidence](apps-runtime.md) for run attribution and delivery.
 
 Interaction v2 replaces legacy `execution_id` attribution with `run_id` in the
 new namespace. A submitted response has no confirmation timestamp and leaves
@@ -218,35 +207,16 @@ block. `daemon_upgrade_required` identifies a peer without negotiated support;
 `ownership_conflict` and `container_lost` must never trigger blind recreation.
 Do not expose registry tokens or full engine inspections in error messages.
 
-Daemon inventory/negotiation and CLI/Studio summary readers are independently
-tested against the same fixtures. AP-03 wires inventory into the Daemon and
-API; CLI/Studio product surfaces remain later slices. Their implementations
-must consume the same state, failure, ID and observation fields.
-Negotiation/inventory schemas and cross-language reader fixtures are defined in the device contract.
-AP-02 adds the Apps PostgreSQL persistence model and a shared execution-slot
-constraint across App and legacy execution rows. The approved reset boundary
-initializes a fresh application schema and restores only users, organizations,
-memberships/roles and Auth0 subject mappings with their IDs. Historical
-application rows, outputs, artifact bytes, HITL timestamps and pending work are
-discarded under the explicit user-authorized reset; only identity JSON is
-retained. Full application backup gates were waived for this reset. AP-02
-preserves device SQLite enrollment/outbox data; AP-03 adds inventory reporting.
-Installation/run writers and dispatch remain gated by their corresponding milestones.
+The Daemon, CLI and Studio consume the same state, failure, ID and observation fields. See the [device protocol](apps-device-contract.md) for negotiation and [database schema](database-schema.md) for persistence and recovery. Only the authorized Daemon receives engine authority. See the [engine integration check](../tests/integration/daemon-engine.py).
 
-AP-15 retires the old Runner/mission socket fixtures. App engine tests enforce
-that only the authorized daemon receives engine authority; Apps and the server
-do not receive the socket. See tests/e2e/ap08-engine.py and AP-14/AP-15 evidence.
-
-
-## AP-05 registry and catalog contract
+## Registry and catalog contract
 
 New design: `POST /v1/device/app-registry-grants` refreshes ephemeral pull
 credentials, bound to a current negotiated machine session, nonterminal and
 unexpired install/update/rollback operation, installation candidate operation,
 revision and exact image target. The candidate and its workspace import are
 server-owned authority. Recheck them after the registry exchange before returning
-credentials. This endpoint creates no operation or installation; AP-07 supplies
-those writers. Machine requests do not use human mutation idempotency headers.
+credentials. This endpoint creates no operation or installation. Machine requests do not use human mutation idempotency headers.
 
 Only operator-allowlisted registry hosts and repository prefixes are contacted.
 Private policies additionally require an explicit publisher workspace binding;
@@ -284,8 +254,7 @@ limits to 100 and rechecks authority on every page. Search is literal,
 case-insensitive App name/key/description matching, bounded to 200 characters.
 
 Hosted App JSON bodies are bounded to 65,536 bytes, including publication wrappers.
-No AP-05 database migration is required; AP-02 supplied the catalog, import/share
-and permanent App idempotency tables. Secrets and ephemeral grants are not stored.
+Secrets and ephemeral grants are not stored.
 
 Publisher workspaces may import/install their own private revisions without a
 share. A different destination workspace still needs an explicit share for a
@@ -293,7 +262,7 @@ private release. The existing `store` import source denotes the path without a
 share; it does not imply that the imported release has public visibility.
 
 
-## AP-21 Studio read support (new interface design)
+## Studio read support
 
 `GET /v1/app-installations/{installation_id}/configuration-revisions` lists
 retained configurations confirmed `succeeded/applied` by this installation's

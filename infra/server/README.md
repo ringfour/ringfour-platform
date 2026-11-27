@@ -1,9 +1,6 @@
 # Server stack
 
-This basic stack runs PostgreSQL, Adminer, the Platform API, and the internal Console.
-It intentionally contains no daemon or Runner; those run on the robot. The
-Console service uses the app's Vite development server and is for internal
-development/basic self-hosting only, not production publishing.
+The server stack runs PostgreSQL, Adminer, the API, Studio, and the development registry and its UI. Studio serves its compiled bundle through Nginx. The robot runs its own Agent and Daemon.
 
 Set `AUTH0_DOMAIN` and `AUTH0_WEB_CLIENT_ID`, then start it with:
 
@@ -67,13 +64,7 @@ verified email address as the invitation.
 See [`docs/organization-management.md`](../../docs/organization-management.md)
 for the full invitation flow and acceptance steps.
 
-`tests/integration/compose/docker-compose.yml` is a legacy integration fixture
-for older Daemon/Runner tests, not a deployment or current App acceptance
-stack. Its historical setup notes are in the
-[mission-era archive](../../docs/archive/legacy-mission-workflows/infra/legacy-integration-compose-README.md).
-
-
-## App image registry (AP-05)
+## App image registry
 
 Catalog publication and machine pulls require an explicit registry policy.
 Set `APPS_REGISTRY_HOST` and `APPS_REGISTRY_REPOSITORY_PREFIX`; blank values fail
@@ -96,11 +87,7 @@ For a registry policy bound to one publisher, use the same UUID for
 `APPS_REGISTRY_PUBLISHER_ORGANIZATION_ID`. The value is server configuration
 and is never read from an App manifest.
 
-Follow [AP-05 human testing](../../docs/human-testing/AP-05.md) to reload the API
-and verify two-workspace publication/sharing/imports. The operator performs that
-stack operation. Changing the publisher setting alone needs only a Platform
-reload. Deploying AP-18 code also requires both API migrations and the updated
-Daemon; see [AP-18 human testing](../../docs/human-testing/AP-18.md).
+Publisher configuration changes take effect when the operator reloads the Platform. API migrations and compatible Daemon versions are required for App updates and uninstall.
 
 
 ## Studio serving mode
@@ -111,5 +98,4 @@ runtime setting. The public port is still `${CONSOLE_PORT:-5173}`, mapped to
 Nginx port 80. This avoids Vite module delivery and React development effect replay
 in ordinary use. The Dockerfile's `development` target is opt-in; `npm run dev`
 remains the source-preview workflow. Rebuild Console when its code or public SPA
-configuration changes. See [Studio layout](../../docs/studio-layout.md) and
-[AP-21 evidence](../../docs/evidence/AP-21.md).
+configuration changes. See [Studio layout](../../docs/studio-layout.md).

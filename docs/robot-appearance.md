@@ -25,7 +25,7 @@ the original source remains untouched.
 
 EF migration `20261126110845_RobotAppearance` adds nullable `robots.appearance`
 and extends the audit type constraint. It selects `base101` for the existing
-robot named `virt2`, as requested, only when exactly one robot has that name.
+robot named `virt2` only when exactly one robot has that name.
 Ambiguous names are left unchanged and can be set by an owner in the Console.
 Other existing robots retain the default icon. The migration is transactional
 and is applied by normal API startup. Downgrade removes the column and the

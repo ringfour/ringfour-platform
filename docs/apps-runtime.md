@@ -1,8 +1,6 @@
-# App runtime — AP-10 new design
+# App runtime
 
-App runs use the existing separately packaged runtime clients and per-robot
-Daemon HTTP routes. Runner and its credential fallback were retired in AP-15.
-App credentials are independent of Runner's secret: a persisted private Daemon
+Apps use independently packaged runtime clients and per-robot Daemon HTTP routes. A persisted private Daemon
 key derives deterministic, run-scoped tokens and SQLite stores only token hashes,
 expiry and revocation. Replacement recovers the same credential. Only the owning
 robot/run can use it, and new requests require an observed running container.
@@ -26,7 +24,7 @@ only the Daemon's durable applied acknowledgement confirms it. Bind every prompt
 answer, artifact and Logbook event to its exact run/robot/workspace. App and
 installation filters select the same events in global and scoped history.
 
-## Live settings — AP-17
+## Live settings
 
 For a v2 App that declares `runtime_settings`, the Daemon also injects the
 run-scoped `RINGFOUR_SETTINGS_URL` and `RINGFOUR_SETTINGS_TOKEN`. Use

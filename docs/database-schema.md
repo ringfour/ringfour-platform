@@ -1,10 +1,6 @@
-# Database schema — Apps pivot
+# Database schema
 
-This guide describes the persistence boundaries for the current Apps product
-and the identity records retained across the AP-02 reset. It is an orientation
-for contributors, not a replacement for EF migrations, model configuration, or
-the API contracts. The original mission-era schema guide is preserved at
-[database-schema-pre-apps.md](archive/legacy-mission-workflows/contracts/database-schema-pre-apps.md).
+Platform persistence is defined by the EF migrations, model configuration and API contracts.
 
 ## Stores and ownership
 
@@ -19,15 +15,11 @@ the checked-in migration chain.
   API's relational records bind those objects to their organization, robot,
   installation, run, and immutable metadata.
 
-AP-14 drops managed UI sessions. AP-15 drops mission/script/development tables
-and generic hosted operations. The App-only schema preserves identity, robot,
-App and shared App/Agent evidence records. Historical migrations remain to
-support upgrades and fresh installation.
+Keep historical migrations in the chain to support both upgrades and fresh installations.
 
 ## Identity and organization records
 
-AP-02 preserves the existing `users`, `organizations`, and `memberships`
-records, including their IDs and Auth0 subject mapping. Membership role is the
+Preserve `users`, `organizations`, and `memberships` records, including their IDs and Auth0 subject mapping. Membership role is the
 source of organization authority. Device and App records are scoped through
 organization ownership and robot enrollment; an App manifest cannot assert its
 publisher or grant access.
@@ -79,30 +71,20 @@ API semantics and authorization boundaries.
    and run identities. Acknowledgement must follow durable local or hosted
    persistence as required by the relevant contract.
 6. Add or update isolated PostgreSQL/SQLite migration and recovery checks with
-   the milestone that changes the schema. Do not claim live deployment or
+   each schema change. Do not claim live deployment or
    acceptance from model-level checks alone.
 
-The current EF history includes the Apps persistence, inventory, installation,
-run dispatch, and runtime-evidence migrations through
-`20261124085103_AppRuntimeEvidence`. AP-08V changes deployment topology only and
-adds no schema migration. AP-specific evidence records the exact migration and
-runtime acceptance state.
-
 ## Organization deletion
 
-`organizations.deleted_at` (nullable timestamptz, migration `20261127100016_OrganizationDeletion`) records explicit Owner deletion. Active organizations have null. Deletion removes all memberships transactionally; existing robot, publication and historical rows retain their original foreign keys. This preserves immutable App provenance/imports and audit evidence rather than cascading into other organizations. Human membership authorization and device authentication reject tombstoned organizations even if a credential or membership is recreated by an already in-flight request. Pending invitations, enrollment tokens, shares and robot credentials are invalidated; live device sessions are disconnected after commit. Store discovery excludes deleted publishers, while existing imports continue to grant access to retained revisions.
-
-Deletion serializes on the organization row and its robot rows, and refuses installed Apps, active runs/execution slots or pending operations. Member additions, removals, role changes, self-leaves and invitation acceptance use the organization lock to preserve membership/deletion invariants. Plain self-leave removes only the caller's membership and protects the last Owner. A sole member's confirmed Console leave uses the explicit deletion endpoint.
-
-## Organization deletion
-
-`organizations.deleted_at` is nullable; existing rows remain active. Explicit
+`organizations.deleted_at` is nullable; existing rows remain active. Migration `20261127100016_OrganizationDeletion` adds the tombstone. Explicit
 owner deletion timestamps this tombstone and removes all memberships in the same
 transaction. Robot credentials, pending invitations and shares are revoked;
 unused enrollment tokens expire. User rows and other organizations are preserved.
 Immutable App provenance, prior runs, artifacts and imports held by other
 organizations retain their original foreign keys. This is workspace removal and
 access revocation, not a physical purge of audit/provenance records.
+
+Plain self-leave protects the last Owner. A sole member who confirms deletion in Studio uses the explicit deletion endpoint. Connected device sessions disconnect after commit.
 
 Deletion serializes with membership edits and invitation acceptance using the
 organization row lock, and with App lifecycle changes using ordered robot row

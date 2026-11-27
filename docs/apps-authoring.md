@@ -1,12 +1,8 @@
-# App authoring and publication — AP-06 new design
-
-The user authorized AP-06 component work before deployed AP-05 acceptance on
-23 November 2026. AP-05 registry/Auth0 external checks stay pending. The operator
-subsequently reloaded both stacks; readiness and anonymous Store 401 are verified.
+# App authoring and publication
 
 `app.json` follows the authoring v1 schema: manifest metadata/capabilities/config,
 editable target repositories, explicit Dockerfile and source-file allowlist,
-and a checksum-pinned AP-04 local wheel bundle. It is not publication input.
+and a checksum-pinned local wheel bundle. It is not publication input.
 `app.manifest.json` follows manifest v1 and contains only concrete image digests.
 Authoring schema v2 remains additive: v1 files and published releases continue
 to validate unchanged. Select `"schema_version": 2` to declare startup
@@ -54,7 +50,7 @@ and pass `--yes` when using `--json` to publish a listed release. The server enf
 The command uses Docker's normal
 registry login, verifies the unchanged build inputs/local IDs, pushes images,
 resolves/validates concrete remote digest/platform/config, and freezes the release
-before calling AP-05. API credentials stay in the existing Auth0 keyring flow.
+before calling the publication API. API credentials stay in the existing Auth0 keyring flow.
 Registry success followed by API failure retains the same frozen manifest and
 stable request key. Different source content at an already frozen release requires
 an explicit version bump. Prior release files are immutable; output may be inspected
@@ -63,11 +59,10 @@ without requiring a local build. API metadata is published last.
 
 Commands support `--json` results and bounded structured errors/nonzero exits.
 Offline validation requires neither login nor running services. Build/publish never
-reload Platform or virtual stacks. Installation/start/stop/Store UI commands remain
-AP-07/AP-09/AP-11/AP-12 work; publishing does not start robot work.
+reload Platform or virtual stacks. Installation and start are separate operations.
 
 Robot Check uses a single `sample_count` integer (1–20, default 1), matching the
-AP-01 fixture. It reads only verified SDK `robot.imu()` with NET transport and
+manifest fixture. It reads only verified SDK `robot.imu()` with NET transport and
 requires advancing finite sample stamps within a bounded wait. SIGTERM/SIGINT
 stop its loop. It emits timestamped JSON, and writes recognizable Logbook entries
 only when execution runtime URLs/credentials are supplied. No runtime configuration
@@ -100,7 +95,6 @@ See [App runtime](apps-runtime.md) and the
 acknowledgement and helper usage.
 
 Published artifacts are immutable outputs, limited to 16 files and 16 MiB per
-file in this milestone. The per-run artifact directory is a publication source,
+file. The per-run artifact directory is a publication source,
 not persistent App working storage: caches, databases and downloaded models do
-not survive as an installation disk. Persistent working volumes are not part
-of AP-17.
+not survive as an installation disk.

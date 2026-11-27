@@ -1,6 +1,6 @@
 # Studio layout template
 
-`uifix.md` in the workspace root governs this presentation pass. Keep the shared
+Keep the shared
 Apps header and selected robot, icon rail, top-bar page tabs, Profile workspace controls, real API
 operations and existing unsaved-edit guards. The visual references are Home and
 Files. This extends the Ringfour system; it does not define a new API.
@@ -65,4 +65,10 @@ CC BY 4.0; Ringfour's palette, typography, geometry and owner instructions win.
 
 `components/forms/SchemaFields.tsx` is the common controlled renderer for startup,
 live and release forms. Its feature supplies values, disabled state, save actions
-and pending/confirmed feedback. See [frontend architecture](frontend-architecture.md).
+and pending/confirmed feedback. See the [source guide](../apps/console/src/README.md).
+
+## Store and installation
+
+Show the publisher and release alongside each listing. Keep the chosen robot visible through installation. Show missing capabilities, unavailable inventory and insufficient permissions beside the affected action. Offer the existing installation when that release is already installed. Restore pending operation state on refresh. Opening an installation and starting a run are separate actions.
+
+Use text as well as color for status, keep filters and dialogs keyboard accessible, and preserve focus when a dialog closes. Scope each request and selection to its workspace. Discard stale responses after a workspace switch.

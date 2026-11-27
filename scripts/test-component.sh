@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Run every app's component tests independently. Integration lives in tests/e2e/.
+# Run the Platform component suites.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> test packages/contracts"
 npm --prefix packages/contracts test
+uv run --no-project --with-requirements packages/contracts/requirements-test.txt python packages/contracts/test/openapi_refs.py
 
 echo "==> test apps/api (xUnit + Testcontainers via Docker)"
 # Testcontainers spawns real PostgreSQL sibling containers, so the SDK
@@ -37,3 +38,6 @@ for app in daemon cli; do
     (cd "apps/$app" && uv run pytest)
   fi
 done
+
+echo "==> test packages/python-runtime"
+(cd packages/python-runtime && uv run --frozen --with pytest pytest -q tests)

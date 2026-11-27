@@ -43,3 +43,9 @@ mode 0600 file beside its credential file and uses the existing SQLite identity;
 there is no new local database table. The existing token-driven flow stays
 available. TLS, rate limiting, log access, restart and recovery are part of the
 contract; physical device acceptance must be reported separately.
+
+## Unenroll, remove and pair again
+
+An Owner uses **Robot → Access → Enrollment and removal**. Active runs, execution slots and pending operations block removal. Idle installations are detached administratively, with their revision and run history retained. Unenrollment revokes current credentials and unused tokens. Deletion also hides the robot from active lists and permanently retires its UUID.
+
+On restart the Daemon verifies the Platform release receipt before archiving its old SQLite binding under `enrollment-history` and issuing a new pairing code. A revoked credential or an unreachable API alone leaves the old binding intact. Missing credentials, a competing writer or remaining owned App containers require operator recovery. Preserve device volumes and local evidence. Pair the fresh code into a new or eligible unenrolled record as the destination Owner.

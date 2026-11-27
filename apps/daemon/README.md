@@ -13,14 +13,11 @@ network, and configure the private Agent/runtime URLs. Only this trusted Daemon
 receives the operator-provided Engine socket. The Daemon creates App containers
 with owner/run labels and bounded resources; Apps never receive the socket or
 host data paths. See [engine operations](../../docs/apps-engine.md),
-[hosted runs](../../docs/apps-runs.md), [runtime evidence](../../docs/apps-runtime.md),
-and the [AP-08V deployment guide](../../docs/human-testing/AP-08V.md).
+[hosted runs](../../docs/apps-runs.md), [runtime evidence](../../docs/apps-runtime.md).
 
 Keep `/data` and its SQLite state across Daemon replacement. The local control
 listener serves runtime evidence on the private robot network; the status page
-is read-only. Legacy Runner coordination remains for old callers during the
-migration and is documented in the
-[mission-era archive](../../docs/archive/legacy-mission-workflows/README.md).
+is read-only.
 
 ## Develop
 
@@ -32,5 +29,4 @@ uv run pytest -q
 ```
 
 From the repository root, the corresponding component suite is
-`uv run --project apps/daemon pytest -q apps/daemon/tests`. Real Engine and
-process acceptance commands are recorded in the current AP evidence files.
+`uv run --project apps/daemon pytest -q apps/daemon/tests`. The [engine integration test](../../tests/integration/daemon-engine.py) exercises the Daemon against a disposable Docker Engine.

@@ -42,8 +42,7 @@ lib/                 API transport, public response types, paths, artifacts and 
 - Use `RunHistoryRow` and `RunStatus` for history. Use `AppArtwork`, `AppVariant`
   and `Publisher` for the same App identity across its views.
 
-See [layout rules and sizes](../../../docs/studio-layout.md) and
-[architecture/audit](../../../docs/frontend-architecture.md).
+See [layout rules and sizes](../../../docs/studio-layout.md).
 
 ## Keep responsibilities separate
 

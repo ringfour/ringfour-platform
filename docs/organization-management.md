@@ -34,22 +34,13 @@ The invitation expires after seven days. Resending rotates its token and
 extends the expiry; revocation makes the previous link unusable. Only a SHA-256
 hash of the token is persisted.
 
-## Acceptance
+## Invitation codes
 
-After configuring SMTP and reloading the existing Platform stack:
+An Owner selects a role and creates a single-use code in Organizations. Copy it before refreshing and share it privately with the intended recipient. The recipient signs in, opens **Organizations → Join organization**, and checks the workspace and role before joining. Codes expire after seven days and can be revoked. A lost code must be replaced. Code-based invitations work without SMTP.
 
-1. As an owner, invite an existing test account to a workspace as Developer.
-2. Confirm one email arrives, sign in with the existing account, and accept.
-3. Confirm the new workspace and Developer role appear in `ringfour-cli whoami`
-   and Console Organizations.
-4. Invite a new test email, complete Auth0 sign-up from the link, and accept.
-5. Verify wrong-email acceptance, expired links, revoked links and reuse after
-   acceptance are rejected; resend creates one usable replacement link.
-6. Confirm an Operator cannot list, create, resend or revoke invitations.
+## Leave or delete a workspace
 
-The SMTP provider is environment-specific, so outbound delivery must be
-accepted against the configured provider before treating email invitations as
-live-accepted.
+A member can leave from **Organizations**. When other members remain, the last Owner must transfer ownership or explicitly delete the organization. A sole remaining member must confirm deletion. Only an Owner can delete a workspace. Installed Apps, active runs and pending operations block deletion. Deletion revokes access for every member and enrolled device. Existing imports in other organizations and immutable history retain their provenance. See [database lifecycle rules](database-schema.md#organization-deletion).
 
 ## Personal profile
 

@@ -1,14 +1,8 @@
 # Ringfour Apps architecture
 
-This document describes the current Apps direction. The earlier mission/source
-upload architecture is preserved in the
-[legacy archive](archive/legacy-mission-workflows/contracts/architecture-legacy.md)
-for migration history and regression obligations.
-
 ## System boundary
 
-People authenticate with Auth0 and use the Platform API, CLI and (as AP-11
-lands) the Console. The API owns workspaces, App catalog/imports, installation
+People authenticate with Auth0 and use the Platform API, CLI and Studio. The API owns workspaces, App catalog/imports, installation
 and run intent, authorization, hosted history and evidence metadata. An
 enrolled robot Daemon connects outbound to the API using its machine
 credential. The Daemon persists local state in SQLite and coordinates the
@@ -52,7 +46,7 @@ volume are never mounted into an App.
 ## Durable evidence and recovery
 
 The Daemon writes local operation, run, output, interaction and artifact state
-before acknowledging or replicating it. AP runtime clients use per-run scoped
+before acknowledging or replicating it. App runtime clients use per-run scoped
 credentials. Artifacts are immutable local snapshots before acknowledgement;
 outputs use independent byte cursors and terminal seals. Human decisions remain
 submitted until the device confirms application. Engine/API outages preserve
@@ -79,12 +73,4 @@ Infrastructure owns Daemon and Agent lifecycle. The local server Compose stack
 contains API, PostgreSQL and development services; the sibling `ringfour-virtual`
 repository owns Base101 and device Compose. Agent and daemon form the default
 device stack; App containers are created dynamically. Runner and local source
-execution are retired. Historical design remains in the archive.
-
-## AP-14/AP-15 reduction
-
-Apps are the supported execution workflow. Runner, script/mission deployments,
-local source development sessions and managed Gradio UI are retired, including
-their routes and background workers. The virtual stack defaults to Agent and
-daemon with Docker App execution. Use compose.yaml; --apps remains an optional
-launcher spelling. See [the reduction and acceptance guide](human-testing/AP-14-15.md).
+execution are retired.

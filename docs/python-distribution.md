@@ -1,15 +1,6 @@
-# Python artifact distribution — AP-04
+# Python artifact distribution
 
-Decision, 23 November 2026: use `uv` and versioned local wheels for the Apps
-preview. This replaces AP-04's initial public-feed/release requirement. Public
-publication is deferred; it is not an acceptance prerequisite for this local
-distribution. No GitHub repository or PyPI account is created.
-
-This is a new packaging contract, not an Agent or Platform API change. SDK
-source belongs to `ringfour-sdk`; the optional runtime belongs to Platform's
-`packages/python-runtime`. Neither package imports the other's implementation.
-Robot calls still target the Agent. Runtime calls target the Daemon; App-owned
-credentials and delivery remain AP-10 work.
+The SDK and the optional Platform runtime ship as independent wheels in a versioned local bundle. SDK calls target the Agent. Runtime clients use run-scoped credentials to reach the Daemon.
 
 ## Bundle contract, version 1
 
@@ -35,7 +26,7 @@ The builder needs network access to download third-party/build dependencies;
 consumer installation does not. Pulling the pinned Python/uv base images still
 requires registry access unless already cached.
 
-The wheel versions are `0.1.0.dev0`; Agent protocol remains `1`. Older local
+The Agent wire protocol is version 1. See the release manifest for the individual wheel versions. Older local
 development wheels have the same version but are not this release: use the
 recorded checksum, never the filename alone. Once distributed, retain these
 bytes. Changed package content requires a new distribution version and a new
@@ -44,14 +35,7 @@ version, wheel checksum, Agent protocol, base image digest and future App
 revision version are separate identifiers. This bundle is not an App image or
 Store release.
 
-AP-17 adds `ringfour_runtime.settings` in runtime package `0.1.1.dev0` and a
-new `0.1.1.dev0` bundle. The accepted `0.1.0.dev0` bundle remains unchanged;
-the CLI refuses to build an App declaring live settings with that older bundle.
-The new bundle pins runtime commit `5603da2e13703420182cb6c81a0a718c5b8fb3d9`,
-wheel SHA-256 `e89de0db1b503137377e47bd9e59996a1d6579b88042fb284c3d912dcdb6b919`,
-and checksum-manifest SHA-256
-`78301da6097376e69e024bb7254a1d5aa8a7e79615e622d872bab3e0676de7f5`. It is
-available locally at
+Bundle `0.1.1.dev0` includes runtime settings support. Apps declaring live settings require a settings-capable bundle. The [release manifest](../packages/python-artifacts/release.json) pins the individual package versions, checksums and commits. The local release is installed at
 `/home/cdr/.local/share/ringfour/python-artifacts/0.1.1.dev0`.
 
 Locks and dependency wheels target CPython 3.13 on glibc Linux amd64/arm64.
@@ -67,13 +51,13 @@ the pinned SDK commit available in `../ringfour-sdk`. The orchestration script
 requires Python >=3.12; `uv` can provision its pinned build interpreter:
 
 ```sh
-python3 scripts/build-python-artifacts.py --output /tmp/ringfour-python-0.1.0.dev0
-cd /tmp/ringfour-python-0.1.0.dev0
+python3 scripts/build-python-artifacts.py --output /tmp/ringfour-python-0.1.1.dev0
+cd /tmp/ringfour-python-0.1.1.dev0
 sha256sum --check SHA256SUMS
-docker build -t ringfour-sdk:ap04 .
-docker run --rm --network none ringfour-sdk:ap04
-docker build --build-arg INSTALL_RUNTIME=true -t ringfour-sdk-runtime:ap04 .
-docker run --rm --network none ringfour-sdk-runtime:ap04 python -c \
+docker build -t ringfour-sdk:local .
+docker run --rm --network none ringfour-sdk:local
+docker build --build-arg INSTALL_RUNTIME=true -t ringfour-sdk-runtime:local .
+docker run --rm --network none ringfour-sdk-runtime:local python -c \
   'from ringfour import Robot; from ringfour_runtime import artifacts, interactions, logbook, settings; print(Robot.imu)'
 ```
 
@@ -85,4 +69,3 @@ to another build host; no private repository credentials need to travel with it.
 
 `packages/sdk-image/Dockerfile` is also usable directly with this bundle as its
 build context. It no longer accepts the Platform root/Runner wheelhouse as input.
-AP-15 removes the Runner wheelhouse and legacy launchers; App wheel distribution remains.

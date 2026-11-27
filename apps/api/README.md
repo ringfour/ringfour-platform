@@ -8,7 +8,7 @@ state and connects using its enrolled machine credential.
 Read the [architecture](../../docs/architecture.md),
 [Apps API contract](../../docs/apps-api-contract.md), and
 [database schema](../../docs/database-schema.md) before changing endpoints or
-persistence. The active AP plan records rollout order and gates.
+persistence.
 
 ## Local development
 
@@ -23,6 +23,4 @@ dotnet build apps/api/src/Ringfour.Api/Ringfour.Api.csproj
 dotnet test apps/api/tests/Ringfour.Api.Tests/Ringfour.Api.Tests.csproj
 ```
 
-The integration suite uses PostgreSQL Testcontainers. Legacy mission endpoints
-remain only for migration callers; their historical contract is in the
-[archive](../../docs/archive/legacy-mission-workflows/README.md).
+The integration suite uses PostgreSQL Testcontainers.

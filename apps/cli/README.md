@@ -115,16 +115,14 @@ no-overwrite and size/hash verification remain in effect.
 The local example uses the Platform's development registry. See
 [App authoring](../../docs/apps-authoring.md) for the manifest, pinned template,
 local wheel bundle and immutable digest flow, and
-[local registry acceptance](../../docs/human-testing/local-registry.md) for
+[local registry setup](../../docs/local-registry.md) for
 registry configuration.
 
 ## Device commands and migration
 
 Use `robot list`, `robot show`, `robot status` and `robot capabilities` to
 inspect enrolled devices. The authenticated CLI uses the same App APIs and
-role checks as Studio. Follow the [Apps milestone plan](../../docs/milestones/apps-pivot.md)
-and [AP-12 acceptance guide](../../docs/human-testing/AP-12.md) for current
-implementation and acceptance status.
+role checks as Studio.
 
 The mission, dev, script execution, legacy artifact and diagnostic fixture commands
 were retired in AP-14/AP-15. Use the `app` command group for App lifecycle,
@@ -149,7 +147,7 @@ HTTPS with a Platform-pinned certificate and short-lived token; normal App
 permissions/history/logs/files remain in use. This is not the retired mission
 `dev` command group or the fixed Runner.
 
-See [the complete development guide](../../../docs/human-testing/app-development.md)
+See [the complete development guide](../../docs/app-development.md)
 for image/model layout, rebuilding dependencies, session ownership, TTL, virtual
 ports and a production release. Initial image transfer still uses the normal
 registry; the fast path transfers source snapshots only.

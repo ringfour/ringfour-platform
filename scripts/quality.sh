@@ -1,22 +1,10 @@
 #!/usr/bin/env bash
-# Complete local gate; integration requires a disposable, configured stack.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if [ "${1:-}" != "" ] && [ "${1:-}" != "--integration" ]; then
-  echo 'Usage: bash scripts/quality.sh [--integration]' >&2
+if (( $# )); then
+  echo 'Usage: bash scripts/quality.sh' >&2
   exit 2
 fi
 bash scripts/lint.sh
 bash scripts/typecheck.sh
 bash scripts/test-component.sh
-if [ "${1:-}" = "--integration" ]; then
-  bash tests/e2e/00-health.sh
-  bash tests/e2e/01-identity.sh
-  bash tests/e2e/02-enrollment.sh
-  bash tests/e2e/02-pairing.sh
-  for scenario in ap05-catalog ap06-publish ap08-engine ap07-install ap09-runs ap10-runtime; do
-    uv run --project apps/daemon python "tests/e2e/$scenario.py"
-  done
-else
-  echo 'Integration and external device gates not run; see docs/development.md.'
-fi

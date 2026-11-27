@@ -1,16 +1,14 @@
 # Platform development
 
 This repository implements the Ringfour Platform API, device Daemon, CLI and
-internal Console. The active Apps architecture and milestone order are in the
-[Apps pivot plan](milestones/apps-pivot.md). Historical mission/source-upload
-workflows are preserved in the [archive](archive/legacy-mission-workflows/README.md).
+internal Console. See [Apps architecture](architecture.md) for component responsibilities.
 
 ## Prerequisites
 
 - .NET SDK version recorded by the API project.
 - Python 3.13 or newer and `uv` for Python projects.
 - Node.js and npm for the Console.
-- Docker Engine for PostgreSQL Testcontainers and isolated protocol acceptance.
+- Docker Engine for PostgreSQL Testcontainers and registry integration tests.
 - Auth0 CLI application settings for interactive CLI login.
 
 Use each project's committed lockfile. The SDK, Agent and virtual simulator are
@@ -19,7 +17,7 @@ separate sibling repositories; the Platform does not vendor their source.
 ## Local services
 
 The local server stack is managed from the repository root. Configure the
-ignored `Platform.env` for local Auth0 and registry settings, then start or
+ignored `.env` for local Auth0 and registry settings, then start or
 reload it as an operator action:
 
 ```sh
@@ -28,7 +26,7 @@ reload it as an operator action:
 
 The local API is normally available at `http://localhost:8080`; the local image
 registry is `127.0.0.1:5000` and its browser UI is at `http://localhost:5080`.
-Use the [registry acceptance guide](human-testing/local-registry.md) for its
+Use the [registry setup guide](local-registry.md) for its
 same-origin proxy and CORS behavior. The virtual Agent/Daemon stack is maintained
 in the sibling `ringfour-virtual` repository.
 
@@ -59,45 +57,31 @@ uv run --project apps/daemon ringfour-daemon --help
 
 The Daemon's App runtime and engine configuration are described in
 [engine operations](apps-engine.md), [hosted runs](apps-runs.md), and
-[runtime evidence](apps-runtime.md). The App virtual deployment is the default. See the sibling virtual README
-and [combined acceptance](human-testing/AP-14-15.md).
+[runtime evidence](apps-runtime.md). See the [virtual deployment guide](../../ringfour-virtual/README.md) for the simulated device.
 
 ## Database migrations
 
 API persistence uses EF Core/Npgsql migrations against PostgreSQL. Review
-[`database-schema.md`](database-schema.md) before changing storage and add new
-tables in their assigned AP. The Daemon keeps durable local state in SQLite and
+[`database-schema.md`](database-schema.md) before changing storage and its migrations. The Daemon keeps durable local state in SQLite and
 applies its ordered migrations on startup. Do not reset volumes to apply an
 ordinary migration.
 
 ## Component checks
 
-Run only the affected project checks for the change under development. Common
-commands include:
+Run these commands from the Platform checkout. Use Node.js 24, the API's .NET 10 SDK, and Python 3.13 or later. API integration tests require access to Docker for disposable PostgreSQL and registry fixtures.
 
 ```sh
-dotnet test apps/api/tests/Ringfour.Api.Tests/Ringfour.Api.Tests.csproj
-uv run --project apps/daemon pytest -q apps/daemon/tests
-uv run --project apps/cli pytest -q apps/cli/tests
+npm ci --prefix packages/contracts
+npm --prefix packages/contracts test
+uv run --with-requirements packages/contracts/requirements-test.txt python packages/contracts/test/openapi_refs.py
+npm ci --prefix apps/console
+npm --prefix apps/console test
+npm --prefix apps/console run lint
+npm --prefix apps/console run build
+dotnet test apps/api/Ringfour.slnx
+uv run --frozen --project apps/cli pytest -q apps/cli/tests
+uv run --frozen --project apps/daemon pytest -q apps/daemon/tests
+uv run --project packages/python-runtime --with pytest pytest -q packages/python-runtime/tests
 ```
 
-The Apps milestone plan records required real-protocol acceptance. Its E2E
-harnesses use disposable fixtures; they do not reload the live Platform or
-virtual stacks. Current operator checks are collected in
-[AP-08/09/10](human-testing/AP-08-10.md) and
-[AP-08V](human-testing/AP-08V.md).
-
-## Legacy compatibility
-
-The fixed Runner, mission, and development-session interfaces formerly remained in the
-repository for legacy callers and regression coverage until cutover. Their
-historical specifications and setup walkthroughs are in
-[`docs/archive/legacy-mission-workflows`](archive/legacy-mission-workflows/README.md).
-
-## AP-14/AP-15 reduction
-
-Apps are the supported execution workflow. Runner, script/mission deployments,
-local source development sessions and managed Gradio UI are retired, including
-their routes and background workers. The virtual stack defaults to Agent and
-daemon with Docker App execution. Use compose.yaml; --apps remains an optional
-launcher spelling. See [the reduction and acceptance guide](human-testing/AP-14-15.md).
+Additional integration checks exercise the [API catalog and private registry](../tests/integration/api-catalog.py), [Daemon engine recovery](../tests/integration/daemon-engine.py), [Python distribution bundle](../tests/integration/python-bundle.py), and [Garage storage adapter](../tests/integration/garage-probe/Program.cs). Each requires its documented service fixtures. Cross-application Platform acceptance is deferred.
