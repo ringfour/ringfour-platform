@@ -542,7 +542,7 @@ paths:
       - apps
       operationId: searchStoreApps
       x-implementation-status: implemented
-      description: Authenticated workspace members discover listed Apps. Listings reveal no consumer robots or history.
+      description: Authenticated workspace members discover listed Apps and can include their own workspace’s private releases.
         New Ringfour design; see docs/apps-api-contract.md.
       parameters:
       - &id009
@@ -573,6 +573,10 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: include_owned
+        in: query
+        required: false
+        schema: { type: boolean, default: false }
       responses:
         '200':
           description: Authorized scoped result

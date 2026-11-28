@@ -145,24 +145,43 @@ public static class AppCatalogEndpoints
     private static (DateTimeOffset? At, Guid? Id) Cursor(string? cursor)
     { if (cursor?.Length > 1024) throw ApiException.InvalidInput("Invalid cursor."); return Pagination.DecodeCursor(cursor); }
 
-    private static async Task<IResult> Search([FromQuery(Name = "organization_id")] Guid organizationId, string? q, string? cursor, int? limit, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct)
+    private static async Task<IResult> Search([FromQuery(Name = "organization_id")] Guid organizationId, [FromQuery(Name = "include_owned")] bool? includeOwned, string? q, string? cursor, int? limit, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct)
     {
         var user = await Caller(context, db, ct);
         await IdentityAccess.RequireMembership(db, organizationId, user.Id, OrgRole.Operator, ct);
         if (q?.Length > 200) throw ApiException.InvalidInput("Search exceeds 200 characters.");
         var (at, id) = Cursor(cursor); var size = Limit(limit);
-        var query = db.Apps.AsNoTracking().Where(a => db.Organizations.Any(o => o.Id == a.PublisherOrganizationId && o.DeletedAt == null) && db.AppRevisions.Any(r => r.AppId == a.Id && r.Visibility == "listed"));
+        var owned = includeOwned == true;
+        var query = db.Apps.AsNoTracking().Where(a =>
+            db.Organizations.Any(o => o.Id == a.PublisherOrganizationId && o.DeletedAt == null) &&
+            db.AppRevisions.Any(r => r.AppId == a.Id &&
+                (r.Visibility == "listed" || (owned && a.PublisherOrganizationId == organizationId))));
         if (!string.IsNullOrEmpty(q))
         {
             var term = q.ToLowerInvariant();
             query = query.Where(a => a.Name.ToLower().Contains(term) || a.AppKey.ToLower().Contains(term) || a.Description.ToLower().Contains(term));
         }
         if (at is not null) query = query.Where(a => a.CreatedAt > at || (a.CreatedAt == at && a.Id.CompareTo(id!.Value) > 0));
-        var rows = await query.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).Take(size + 1).ToListAsync(ct);
+        var rows = await query.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).Take(size + 1)
+            .Select(app => new
+            {
+                App = app,
+                PrivateRevision = owned && app.PublisherOrganizationId == organizationId &&
+                    !db.AppRevisions.Any(r => r.AppId == app.Id && r.Visibility == "listed")
+                    ? db.AppRevisions.Where(r => r.AppId == app.Id).OrderByDescending(r => r.PublishedAt)
+                        .ThenByDescending(r => r.Id).Select(r => (Guid?)r.Id).FirstOrDefault()
+                    : null,
+            }).ToListAsync(ct);
         var page = rows.Take(size).ToList();
-        var publisherIds = page.Select(x => x.PublisherOrganizationId).Distinct().ToArray();
+        var publisherIds = page.Select(x => x.App.PublisherOrganizationId).Distinct().ToArray();
         var publisherNames = await db.Organizations.AsNoTracking().Where(x => publisherIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
-        return Results.Json(new { items = page.Select(x => AppJson(x, config, publisherNames.GetValueOrDefault(x.PublisherOrganizationId))), next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.CreatedAt, x => x.Id) });
+        var items = page.Select(row =>
+        {
+            var app = AppJson(row.App, config, publisherNames.GetValueOrDefault(row.App.PublisherOrganizationId));
+            if (row.PrivateRevision is Guid revision) app["preview_revision_id"] = revision.ToString();
+            return app;
+        });
+        return Results.Json(new { items, next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.App.CreatedAt, x => x.App.Id) });
     }
 
     private static async Task<IResult> GetApp(Guid appId, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct)

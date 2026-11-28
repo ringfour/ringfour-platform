@@ -128,6 +128,13 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         var revision = await Json(await Post(a, $"/v1/organizations/{orgA}/app-revisions", new JsonObject { ["manifest"] = Manifest(registry.Image), ["visibility"] = "unlisted" }));
         var id = revision["id"]!.GetValue<string>();
         await Error(await b.GetAsync($"/v1/app-revisions/{id}"), 404, "not_found");
+        var key = revision["manifest"]!["app_key"];
+        var owned = await Json(await a.GetAsync($"/v1/store/apps?organization_id={orgA}&include_owned=true&q={key}"), "app_page");
+        Assert.Equal(id, Assert.Single(owned["items"]!.AsArray())!["preview_revision_id"]!.GetValue<string>());
+        var publicOnly = await Json(await a.GetAsync($"/v1/store/apps?organization_id={orgA}&q={key}"), "app_page");
+        Assert.Empty(publicOnly["items"]!.AsArray());
+        var otherWorkspace = await Json(await b.GetAsync($"/v1/store/apps?organization_id={orgB}&include_owned=true&q={key}"), "app_page");
+        Assert.Empty(otherWorkspace["items"]!.AsArray());
         var input = new JsonObject { ["revision_id"] = id, ["share_id"] = null };
         await Error(await Post(b, $"/v1/organizations/{orgB}/app-imports", input), 404, "not_found");
         var share = await Json(await Post(a, $"/v1/app-revisions/{id}/shares", new JsonObject { ["destination_organization_id"] = orgB.ToString(), ["expires_at"] = AppProtocol.Timestamp(DateTimeOffset.UtcNow.AddHours(1)) }), "share");

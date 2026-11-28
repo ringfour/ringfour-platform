@@ -84,6 +84,10 @@
             "pattern": "\\s"
           }
         },
+        "preview_revision_id": {
+          "description": "Private revision shown only in its publishing workspace catalog.",
+          "$ref": "#/$defs/uuid"
+        },
         "publisher_type": {
           "enum": [
             "ringfour",

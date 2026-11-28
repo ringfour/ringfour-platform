@@ -100,7 +100,10 @@ export function useAppStore({
         const [catalog, imported, robotRows] = await Promise.all([
           readPage<App>(
             token,
-            withQuery("/v1/store/apps", { organization_id: organizationId }),
+            withQuery("/v1/store/apps", {
+              organization_id: organizationId,
+              include_owned: "true",
+            }),
           ),
           readPage<AppImport>(
             token,
@@ -114,10 +117,10 @@ export function useAppStore({
           if (!previous || entry.imported_at > previous.imported_at)
             importedByApp.set(entry.app_id, entry);
         }
-        const publicIds = new Set(catalog.map((app) => app.id));
+        const catalogIds = new Set(catalog.map((app) => app.id));
         const privateApps = await Promise.all(
           [...importedByApp.values()]
-            .filter((entry) => !publicIds.has(entry.app_id))
+            .filter((entry) => !catalogIds.has(entry.app_id))
             .map(async (entry) => {
               const [app, revision] = await Promise.all([
                 readJson<App>(token, `/v1/apps/${entry.app_id}`),
@@ -142,7 +145,13 @@ export function useAppStore({
           ),
         );
         if (live) {
-          setApps([...catalog, ...privateApps]);
+          setApps([
+            ...catalog.map((app) => ({
+              ...app,
+              previewRevisionId: app.preview_revision_id,
+            })),
+            ...privateApps,
+          ]);
           setImports(imported);
           setRobots(robotRows);
           setInstallations(installed.flat());

@@ -40,6 +40,7 @@ export type App = {
   id: string;
   publisher_organization_id: string;
   publisher_name?: string;
+  preview_revision_id?: string;
   publisher_type?: "ringfour" | "workspace";
   app_key: string;
   name: string;
