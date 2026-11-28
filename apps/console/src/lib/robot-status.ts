@@ -3,6 +3,7 @@ export type AgentInventory = {
   observed_at: string;
   source: {
     kind: string;
+    agent_version?: string | null;
     profile: { name: string; model: string; version: string };
   };
   capabilities: string[];
@@ -13,6 +14,7 @@ export type RobotAppStatus = {
   last_seen_at: string | null;
   daemon_version?: string | null;
   recommended_daemon_version?: string | null;
+  recommended_agent_version?: string | null;
   support: string;
   supports_app_uninstall?: boolean | null;
   received_at: string | null;
@@ -29,10 +31,7 @@ export type RobotAppStatus = {
     reason?: string;
   };
 };
-export function daemonUpdate(status?: RobotAppStatus) {
-  if (status?.connectivity !== "online") return "unknown";
-  const installed = status?.daemon_version;
-  const recommended = status?.recommended_daemon_version;
+function releaseStatus(installed?: string | null, recommended?: string | null) {
   const parse = (value?: string | null) =>
     value && /^\d+\.\d+\.\d+$/.test(value)
       ? value.split(".").map(Number)
@@ -46,6 +45,25 @@ export function daemonUpdate(status?: RobotAppStatus) {
     if (current[i] > target[i]) return "incompatible";
   }
   return "current";
+}
+export function daemonUpdate(status?: RobotAppStatus) {
+  return status?.connectivity === "online"
+    ? releaseStatus(status.daemon_version, status.recommended_daemon_version)
+    : "unknown";
+}
+export function agentUpdate(status?: RobotAppStatus) {
+  if (
+    status?.connectivity === "online" &&
+    status.inventory?.reason === "unsupported_agent_protocol"
+  )
+    return "incompatible";
+  return status?.connectivity === "online" &&
+    status.inventory?.state === "available"
+    ? releaseStatus(
+        status.inventory.current?.source.agent_version,
+        status.recommended_agent_version,
+      )
+    : "unknown";
 }
 export function inventoryObservation(status?: RobotAppStatus) {
   return status?.inventory?.current ?? status?.inventory?.last_successful;

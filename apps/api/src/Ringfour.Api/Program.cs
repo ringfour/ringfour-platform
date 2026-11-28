@@ -29,6 +29,19 @@ builder.Services.AddDbContext<RingfourDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 builder.Services.AddScoped<InvitationEmailSender>();
 builder.Services.AddHttpClient<Auth0UserInfoClient>();
+builder.Services.AddHttpClient("release-versions", client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com/");
+    client.Timeout = TimeSpan.FromSeconds(3);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Ringfour-API/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+    var readToken = builder.Configuration["ReleaseVersions:GitHubToken"];
+    if (!string.IsNullOrWhiteSpace(readToken))
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", readToken);
+});
+builder.Services.AddSingleton(provider => new ReleaseVersionLookup(
+    provider.GetRequiredService<IHttpClientFactory>().CreateClient("release-versions")));
 builder.Services.AddHttpClient<AppRegistry>(client => client.Timeout = TimeSpan.FromSeconds(10))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false });
 

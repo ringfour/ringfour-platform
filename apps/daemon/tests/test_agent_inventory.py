@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 import websockets
+
 from ringfour_daemon.agent_inventory import (
     InventoryUnavailable,
     check_fresh,
@@ -63,6 +64,10 @@ def test_declared_agent_version_requires_fresh_report():
     response["result"]["agent_version"] = "1.0.0"
     current = welcome_observation(json.dumps(response))
     assert evaluate(manifest, current, platform)["status"] == "compatible"
+    # A version below the Studio recommendation still satisfies this App's minimum.
+    manifest["toolchain"]["agent"]["min_version"] = "0.9.0"
+    response["result"]["agent_version"] = "0.9.0"
+    assert evaluate(manifest, welcome_observation(json.dumps(response)), platform)["status"] == "compatible"
 
 
 @pytest.mark.parametrize("change,reason", [

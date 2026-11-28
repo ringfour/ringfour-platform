@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -29,9 +29,25 @@ test("shows App inventory and starts the installed revision with an explicit bin
           connectivity: "online",
           support: "supported",
           last_seen_at: "2026-11-20T08:00:00Z",
-          inventory: null,
+          daemon_version: "0.9.0",
+          recommended_daemon_version: "1.0.0",
+          recommended_agent_version: "1.0.0",
+          inventory: {
+            state: "available",
+            attempted_at: "2026-11-20T08:00:00Z",
+            current: {
+              observed_at: "2026-11-20T08:00:00Z",
+              source: {
+                kind: "agent_welcome",
+                agent_version: "0.9.0",
+                profile: { name: "base101", model: "base101", version: "1" },
+              },
+              capabilities: [],
+              instances: {},
+            },
+          },
         });
-      if (url.endsWith("/app-development")) return json({session: null});
+      if (url.endsWith("/app-development")) return json({ session: null });
       if (url.endsWith("/app-installations"))
         return json({
           items: [
@@ -85,6 +101,16 @@ test("shows App inventory and starts the installed revision with an explicit bin
     />,
   );
   expect(await screen.findByText("Online")).toBeTruthy();
+  const details = within(
+    screen.getByRole("region", { name: "Device details" }),
+  );
+  expect(details.getByText("Daemon software")).toBeTruthy();
+  expect(details.getByText("Agent software")).toBeTruthy();
+  expect(details.getAllByText("Installed 0.9.0")).toHaveLength(2);
+  expect(details.getAllByText("Available 1.0.0")).toHaveLength(2);
+  expect(
+    details.getByRole("link", { name: "Integrator update instructions" }),
+  ).toBeTruthy();
   expect(await screen.findByRole("link", { name: "Robot Check" })).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: "Start" }));
   expect(await screen.findByText(/Accepted/)).toBeTruthy();

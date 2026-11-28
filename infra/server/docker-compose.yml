@@ -85,6 +85,9 @@ services:
       Apps__InstallationsEnabled: ${APPS_INSTALLATIONS_ENABLED:-false}
       Apps__OfficialPublisherOrganizationId: ${APPS_OFFICIAL_PUBLISHER_ORGANIZATION_ID:-}
       Apps__LiveSettingsEnabled: ${APPS_LIVE_SETTINGS_ENABLED:-false}
+      Apps__RecommendedAgentVersion: ${APPS_RECOMMENDED_AGENT_VERSION:-}
+      Apps__RecommendedDaemonVersion: ${APPS_RECOMMENDED_DAEMON_VERSION:-}
+      ReleaseVersions__GitHubToken: ${RELEASE_VERSIONS_GITHUB_TOKEN:-}
       Apps__Registries__0__AllowHttp: ${APPS_REGISTRY_ALLOW_HTTP:-false}
       Apps__Registries__0__ApiEndpoint: ${APPS_REGISTRY_API_ENDPOINT:-}
       Apps__Registries__0__Host: ${APPS_REGISTRY_HOST:-}

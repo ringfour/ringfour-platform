@@ -4,6 +4,7 @@ import subprocess
 
 import httpx
 import pytest
+
 from ringfour_cli import release_update
 
 

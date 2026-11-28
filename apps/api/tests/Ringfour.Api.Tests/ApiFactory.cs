@@ -36,6 +36,8 @@ public sealed class ApiFactory(
             {
                 ["ConnectionStrings:Postgres"] = connectionString,
                 ["Database:MigrateOnStartup"] = migrateOnStartup ? "true" : "false",
+                ["Apps:RecommendedAgentVersion"] = "1.0.0",
+                ["Apps:RecommendedDaemonVersion"] = "1.0.0",
             };
             if (includeTestAuth)
             {

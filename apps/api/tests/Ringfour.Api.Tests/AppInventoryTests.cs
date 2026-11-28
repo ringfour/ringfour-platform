@@ -48,7 +48,8 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
     [Fact]
     public async Task Negotiated_inventory_is_scoped_replayed_fenced_and_retained_offline()
     {
-        await using var factory = new ApiFactory(postgres.ConnectionString);
+        await using var factory = new ApiFactory(postgres.ConnectionString,
+            extraConfiguration: new Dictionary<string, string?> { ["Apps:RecommendedAgentVersion"] = "1.1.0" });
         using var owner = factory.CreateAuthenticatedClient($"auth0|{Guid.NewGuid()}");
         using var outsider = factory.CreateAuthenticatedClient($"auth0|{Guid.NewGuid()}");
         var org = await OrganizationTests.CreateOrganization(owner, "Inventory owner");
@@ -67,6 +68,7 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
         await AssertError(await device.PutAsync("/v1/device/app-inventory",
             new StringContent(new string(' ', 65537), Encoding.UTF8, "application/json")), HttpStatusCode.RequestEntityTooLarge);
         var report = Fixture("base101_inventory");
+        report["inventory"]!["current"]!["source"]!["agent_version"] = "1.0.0";
         report["deployment_namespace"] = ns.ToString(); report["report_id"] = Guid.NewGuid().ToString();
         await AssertError(await Send(device, "/v1/device/app-inventory", report), HttpStatusCode.Conflict);
         var chosen = await Json(await Send(device, "/v1/device/app-protocol/negotiate", offer, true));
@@ -80,6 +82,8 @@ public sealed class AppInventoryTests(PostgresFixture postgres)
         await AssertError(await Send(device, "/v1/device/app-inventory", gap), HttpStatusCode.Conflict);
         var status = await Json(await owner.GetAsync($"/v1/robots/{robot}/app-status"));
         Assert.Equal("supported", status["support"]!.GetValue<string>());
+        Assert.Equal("1.1.0", status["recommended_agent_version"]!.GetValue<string>());
+        Assert.Equal("1.0.0", status["inventory"]!["current"]!["source"]!["agent_version"]!.GetValue<string>());
         Assert.True(status["supports_manifest_v2"]!.GetValue<bool>());
         Assert.False(status["supports_live_settings"]!.GetValue<bool>());
         Assert.Equal(accepted["received_at"]!.GetValue<string>(), status["received_at"]!.GetValue<string>());

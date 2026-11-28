@@ -176,6 +176,7 @@ class InventoryReport(ProtocolModel):
 class RobotAppStatus(ProtocolModel):
     daemon_version: str | None = Field(default=None, exclude_if=lambda value: value is None)
     recommended_daemon_version: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    recommended_agent_version: str | None = Field(default=None, exclude_if=lambda value: value is None)
     robot_id: Id
     connectivity: Literal["online", "offline"]
     last_seen_at: Timestamp | None

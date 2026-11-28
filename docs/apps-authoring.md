@@ -56,6 +56,26 @@ installation and each start. Older Agents with no version report are incompatibl
 with an App that declares a minimum. The shared Agent is updated through the
 operator's maintenance process.
 
+Studio also compares that fresh Agent version with the Platform API's
+latest published Agent GitHub Release. The API caches the release lookup and
+shows an unknown available version if GitHub cannot be reached. An operator
+may set `Apps:RecommendedAgentVersion` to override the feed with a reviewed
+release. Being behind this recommendation only shows an update notice; it does not
+block an App whose declared minimum is met. If the Agent does not report a
+version or the inventory is unavailable, Studio shows an unknown update state;
+a reported protocol mismatch is incompatible.
+The robot owner or integrator retains Agent lifecycle and ROS configuration.
+
+The Daemon update notice uses the latest complete Platform GitHub Release.
+That release publishes `daemon-version.txt` alongside its digest-pinned image;
+`Apps:RecommendedDaemonVersion` remains an operator override. Older Platform
+releases without the version asset show an unknown available Daemon version.
+For private GitHub repositories, configure the Platform API's
+`ReleaseVersions:GitHubToken` with a read-only GitHub token; the environment
+variable form is `ReleaseVersions__GitHubToken`. The local Compose file and
+new Platform release bundle map `RELEASE_VERSIONS_GITHUB_TOKEN` to that setting.
+Public releases need no token.
+
 `app init PATH --app-key KEY --repository REGISTRY/REPO` extracts the one Robot
 Check template from a versioned checksum-pinned archive, then applies the selected
 identity. The standalone example repository owns the source. The CLI packages a

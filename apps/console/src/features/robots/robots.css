@@ -101,6 +101,13 @@
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
+.robot-software-fact {
+  grid-column: span 2;
+}
+.robot-software-fact dd {
+  display: grid;
+  gap: 3px;
+}
 .robot-device-facts > :last-child dd {
   font-family: monospace;
 }

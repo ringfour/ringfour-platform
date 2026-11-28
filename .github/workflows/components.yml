@@ -196,12 +196,25 @@ jobs:
           printf 'RINGFOUR_API_IMAGE=%s-api@%s\nRINGFOUR_STUDIO_IMAGE=%s-studio@%s\n' \
             "$IMAGE_PREFIX" "$API_DIGEST" "$IMAGE_PREFIX" "$STUDIO_DIGEST" > dist/images.env
           printf '%s-daemon@%s\n' "$IMAGE_PREFIX" "$DAEMON_DIGEST" > dist/daemon-image.txt
+          python -c 'import runpy; print(runpy.run_path("apps/daemon/src/ringfour_daemon/__init__.py")["__version__"])' > dist/daemon-version.txt
           cp deployment/compose.yml deployment/deployment.sh deployment/.env.example deployment/README.md dist/
+          # Expose optional release-feed settings in the published Compose asset.
+          python - <<'PYRELEASE'
+          from pathlib import Path
+          path = Path('dist/compose.yml')
+          source = path.read_text()
+          anchor = '      Apps__LiveSettingsEnabled: ${APPS_LIVE_SETTINGS_ENABLED:-false}\n'
+          assert source.count(anchor) == 1
+          path.write_text(source.replace(anchor, anchor +
+              '      Apps__RecommendedAgentVersion: ${APPS_RECOMMENDED_AGENT_VERSION:-}\n' +
+              '      Apps__RecommendedDaemonVersion: ${APPS_RECOMMENDED_DAEMON_VERSION:-}\n' +
+              '      ReleaseVersions__GitHubToken: ${RELEASE_VERSIONS_GITHUB_TOKEN:-}\n'))
+          PYRELEASE
           cp deployment/robot-update.sh deployment/robot-update.service deployment/robot-update.timer dist/
           tar -C dist -czf deployment.tar.gz compose.yml deployment.sh .env.example README.md images.env
           mv deployment.tar.gz dist/
           rm dist/compose.yml dist/deployment.sh dist/.env.example dist/README.md dist/images.env
-          (cd dist && sha256sum ./*.whl ./python-artifacts.tar.gz ./deployment.tar.gz ./daemon-image.txt ./robot-update.* | sed 's|  \./|  |' > SHA256SUMS)
+          (cd dist && sha256sum ./*.whl ./python-artifacts.tar.gz ./deployment.tar.gz ./daemon-image.txt ./daemon-version.txt ./robot-update.* | sed 's|  \./|  |' > SHA256SUMS)
           export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
           export CONSOLE_ORIGIN=http://127.0.0.1:5173
           export API_PORT= CONSOLE_PORT=

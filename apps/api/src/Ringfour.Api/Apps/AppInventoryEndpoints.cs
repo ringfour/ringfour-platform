@@ -127,8 +127,14 @@ public static class AppInventoryEndpoints
         finally { fence.Release(); }
     }
 
-    private static async Task<JsonObject> Projection(Robot robot, RingfourDbContext db, DeviceConnectionManager manager, IConfiguration config, CancellationToken ct)
+    private static async Task<JsonObject> Projection(Robot robot, RingfourDbContext db, DeviceConnectionManager manager, IConfiguration config, ReleaseVersionLookup? releaseVersions, CancellationToken ct)
     {
+        var configuredAgent = string.IsNullOrWhiteSpace(config["Apps:RecommendedAgentVersion"])
+            ? null : config["Apps:RecommendedAgentVersion"];
+        var configuredDaemon = string.IsNullOrWhiteSpace(config["Apps:RecommendedDaemonVersion"])
+            ? null : config["Apps:RecommendedDaemonVersion"];
+        var latest = releaseVersions is not null && (configuredAgent is null || configuredDaemon is null)
+            ? await releaseVersions.Latest(ct) : (Agent: (string?)null, Daemon: (string?)null);
         var row = await db.RobotAppInventories.AsNoTracking().SingleOrDefaultAsync(x => x.RobotId == robot.Id, ct);
         var presence = await db.RobotPresences.AsNoTracking().SingleOrDefaultAsync(x => x.RobotId == robot.Id, ct);
         var session = manager.Get(robot.Id);
@@ -139,7 +145,8 @@ public static class AppInventoryEndpoints
             ["robot_id"] = robot.Id.ToString(), ["connectivity"] = online ? "online" : "offline",
             ["last_seen_at"] = presence is null ? null : AppProtocol.Timestamp(presence.LastSeenAt),
             ["daemon_version"] = presence?.DaemonVersion,
-            ["recommended_daemon_version"] = config["Apps:RecommendedDaemonVersion"] ?? "1.0.0",
+            ["recommended_daemon_version"] = configuredDaemon ?? latest.Daemon,
+            ["recommended_agent_version"] = configuredAgent ?? latest.Agent,
             ["support"] = negotiated ? row!.Supported ? "supported" : "upgrade_required" : "not_negotiated",
             ["supports_manifest_v2"] = negotiated ? row!.ManifestV2Supported : null,
             ["supports_live_settings"] = negotiated ? row!.LiveSettingsSupported : null,
@@ -152,10 +159,10 @@ public static class AppInventoryEndpoints
         };
     }
 
-    private static async Task<IResult> Status(Guid robotId, HttpContext context, RingfourDbContext db, DeviceConnectionManager manager, IConfiguration config, CancellationToken ct)
+    private static async Task<IResult> Status(Guid robotId, HttpContext context, RingfourDbContext db, DeviceConnectionManager manager, IConfiguration config, ReleaseVersionLookup releaseVersions, CancellationToken ct)
     {
         var (_, robot) = await RobotAccess.RequireRobotAccess(context, db, robotId, OrgRole.Operator, ct);
-        return Results.Json(await Projection(robot, db, manager, config, ct));
+        return Results.Json(await Projection(robot, db, manager, config, releaseVersions, ct));
     }
 
     private static async Task<IResult> Compatibility(Guid robotId, [FromQuery(Name = "revision_id")] Guid revisionId, HttpContext context, RingfourDbContext db, DeviceConnectionManager manager, IConfiguration config, CancellationToken ct)
@@ -169,7 +176,7 @@ public static class AppInventoryEndpoints
             await db.AppImports.AnyAsync(x => x.OrganizationId == robot.OrganizationId && x.RevisionId == revisionId, ct) ||
             await db.AppShares.AnyAsync(x => x.DestinationOrganizationId == robot.OrganizationId && x.RevisionId == revisionId && x.RevokedAt == null && x.ExpiresAt > now, ct)))
             throw ApiException.NotFound("The requested revision is not accessible.");
-        var projection = await Projection(robot, db, manager, config, ct);
+        var projection = await Projection(robot, db, manager, config, null, ct);
         return Results.Json(AppCompatibility.Evaluate(JsonNode.Parse(revision.Manifest)!.AsObject(), projection, now,
             config.GetValue("Connectivity:OfflineThresholdSeconds", 45)));
     }

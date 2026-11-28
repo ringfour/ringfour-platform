@@ -9,7 +9,7 @@ import {
   robotCredentialsPath,
   studioPath,
 } from "@/lib/location";
-import { daemonUpdate } from "@/lib/robot-status";
+import { agentUpdate, daemonUpdate } from "@/lib/robot-status";
 import { RunHistoryRow } from "@/views/RunHistoryRow";
 import { RunStatus } from "@/views/RunStatus";
 import { StudioPage, StudioSection } from "@/views/StudioPage";
@@ -52,6 +52,12 @@ export function RobotDetailPage(props: RobotDetailScope) {
         />
       </main>
     );
+  const daemonState = daemonUpdate(status ?? undefined);
+  const agentState = agentUpdate(status ?? undefined);
+  const agentVersion =
+    status?.inventory?.state === "available"
+      ? status.inventory.current?.source.agent_version
+      : null;
   return (
     <StudioPage
       heading={
@@ -101,19 +107,6 @@ export function RobotDetailPage(props: RobotDetailScope) {
                   <StudioTime value={status.last_seen_at} />
                 </p>
               )}
-              {status && (
-                <p>
-                  <strong>Daemon</strong>{" "}
-                  {status.daemon_version ?? "Not reported"} ·{" "}
-                  {daemonUpdate(status)}
-                  {daemonUpdate(status) === "update available" && (
-                    <a href="https://github.com/ringfour/ringfour-platform/blob/main/deployment/README.md">
-                      {" "}
-                      Update instructions
-                    </a>
-                  )}
-                </p>
-              )}
             </>
           }
           actions={
@@ -156,13 +149,46 @@ export function RobotDetailPage(props: RobotDetailScope) {
                   "Profile version",
                   inventory?.source?.profile?.version ?? "Not reported",
                 ],
-                ["Device ID", robot.id],
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd>{value}</dd>
                 </div>
               ))}
+              <div className="robot-software-fact">
+                <dt>Daemon software</dt>
+                <dd>
+                  <span>Installed {status?.daemon_version ?? "Unknown"}</span>
+                  <span>
+                    Available {status?.recommended_daemon_version ?? "Unknown"}
+                  </span>
+                  <span>{daemonState}</span>
+                  {daemonState === "update available" && (
+                    <a href="https://github.com/ringfour/ringfour-platform/blob/main/deployment/README.md">
+                      Update instructions
+                    </a>
+                  )}
+                </dd>
+              </div>
+              <div className="robot-software-fact">
+                <dt>Agent software</dt>
+                <dd>
+                  <span>Installed {agentVersion ?? "Unknown"}</span>
+                  <span>
+                    Available {status?.recommended_agent_version ?? "Unknown"}
+                  </span>
+                  <span>{agentState}</span>
+                  {agentState === "update available" && (
+                    <a href="https://github.com/ringfour/ringfour-agent#integrator-update">
+                      Integrator update instructions
+                    </a>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Device ID</dt>
+                <dd>{robot.id}</dd>
+              </div>
             </dl>
           </section>
         </PageHeading>
