@@ -536,6 +536,24 @@ paths:
           content:
             application/json:
               schema: {$ref: '../schemas/errors/v2/app-error.schema.json'}
+  /v1/organizations/{org_id}/apps:
+    get:
+      tags: [apps]
+      operationId: listPublishedWorkspaceApps
+      description: List Apps with a published release from this workspace, regardless of discovery visibility.
+      parameters:
+        - { name: org_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Apps published by the workspace and the latest publisher’s display name when available
+          content:
+            application/json:
+              schema: { $ref: '../schemas/apps/v1/api.schema.json#/$defs/app_page' }
+        '400': { description: Invalid paging parameters }
+        '401': { description: Authentication required }
+        '404': { description: Workspace unavailable }
   /v1/store/apps:
     get:
       tags:

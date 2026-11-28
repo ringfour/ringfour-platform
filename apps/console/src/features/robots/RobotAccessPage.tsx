@@ -145,7 +145,9 @@ export function RobotAccessPage({
         : null;
       if (
         destination?.origin === window.location.origin &&
-        destination.pathname.startsWith("/app-store/") &&
+        (destination.pathname.startsWith("/hub/") ||
+          (destination.pathname.startsWith("/apps/") &&
+            destination.searchParams.get("install") === "1")) &&
         destination.searchParams.get("workspace") === organizationId
       ) {
         destination.searchParams.set("robot", paired.id);
@@ -380,9 +382,9 @@ export function RobotAccessPage({
         >
           <h2>Enrollment and removal</h2>
           <p>
-            Stop active App runs and wait for pending operations. Idle App installations are removed automatically. Unenroll keeps
-            this robot record; Delete removes it from the active list. History
-            is retained.
+            Stop active App runs and wait for pending operations. Idle App
+            installations are removed automatically. Unenroll keeps this robot
+            record; Delete removes it from the active list. History is retained.
           </p>
           <div className="flex flex-wrap gap-3">
             <button

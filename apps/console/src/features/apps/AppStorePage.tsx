@@ -61,7 +61,7 @@ export function AppStorePage(props: {
         className="store-page"
         heading={
           <PageHeading
-            title="App Store"
+            title="Hub"
             description="Browse Apps to install on your robots."
             actions={
               <label className="app-field">
@@ -96,7 +96,7 @@ export function AppStorePage(props: {
         <div className="studio-sections">
           {apps === null ? (
             <p className="store-loading" role="status">
-              {error ? "App Store unavailable" : "Loading App Store…"}
+              {error ? "Hub unavailable" : "Loading Hub…"}
             </p>
           ) : !apps.length ? (
             <p>No Apps are available to this workspace yet.</p>

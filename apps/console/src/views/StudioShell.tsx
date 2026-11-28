@@ -1,4 +1,4 @@
-import { BookText, Bot, Grid2x2, Home, Menu, Store, X } from "lucide-react";
+import { BookText, Bot, Grid2x2, Home, Library, Menu, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { type StudioView, studioPath } from "@/lib/location";
 import { StudioWorkspace } from "./StudioBackLink";
@@ -7,7 +7,7 @@ import { StudioTopBar } from "./StudioTopBar";
 const NAV_ITEMS = [
   { label: "Home", view: "overview", icon: Home },
   { label: "Apps", view: "apps", icon: Grid2x2 },
-  { label: "App Store", view: "store", icon: Store },
+  { label: "Hub", view: "store", icon: Library },
   { label: "Robots", view: "robots", icon: Bot },
   { label: "Logbook", view: "logbook", icon: BookText },
 ] as const;

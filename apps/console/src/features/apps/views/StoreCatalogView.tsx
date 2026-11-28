@@ -18,14 +18,12 @@ import { AppArtwork } from "./AppArtwork";
 import { Publisher } from "./Publisher";
 import { hasCameraPreview, StoreHeaderImage } from "./StoreHeaderImage";
 
-type Listing = App & { previewRevisionId?: string };
-
 function CatalogRobotFit({
   app,
   robot,
   token,
 }: {
-  app: Listing;
+  app: App;
   robot: Robot;
   token: Token;
 }) {
@@ -33,13 +31,11 @@ function CatalogRobotFit({
   useEffect(() => {
     let live = true;
     async function load() {
-      const revision =
-        app.previewRevisionId ??
-        latestRevision(
-          (
-            await readPage<Revision>(token, `/v1/apps/${app.id}/revisions`)
-          ).filter((r) => r.visibility === "listed"),
-        )?.id;
+      const revision = latestRevision(
+        (
+          await readPage<Revision>(token, `/v1/apps/${app.id}/revisions`)
+        ).filter((r) => r.visibility === "listed"),
+      )?.id;
       if (!revision) throw new Error();
       const fit = await readJson<Compatibility>(
         token,
@@ -73,7 +69,7 @@ export function StoreCatalogView({
   token,
   clear,
 }: {
-  apps: Listing[];
+  apps: App[];
   workspace: string;
   robot?: Robot;
   installations: Installation[];
@@ -88,7 +84,6 @@ export function StoreCatalogView({
       app.description,
       app.publisher_name,
       app.publisher_type === "ringfour" ? "Ringfour official" : "",
-      app.previewRevisionId ? "private workspace" : "public",
     ]
       .join(" ")
       .toLowerCase()
@@ -104,7 +99,7 @@ export function StoreCatalogView({
         .find((a) => a.dataset.app === id)
         ?.focus({ preventScroll: true });
   }, []);
-  function card(app: Listing, feature = false) {
+  function card(app: App, feature = false) {
     const installed = installations.filter(
       (i) =>
         i.app_id === app.id &&
@@ -128,7 +123,6 @@ export function StoreCatalogView({
         }
         href={studioPath("store", workspace, app.id, {
           robot: robot?.id,
-          release: app.previewRevisionId,
         })}
       >
         <div className="store-card-media">
@@ -149,7 +143,6 @@ export function StoreCatalogView({
           </div>
           {feature && <h2 className="store-card-title">{app.name}</h2>}
           <p className="store-card-description">{app.description}</p>
-          {app.previewRevisionId && <small>Private to this workspace</small>}
           <div className="store-card-footer">
             {installed.length ? (
               <span>

@@ -11,14 +11,14 @@ const date = new Date().toISOString();
 const org = { id: "workshop", name: "Ringfour Workshop", role: "owner" };
 const robots = [{ id: "virt2", organization_id: org.id, name: "virt2", appearance: "base101" }, { id: "robot-b", organization_id: org.id, name: "Robot B" }];
 const camera = { id: "camera", publisher_organization_id: "official", publisher_name: "Ringfour", publisher_type: "ringfour", app_key: "camera-snapshot-loop", name: "Camera Snapshot Loop", description: "Save a camera photo every 30 seconds" };
-const privateApp = { ...camera, id: "evidence", app_key: "evidence-note", name: "Evidence Note", publisher_type: "workspace", publisher_name: "Workshop tools", description: "Write a small result file for an inspection" };
+const privateApp = { ...camera, id: "evidence", publisher_organization_id: org.id, publisher_user_name: "Operator", app_key: "evidence-note", name: "Evidence Note", publisher_type: "workspace", publisher_name: "Workshop tools", description: "Write a small result file for an inspection" };
 const releaseDescription = "Takes a camera photo every 30 seconds and saves it in Files.";
 const manifest = { schema_version: 2, app_key: camera.app_key, release: "1.0.0", display: { name: camera.name, description: releaseDescription }, capabilities: { required: [{ capability: "cameras" }], optional: [] }, targets: [{ os: "linux", architecture: "amd64", image: "registry.example/app@sha256:" + "a".repeat(64) }], configuration: { environment:{CAPTURE_INTERVAL_SECONDS:"interval_seconds"}, defaults: { interval_seconds: 30 }, schema: { properties: { interval_seconds: { type: "number", minimum: 0.5, maximum: 300 } }, required: ["interval_seconds"] } } };
 manifest.runtime_settings={defaults:{capture_interval_seconds:30},schema:{properties:{capture_interval_seconds:{type:"number",minimum:0.5,maximum:300}},required:["capture_interval_seconds"]}};
 let liveMode="idle";
 let requestedSettings={capture_interval_seconds:3.5};
 const revision = { id: "release", app_id: camera.id, publisher_organization_id: "official", manifest, visibility: "listed", manifest_digest: "sha256:" + "a".repeat(64), published_at: date };
-const privateRevision = { ...revision, id: "evidence-release", app_id: privateApp.id, visibility: "unlisted", manifest: { ...manifest, app_key: privateApp.app_key, display: { name: privateApp.name, description: "Saves a short inspection note as a file." } } };
+const privateRevision = { ...revision, id: "evidence-release", app_id: privateApp.id, publisher_organization_id: org.id, visibility: "unlisted", manifest: { ...manifest, app_key: privateApp.app_key, display: { name: privateApp.name, description: "Saves a short inspection note as a file." } } };
 const installations = robots.map((robot) => ({ id: "install-" + robot.id, app_id: camera.id, robot_id: robot.id, organization_id: org.id, installed: { revision_id: revision.id, configuration_revision_id: "config-" + robot.id, image: manifest.targets[0].image, installed_at: date, observed_at: date }, candidate: null, removed_at: null, last_observed_at: date }));
 const run = { id: "camera-run", organization_id: org.id, installation_id: installations[0].id, robot_id: "virt2", state: "succeeded", snapshot: { app_id: camera.id, revision_id: revision.id, configuration_revision_id: "config-virt2", configuration: manifest.configuration.defaults, image: manifest.targets[0].image }, requested_by: "owner", requested_at: date, observed_at: date, started_at: date, ended_at: date, completed_at: date, failure: null };
 const png = await readFile(new URL("../public/app-artwork/camera-capture.png", import.meta.url));
@@ -35,6 +35,7 @@ function fixture(url) {
   if (path.endsWith("/app-status")) return { connectivity: "online", last_seen_at: date, received_at: date, support: "supported", supports_app_uninstall: true, platform: { os: "linux", architecture: "amd64" }, inventory: { state: "available", current: { observed_at: date, capabilities: ["cameras", "imu"], instances: { cameras: ["base"] }, source: { profile: { name: "base101", model: "Simulator", version: "1" } } } } };
   if (path.endsWith("/app-compatibility")) return { status: "compatible", inventory_observed_at: date, missing_required: [], missing_optional: [], missing_native: [] };
   if (path === "/v1/store/apps") return pageOf([camera]);
+  if (path === `/v1/organizations/${org.id}/apps`) return pageOf([privateApp]);
   if (path.endsWith("/app-imports")) return pageOf([camera, privateApp].map((item) => ({ id: "import-" + item.id, app_id: item.id, revision_id: item.id === privateApp.id ? privateRevision.id : revision.id, imported_at: date, source: { kind: "store" } })));
   if (path === "/v1/apps/camera") return camera;
   if (path === "/v1/apps/evidence") return privateApp;
@@ -107,7 +108,7 @@ try {
     await writeFile(resolve(output,process.env.BENCHMARK_FILE ?? "navigation-benchmark.json"),JSON.stringify(report,null,2));
     console.log(JSON.stringify(report));
   } else {
-  for (const [name, path] of [["home", "/overview"], ["store", "/app-store"], ["listing", "/app-store/camera?robot=virt2"], ["apps", "/apps"], ["enrollment", "/robots/enroll"], ["robots", "/robots"], ["robot", "/robots/virt2"], ["credentials", "/robots/virt2/credentials"], ["app", "/apps/camera/overview?installation=install-virt2"], ["settings", "/apps/camera/settings?installation=install-robot-b"], ["activity", "/apps/camera/activity?installation=install-virt2"], ["run", "/runs/camera-run"], ["files", "/apps/camera/files?installation=install-virt2"], ["logbook", "/runs"], ["timeline", "/timeline"], ["run-output", "/runs/camera-run?tab=Output"], ["organizations", "/settings/workspace"], ["health", "/settings/health"], ["profile", "/settings/profile"]]) {
+  for (const [name, path] of [["home", "/overview"], ["store", "/hub"], ["listing", "/hub/camera?robot=virt2"], ["apps", "/apps"], ["enrollment", "/robots/enroll"], ["robots", "/robots"], ["robot", "/robots/virt2"], ["credentials", "/robots/virt2/credentials"], ["app", "/apps/camera/overview?installation=install-virt2"], ["settings", "/apps/camera/settings?installation=install-robot-b"], ["activity", "/apps/camera/activity?installation=install-virt2"], ["run", "/runs/camera-run"], ["files", "/apps/camera/files?installation=install-virt2"], ["logbook", "/runs"], ["timeline", "/timeline"], ["run-output", "/runs/camera-run?tab=Output"], ["organizations", "/settings/workspace"], ["health", "/settings/health"], ["profile", "/settings/profile"]]) {
     await tab.goto(origin + path + (path.includes("?") ? "&" : "?") + "workspace=workshop");
     await tab.waitForLoadState("networkidle");
     if (name === "run") {
@@ -161,16 +162,11 @@ try {
       if (!await cards.first().locator(".robot-card-image").isVisible()) throw new Error("Robot image is missing from its card");
     }
     if (name === "store") {
-      const cards = tab.locator(".store-listing-card");
-      if (await cards.count() !== 2) throw new Error("Store should show a full card per App");
-      const evidence = tab.getByRole("link", { name: "View Evidence Note" });
-      if (!(await evidence.getAttribute("href"))?.includes("release=evidence-release") || !await evidence.getByText(privateRevision.manifest.display.description, { exact: true }).isVisible()) throw new Error("Private card lost its imported release description");
-      for (const card of await cards.all()) {
-        const headerImage = card.locator("img.store-header-image");
-        await headerImage.scrollIntoViewIfNeeded();
-        await headerImage.evaluate((img) => img.decode());
-      }
-      await tab.evaluate(() => window.scrollTo(0, 0));
+      if (await tab.locator(".store-listing-card").count()) throw new Error("Hub included Apps from the drawer");
+    }
+    if (name === "apps") {
+      const evidence = tab.getByRole("link", { name: /Evidence Note/ });
+      if (!await evidence.getByText("Operator · Workshop tools", { exact: true }).isVisible()) throw new Error("App drawer lost the workspace publisher");
     }
     if (name === "listing") {
       if (!await tab.getByText(releaseDescription, { exact: true }).isVisible()) throw new Error("Store listing lost the App description");
@@ -214,19 +210,21 @@ try {
   }
   // Editorial review fixtures are scoped to this browser and removed before the other journeys.
   const twins = ["Harbor Lab", "Workshop tools"].map((publisher_name, index) => ({
-    ...privateApp, id: "check-" + index, app_key: "robot-check-" + index,
+    ...privateApp, publisher_organization_id: "review-" + index, id: "check-" + index, app_key: "robot-check-" + index,
     name: "Robot Check", description: "Check the robot sensors", publisher_name,
   }));
   let reviewCatalog = [camera];
   await tab.route("**/api/v1/store/apps?**", route => route.fulfill({json:pageOf(reviewCatalog)}));
   await tab.route("**/app-imports*", route => route.fulfill({json:pageOf([])}));
+  await tab.route("**/app-installations*", route => route.fulfill({json:pageOf([])}));
+  const discoveryApp = {...privateApp, publisher_organization_id: "other-publisher"};
   for (const [name, catalog, query, count] of [
     ["one", [camera], "", 1],
-    ["four", [camera, privateApp, ...twins], "", 4],
-    ["similar", [camera, privateApp, ...twins], "&q=Robot%20Check", 2],
+    ["four", [camera, discoveryApp, ...twins], "", 4],
+    ["similar", [camera, discoveryApp, ...twins], "&q=Robot%20Check", 2],
   ]) {
     reviewCatalog = catalog;
-    await tab.goto(origin + "/app-store?workspace=workshop" + query);
+    await tab.goto(origin + "/hub?workspace=workshop" + query);
     await tab.locator(".store-listing-card").first().waitFor();
     if (await tab.locator(".store-listing-card").count() !== count) throw new Error("Unexpected catalog size: " + name);
     if (query && await tab.locator("[data-featured]").count()) throw new Error("Feature duplicated in search");
@@ -237,18 +235,18 @@ try {
   }
   await tab.unroute("**/api/v1/store/apps?**");
   await tab.unroute("**/app-imports*");
-  await tab.goto(origin + "/app-store?workspace=workshop&robot=virt2&q=Evidence");
-  await tab.getByRole("link",{name:"View Evidence Note"}).click();
-  await tab.getByRole("heading",{name:"Release",exact:true}).waitFor();
+  await tab.unroute("**/app-installations*");
+  await tab.goto(origin + "/apps?workspace=workshop&q=Evidence");
+  await tab.getByRole("link",{name:/Evidence Note/}).click();
+  await tab.getByRole("heading",{name:"Evidence Note",exact:true}).waitFor();
   if (await tab.locator("figure.store-capture").count()) throw new Error("Private App displayed an unrelated preview");
   await tab.goBack();
-  const restored = tab.getByRole("link",{name:"View Evidence Note"});
-  await restored.waitFor();
-  if (!tab.url().includes("robot=virt2&q=Evidence") || !await restored.evaluate(node => node === document.activeElement)) throw new Error("Back lost catalog context or focus");
+  await tab.getByRole("link",{name:/Evidence Note/}).waitFor();
+  if (!tab.url().includes("q=Evidence")) throw new Error("Back lost App drawer search");
   const longTitle = "Inspection evidence from the cameras on the warehouse simulator during an overnight survey";
   await tab.route("**/apps/evidence/revisions*", route => route.fulfill({json:pageOf([{...privateRevision,manifest:{...privateRevision.manifest,display:{...privateRevision.manifest.display,name:longTitle}}}])}));
   await tab.route("**/app-compatibility?**", route => route.fulfill({json:{status:"missing_required",missing_required:[{capability:"cameras"}],missing_optional:[],missing_native:[],inventory_observed_at:date}}));
-  await tab.goto(origin + "/app-store/evidence?workspace=workshop&release=evidence-release&robot=virt2");
+  await tab.goto(origin + "/hub/evidence?workspace=workshop&release=evidence-release&robot=virt2");
   await tab.getByRole("heading",{name:longTitle}).waitFor();
   await tab.getByText("virt2 does not report this capability").waitFor();
   if (await tab.getByRole("button",{name:"Install on virt2",exact:true}).isEnabled()) throw new Error("Incompatible installation enabled");
@@ -294,7 +292,7 @@ try {
   await tab.waitForURL("**/runs?workspace=workshop&group=Finished");
   await tab.getByRole("combobox",{name:"Status",exact:true}).selectOption("succeeded");
   if (!tab.url().includes("state=succeeded")) throw new Error("Logbook filters were not retained in the URL");
-  await tab.goto(origin + "/app-store/camera?workspace=workshop&robot=robot-b&install=1");
+  await tab.goto(origin + "/hub/camera?workspace=workshop&robot=robot-b&install=1");
   const dialog = tab.getByRole("dialog"); await dialog.waitFor();
   if (!(await dialog.getByRole("link", { name: "Open on Robot B" }).getAttribute("href"))?.includes("install-robot-b")) throw new Error("Existing installation lost Robot B context");
   await tab.keyboard.press("Tab");
@@ -376,7 +374,7 @@ try {
   await liveSection.getByText("This App release does not declare live settings. Startup configuration remains available above.",{exact:true}).waitFor();
   await tab.screenshot({path:resolve(output,"settings-unsupported-desktop.png"),fullPage:true});
   if (errors.length) throw new Error(errors.join("\n"));
-  await writeFile(resolve(output, "results.json"), JSON.stringify({ fixture: true, live_acceptance: false, screenshots: results, store_one_four_similar: true, store_filtered_back_focus: true, robot_header_device_details: true, native_modal_keyboard: true, mobile_navigation_keyboard: true, shared_app_header: true, shared_page_headers: true, shared_content_grid: true, section_cards: true, aligned_form_widths: true, live_settings_feedback: true, full_width_chrome: true, page_heading_back: true, restored_logbook: true, logbook_output_and_filter_back: true, neutral_palette: true, icon_only_sidebar: true, inline_logbook_groups: true, profile_workspace_picker: true, inline_page_tabs: true, profile_navigation_dirty_guard: true, topbar_organization_picker: true, wide_logbook: true, dirty_link_back_forward_guards: true, verified_image_preview: true, robot_credentials_back_refresh: true, alias_normalization: true }, null, 2));
+  await writeFile(resolve(output, "results.json"), JSON.stringify({ fixture: true, live_acceptance: false, screenshots: results, store_one_four_similar: true, drawer_filtered_back: true, robot_header_device_details: true, native_modal_keyboard: true, mobile_navigation_keyboard: true, shared_app_header: true, shared_page_headers: true, shared_content_grid: true, section_cards: true, aligned_form_widths: true, live_settings_feedback: true, full_width_chrome: true, page_heading_back: true, restored_logbook: true, logbook_output_and_filter_back: true, neutral_palette: true, icon_only_sidebar: true, inline_logbook_groups: true, profile_workspace_picker: true, inline_page_tabs: true, profile_navigation_dirty_guard: true, topbar_organization_picker: true, wide_logbook: true, dirty_link_back_forward_guards: true, verified_image_preview: true, robot_credentials_back_refresh: true, alias_normalization: true }, null, 2));
   console.log(JSON.stringify({ passed: true, fixture: true, screenshots: results.length * 2, output }));
   }
 } finally { await browser.close(); }

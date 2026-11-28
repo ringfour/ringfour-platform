@@ -4,7 +4,7 @@ import { type StudioView, studioPath } from "@/lib/location";
 const names: Record<string, string> = {
   overview: "Home",
   apps: "Apps",
-  store: "App Store",
+  store: "Hub",
   robots: "Robots",
   logbook: "Logbook",
   timeline: "Timeline",

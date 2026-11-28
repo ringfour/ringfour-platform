@@ -36,6 +36,8 @@ export function AppExecution({
   apps,
   token,
   canOperate,
+  canInstall,
+  releaseId,
   pendingOperation = false,
   onAction,
 }: {
@@ -48,6 +50,8 @@ export function AppExecution({
   apps: Record<string, App>;
   token: Token;
   canOperate: boolean;
+  canInstall: boolean;
+  releaseId?: string;
   pendingOperation?: boolean;
   onAction: (kind: "update" | "start" | "stop") => void;
 }) {
@@ -218,14 +222,19 @@ export function AppExecution({
         </div>
         <div className="shrink-0">
           {!installation?.installed ? (
-            <a
-              className="button-primary"
-              href={studioPath("store", organizationId, app.id, {
-                robot: robot?.id,
-              })}
-            >
-              Find a release to install
-            </a>
+            canInstall &&
+            releaseId && (
+              <a
+                className="button-primary"
+                href={studioPath("apps", organizationId, app.id, {
+                  install: "1",
+                  robot: robot?.id,
+                  release: releaseId,
+                })}
+              >
+                Install App
+              </a>
+            )
           ) : currentRun ? (
             <button
               className="button-danger inline-flex items-center gap-2"

@@ -455,11 +455,34 @@ def app_search(query: str | None = typer.Argument(None), org: str | None = typer
     if json_output:
         console.print_json(data={"items": items})
         return
-    table = Table(title="App Store")
+    table = Table(title="Hub")
     for heading in ("App ID", "Name", "Key", "Publisher"):
         table.add_column(heading)
     for item in items:
         table.add_row(item["id"], item["name"], item["app_key"], item["publisher_organization_id"])
+    console.print(table)
+
+
+@apps_app.command("list")
+def app_list(org: str | None = typer.Option(None, "--org"), json_output: bool = typer.Option(False, "--json")):
+    """List Apps published by or added to the selected workspace."""
+    settings, store = _settings(), auth.TokenStore()
+    organization = _resolve_org(settings, org)
+    published = _pages(f"/v1/organizations/{organization}/apps", settings, store)
+    items = {row["id"]: row for row in published}
+    for entry in _pages(f"/v1/organizations/{organization}/app-imports", settings, store):
+        app_id = entry["app_id"]
+        if app_id not in items:
+            items[app_id] = _api_request("GET", f"/v1/apps/{app_id}", settings, store).json()
+    if json_output:
+        console.print_json(data={"items": list(items.values())})
+        return
+    table = Table(title="Apps")
+    for heading in ("App ID", "Name", "Publisher", "Workspace"):
+        table.add_column(heading)
+    for item in items.values():
+        table.add_row(item["id"], item["name"], item.get("publisher_user_name") or "—",
+            item.get("publisher_name") or item["publisher_organization_id"])
     console.print(table)
 
 
@@ -981,11 +1004,10 @@ def app_publish(
                 if manifest is not None
                 else app_project.prepare_publication(root)
             )
-        visibility_label = "public App Store" if selected_visibility == "listed" else "private to publisher workspace"
+        destination = " for public discovery in Hub" if selected_visibility == "listed" else ""
         publish_console.print(
             f"Publish [bold]{preview['display']['name']}[/bold] "
-            f"({preview['app_key']} {preview['release']}) to workspace {organization} "
-            f"as {visibility_label}."
+            f"({preview['app_key']} {preview['release']}) to workspace {organization}{destination}."
         )
         needs_public_confirmation = selected_visibility == "listed" and not yes
         if needs_public_confirmation and json_output:

@@ -43,7 +43,7 @@ export function AppDetailFrame({
           description={revision?.manifest.display.description}
           metadata={
             <>
-              <Publisher app={app} />
+              <Publisher app={app} workspace={workspace} />
               {revision ? ` · Release ${revision.manifest.release}` : ""}
             </>
           }

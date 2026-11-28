@@ -109,6 +109,7 @@ set `targets[].repository` and use `app build` followed by `app publish`.
 
 ```sh
 ringfour-cli app push ./robot-check
+ringfour-cli app list
 ringfour-cli app show <app-id>
 ringfour-cli app import <revision-id>
 ringfour-cli app imports
@@ -125,7 +126,7 @@ ringfour-cli app artifacts --app <app-id> --robot <robot-id> --path-prefix repor
 ```
 
 Publication defaults to unlisted. Use the revision ID from publication for an
-import. To discover listed releases, use `app search "Robot Check"`. To start
+import. To discover public releases in the Hub, use `app search "Robot Check"`. To start
 by App and robot ID, use `app start <app-id> --robot <robot-id>`.
 
 `app configure <installation-id> --config values.json` and

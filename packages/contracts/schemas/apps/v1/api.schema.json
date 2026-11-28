@@ -88,6 +88,10 @@
           "description": "Private revision shown only in its publishing workspace catalog.",
           "$ref": "#/$defs/uuid"
         },
+        "publisher_user_name": {
+          "type": "string",
+          "description": "Display name of the latest release publisher, available in their workspace’s App drawer."
+        },
         "publisher_type": {
           "enum": [
             "ringfour",

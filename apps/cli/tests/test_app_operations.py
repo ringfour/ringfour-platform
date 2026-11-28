@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -22,7 +23,7 @@ def setup_commands(monkeypatch):
     monkeypatch.setattr(main.auth, "TokenStore", lambda: object())
     monkeypatch.setattr(main, "_idempotency_key", lambda key: key or "generated-key")
     calls = []
-    state = {"installations": []}
+    state = {"installations": [], "published": [], "imports": []}
 
     def request(method, path, settings, store, **kwargs):
         calls.append((method, path, kwargs))
@@ -31,8 +32,14 @@ def setup_commands(monkeypatch):
                 200,
                 json={"items": [{"id": ROBOT, "name": "robot-a"}], "next_cursor": None},
             )
-        if method == "POST" and path == f"/v1/organizations/{ORG}/app-imports":
-            return httpx.Response(201, json={"revision_id": REVISION})
+        if path == f"/v1/organizations/{ORG}/apps":
+            return httpx.Response(200, json={"items": state["published"]})
+        if path == f"/v1/organizations/{ORG}/app-imports":
+            if method == "POST":
+                return httpx.Response(201, json={"revision_id": REVISION})
+            return httpx.Response(200, json={"items": state["imports"]})
+        if path == f"/v1/apps/{APP}":
+            return httpx.Response(200, json={"id": APP, "name": "Borrowed App"})
         if path == f"/v1/app-revisions/{REVISION}":
             return httpx.Response(
                 200,
@@ -92,6 +99,17 @@ def setup_commands(monkeypatch):
 
     monkeypatch.setattr(main, "_api_request", request)
     return calls, state
+
+
+def test_app_list_combines_workspace_publications_and_imports_without_duplicates(monkeypatch):
+    calls, state = setup_commands(monkeypatch)
+    own = {"id": "mine", "name": "Published App", "publisher_user_name": "Ada"}
+    state["published"].append(own)
+    state["imports"].extend([{"app_id": "mine"}, {"app_id": APP}, {"app_id": APP}])
+    result = CliRunner().invoke(main.app, ["app", "list", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["items"] == [own, {"id": APP, "name": "Borrowed App"}]
+    assert [path for _, path, _ in calls].count(f"/v1/apps/{APP}") == 1
 
 
 def test_import_sends_null_share_id_when_no_share_is_provided(monkeypatch):

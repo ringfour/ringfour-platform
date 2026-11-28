@@ -69,9 +69,9 @@ test.each([
     href: "/apps?workspace=org",
     label: "Back to Apps",
   });
-  expect(back("/app-store/camera?workspace=org&robot=b&q=photo")).toEqual({
-    href: "/app-store?workspace=org&robot=b&q=photo",
-    label: "Back to App Store",
+  expect(back("/hub/camera?workspace=org&robot=b&q=photo")).toEqual({
+    href: "/hub?workspace=org&robot=b&q=photo",
+    label: "Back to Hub",
   });
 });
 
@@ -79,7 +79,7 @@ test("collection pages have no invented back destination", () => {
   for (const path of [
     "/overview",
     "/apps",
-    "/app-store",
+    "/hub",
     "/robots",
     "/runs",
     "/settings/workspace",

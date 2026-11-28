@@ -129,6 +129,15 @@ public sealed class AppCatalogTests(PostgresFixture postgres)
         var id = revision["id"]!.GetValue<string>();
         await Error(await b.GetAsync($"/v1/app-revisions/{id}"), 404, "not_found");
         var key = revision["manifest"]!["app_key"];
+        await postgres.ExecuteAsync("UPDATE users SET name = 'Ada Publisher' WHERE id = @id",
+            ("id", Guid.Parse(revision["published_by"]!.GetValue<string>())));
+        var drawer = await Json(await a.GetAsync($"/v1/organizations/{orgA}/apps"), "app_page");
+        var published = Assert.Single(drawer["items"]!.AsArray())!;
+        Assert.Equal(revision["app_id"]!.GetValue<string>(), published["id"]!.GetValue<string>());
+        Assert.Equal("Ada Publisher", published["publisher_user_name"]!.GetValue<string>());
+        Assert.Equal("A", published["publisher_name"]!.GetValue<string>());
+        await Error(await b.GetAsync($"/v1/organizations/{orgA}/apps"), 404, "not_found");
+        Assert.Empty((await Json(await b.GetAsync($"/v1/organizations/{orgB}/apps"), "app_page"))["items"]!.AsArray());
         var owned = await Json(await a.GetAsync($"/v1/store/apps?organization_id={orgA}&include_owned=true&q={key}"), "app_page");
         Assert.Equal(id, Assert.Single(owned["items"]!.AsArray())!["preview_revision_id"]!.GetValue<string>());
         var publicOnly = await Json(await a.GetAsync($"/v1/store/apps?organization_id={orgA}&q={key}"), "app_page");

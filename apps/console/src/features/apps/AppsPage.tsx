@@ -1,7 +1,8 @@
+import { useCallback } from "react";
 import { AppOperationStatus } from "@/components/AppOperationStatus";
 import { PageHeading } from "@/components/PageHeading";
 import { AppFiles } from "@/features/files/AppFiles";
-import { appPath } from "@/lib/location";
+import { appPath, useLocation } from "@/lib/location";
 import { AppActivity } from "./AppActivity";
 import { AppExecution } from "./AppExecution";
 import { AppLiveSettings } from "./AppLiveSettings";
@@ -9,12 +10,15 @@ import { AppOverview } from "./AppOverview";
 import { AppReleaseManagement } from "./AppReleaseManagement";
 import { AppStartupConfiguration } from "./AppStartupConfiguration";
 import type { AppsScope } from "./model";
+import { useAppStore } from "./useAppStore";
 import { useAppsController } from "./useAppsController";
 import { AppDetailFrame } from "./views/AppDetailFrame";
 import { InstalledAppsView } from "./views/InstalledAppsView";
+import { StoreInstallDialog } from "./views/StoreInstallDialog";
 import "@/styles/app-workflows.css";
 export function AppsPage(props: AppsScope) {
   const { organizationId, focusAppId } = props;
+  const installRequested = useLocation().searchParams.get("install") === "1";
   const {
     token,
     operation,
@@ -33,7 +37,7 @@ export function AppsPage(props: AppsScope) {
       robotFilter,
       query,
       focusedApp,
-      focusedImport,
+      focusedRevision,
       focusedInstallations,
       selectedInstallationId,
       selectedInstallation,
@@ -66,13 +70,13 @@ export function AppsPage(props: AppsScope) {
         />
       </main>
     );
-  if (focusAppId && (!focusedImport || !focusedApp))
+  if (focusAppId && !focusedApp)
     return (
       <main className="app-workflow-page">
         <PageHeading
           title="App details could not be opened"
           description={
-            error || "This App may not be imported into the selected workspace."
+            error || "This App is unavailable in the selected workspace."
           }
           actions={
             <button
@@ -142,7 +146,7 @@ export function AppsPage(props: AppsScope) {
           (selectedInstallation
             ? (selectedInstallation.installed?.revision_id ??
               selectedInstallation.candidate?.revision_id)
-            : focusedImport?.revision_id),
+            : focusedRevision?.id),
       )}
       execution={
         (selectedInstallation || focusedSection === "overview") && (
@@ -157,6 +161,8 @@ export function AppsPage(props: AppsScope) {
             apps={apps}
             token={token}
             canOperate={canOperate}
+            canInstall={canManage}
+            releaseId={focusedRevision?.id}
             pendingOperation={
               changing ||
               !!(
@@ -178,6 +184,7 @@ export function AppsPage(props: AppsScope) {
         </p>
       )}
       {operation &&
+        !installRequested &&
         focusedSection !== "settings" &&
         !(detail && focusedSection === "overview" && selectedInstallation) && (
           <AppOperationStatus
@@ -186,6 +193,13 @@ export function AppsPage(props: AppsScope) {
             onTerminal={refreshAfterOperation}
           />
         )}
+      {installRequested && canManage && (
+        <DrawerInstall
+          organizationId={organizationId}
+          workspaceRole={props.workspaceRole}
+          onChanged={refreshAfterOperation}
+        />
+      )}
       {focusedSection === "overview" && (
         <AppOverview
           app={focusedApp}
@@ -289,5 +303,39 @@ export function AppsPage(props: AppsScope) {
           </p>
         ))}
     </AppDetailFrame>
+  );
+}
+
+function DrawerInstall({
+  organizationId,
+  workspaceRole,
+  onChanged,
+}: {
+  organizationId: string;
+  workspaceRole?: string;
+  onChanged: () => void;
+}) {
+  const model = useAppStore({ organizationId, workspaceRole, drawer: true });
+  const refresh = model.refreshAfterOperation;
+  const onTerminal = useCallback(() => {
+    refresh();
+    onChanged();
+  }, [refresh, onChanged]);
+  if (!model.selectedApp || !model.selectedRevision) {
+    return model.error ? (
+      <p role="alert">{model.error}</p>
+    ) : (
+      <p role="status">Loading releases…</p>
+    );
+  }
+  return (
+    <StoreInstallDialog
+      model={{
+        ...model,
+        refreshAfterOperation: onTerminal,
+      }}
+      app={model.selectedApp}
+      revision={model.selectedRevision}
+    />
   );
 }

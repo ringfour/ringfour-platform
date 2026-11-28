@@ -38,7 +38,7 @@ test("App section links carry exact robot installation and workspace", () => {
       robot: "robot-b",
       release: "release",
     }),
-  ).toBe("/app-store/camera?workspace=workshop&robot=robot-b&release=release");
+  ).toBe("/hub/camera?workspace=workshop&robot=robot-b&release=release");
 });
 
 test("dirty navigation cancellation leaves URL and history unchanged", () => {
@@ -75,4 +75,15 @@ test("List and Timeline keep the same robot, App, state and time window", async 
   );
   for (const [key, value] of Object.entries(filters))
     expect(list.searchParams.get(key)).toBe(value);
+});
+
+test("legacy Store bookmarks redirect to the Hub with their filters", () => {
+  const input = new URL(
+    "https://example.test/app-store/camera?workspace=org&robot=one#details",
+  );
+  expect(resolveStudioRoute(input)).toEqual({
+    view: "store",
+    id: "camera",
+    normalized: "/hub/camera?workspace=org&robot=one#details",
+  });
 });

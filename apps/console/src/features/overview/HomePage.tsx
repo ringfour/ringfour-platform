@@ -297,7 +297,7 @@ export function HomePage({
               className="button-secondary"
               href={studioPath("store", organizationId)}
             >
-              Browse App Store
+              Browse Hub
             </a>
           </div>
           <details className="mt-6 text-sm text-muted-foreground">

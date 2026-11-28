@@ -13,7 +13,7 @@ import {
   readPage,
   withQuery,
 } from "@/lib/apps";
-import { replaceQuery, studioPath, useLocation, visit } from "@/lib/location";
+import { appPath, replaceQuery, useLocation, visit } from "@/lib/location";
 import type { RobotAppStatus } from "@/lib/robot-status";
 
 const message = (error: unknown) =>
@@ -22,9 +22,11 @@ const message = (error: unknown) =>
 export function useAppStore({
   organizationId,
   workspaceRole,
+  drawer = false,
 }: {
   organizationId: string;
   workspaceRole?: string;
+  drawer?: boolean;
 }) {
   const token = useApiToken();
   const location = useLocation();
@@ -35,9 +37,7 @@ export function useAppStore({
   const operationId = location.searchParams.get("operation") ?? "";
   const query = location.searchParams.get("q") ?? "";
   const [statuses, setStatuses] = useState<Record<string, RobotAppStatus>>({});
-  const [apps, setApps] = useState<
-    (App & { previewRevisionId?: string })[] | null
-  >(null);
+  const [apps, setApps] = useState<App[] | null>(null);
   const [selectedApp, setSelectedApp] = useState<App | null>(null);
   const [releaseRows, setRevisions] = useState<Revision[]>([]);
   const [imports, setImports] = useState<AppImport[]>([]);
@@ -66,8 +66,10 @@ export function useAppStore({
   const canInstall = workspaceRole === "owner" || workspaceRole === "developer";
   const selectedRevision = requestedRelease
     ? revisions.find((item) => item.id === requestedRelease)
-    : (latestRevision(revisions.filter((r) => r.visibility === "listed")) ??
-      latestRevision(revisions));
+    : drawer
+      ? latestRevision(revisions)
+      : (latestRevision(revisions.filter((r) => r.visibility === "listed")) ??
+        latestRevision(revisions));
   const robotId =
     requestedRobot ?? (robots.length === 1 ? robots[0].id : undefined) ?? "";
   const robot = robots.find((item) => item.id === robotId);
@@ -98,44 +100,20 @@ export function useAppStore({
     const load = async () => {
       try {
         const [catalog, imported, robotRows] = await Promise.all([
-          readPage<App>(
-            token,
-            withQuery("/v1/store/apps", {
-              organization_id: organizationId,
-              include_owned: "true",
-            }),
-          ),
+          drawer || selectedId
+            ? Promise.resolve([])
+            : readPage<App>(
+                token,
+                withQuery("/v1/store/apps", {
+                  organization_id: organizationId,
+                }),
+              ),
           readPage<AppImport>(
             token,
             `/v1/organizations/${organizationId}/app-imports`,
           ),
           readPage<Robot>(token, `/v1/organizations/${organizationId}/robots`),
         ]);
-        const importedByApp = new Map<string, AppImport>();
-        for (const entry of imported) {
-          const previous = importedByApp.get(entry.app_id);
-          if (!previous || entry.imported_at > previous.imported_at)
-            importedByApp.set(entry.app_id, entry);
-        }
-        const catalogIds = new Set(catalog.map((app) => app.id));
-        const privateApps = await Promise.all(
-          [...importedByApp.values()]
-            .filter((entry) => !catalogIds.has(entry.app_id))
-            .map(async (entry) => {
-              const [app, revision] = await Promise.all([
-                readJson<App>(token, `/v1/apps/${entry.app_id}`),
-                readJson<Revision>(
-                  token,
-                  `/v1/app-revisions/${entry.revision_id}`,
-                ).catch(() => undefined),
-              ]);
-              return {
-                ...app,
-                description: revision?.manifest.display.description ?? "",
-                previewRevisionId: entry.revision_id,
-              };
-            }),
-        );
         const installed = await Promise.all(
           robotRows.map((item) =>
             readPage<Installation>(
@@ -145,13 +123,17 @@ export function useAppStore({
           ),
         );
         if (live) {
-          setApps([
-            ...catalog.map((app) => ({
-              ...app,
-              previewRevisionId: app.preview_revision_id,
-            })),
-            ...privateApps,
+          const drawerIds = new Set([
+            ...imported.map((entry) => entry.app_id),
+            ...installed.flat().map((entry) => entry.app_id),
           ]);
+          setApps(
+            catalog.filter(
+              (app) =>
+                app.publisher_organization_id !== organizationId &&
+                !drawerIds.has(app.id),
+            ),
+          );
           setImports(imported);
           setRobots(robotRows);
           setInstallations(installed.flat());
@@ -164,7 +146,7 @@ export function useAppStore({
     return () => {
       live = false;
     };
-  }, [organizationId, token, refresh]);
+  }, [organizationId, token, refresh, drawer, selectedId]);
   useEffect(() => {
     void retry;
     let live = true;
@@ -250,11 +232,7 @@ export function useAppStore({
         `/v1/organizations/${organizationId}/app-imports`,
         { revision_id: revision.id, share_id: shareId.trim() },
       );
-      visit(
-        studioPath("store", organizationId, revision.app_id, {
-          release: revision.id,
-        }),
-      );
+      visit(appPath(revision.app_id, organizationId));
       setRefresh((value) => value + 1);
     } catch (cause) {
       setError(message(cause));

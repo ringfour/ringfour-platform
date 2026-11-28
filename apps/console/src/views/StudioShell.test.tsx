@@ -33,7 +33,7 @@ test("sidebar owns main navigation and mobile navigation returns focus", async (
   expect(container.querySelector(".studio-sidebar")?.contains(navigation)).toBe(
     true,
   );
-  for (const label of ["Home", "Apps", "App Store", "Robots", "Logbook"]) {
+  for (const label of ["Home", "Apps", "Hub", "Robots", "Logbook"]) {
     expect(
       within(navigation)
         .getByRole("link", { name: label })

@@ -8,6 +8,7 @@ import {
   type AppRun,
   type AppValues,
   type Installation,
+  latestRevision,
   mutateApp,
   type Revision,
   type Robot,
@@ -94,14 +95,19 @@ export function useAppsController({
     }
     async function load() {
       try {
-        const [importRows, robotRows, runRows] = await Promise.all([
-          readPage<AppImport>(
-            token,
-            `/v1/organizations/${organizationId}/app-imports`,
-          ),
-          readPage<Robot>(token, `/v1/organizations/${organizationId}/robots`),
-          readLiveRuns(token, `/v1/organizations/${organizationId}/app-runs`),
-        ]);
+        const [publishedApps, importRows, robotRows, runRows] =
+          await Promise.all([
+            readPage<App>(token, `/v1/organizations/${organizationId}/apps`),
+            readPage<AppImport>(
+              token,
+              `/v1/organizations/${organizationId}/app-imports`,
+            ),
+            readPage<Robot>(
+              token,
+              `/v1/organizations/${organizationId}/robots`,
+            ),
+            readLiveRuns(token, `/v1/organizations/${organizationId}/app-runs`),
+          ]);
         const installationGroups = await Promise.all(
           robotRows.map((robot) =>
             readPage<Installation>(
@@ -113,16 +119,24 @@ export function useAppsController({
         const allInstallations = installationGroups.flat();
         const appIds = [
           ...new Set([
+            ...publishedApps.map((x) => x.id),
             ...importRows.map((x) => x.app_id),
             ...allInstallations.map((x) => x.app_id),
           ]),
         ];
+        const publishedById = new Map(
+          publishedApps.map((app) => [app.id, app]),
+        );
         const [appPairs, revisionPairs, configurationPairs] = await Promise.all(
           [
             Promise.all(
               appIds.map(
                 async (id) =>
-                  [id, await readJson<App>(token, `/v1/apps/${id}`)] as const,
+                  [
+                    id,
+                    publishedById.get(id) ??
+                      (await readJson<App>(token, `/v1/apps/${id}`)),
+                  ] as const,
               ),
             ),
             Promise.all(
@@ -175,8 +189,11 @@ export function useAppsController({
       }
     }
     void load();
+    const reloadOnFocus = () => setRefresh((value) => value + 1);
+    window.addEventListener("focus", reloadOnFocus);
     return () => {
       live = false;
+      window.removeEventListener("focus", reloadOnFocus);
     };
   }, [token, organizationId, refresh]);
 
@@ -264,7 +281,14 @@ export function useAppsController({
         ["accepted", "running"].includes(run.state),
     );
   const focusedApp = focusAppId ? apps[focusAppId] : undefined;
-  const focusedImport = imports.find((item) => item.app_id === focusAppId);
+  const focusedRevisions = revisionChoices[focusAppId ?? ""] ?? [];
+  const focusedRevision = latestRevision(
+    focusedRevisions.filter(
+      (revision) =>
+        revision.publisher_organization_id === organizationId ||
+        imports.some((item) => item.revision_id === revision.id),
+    ),
+  );
   const focusedInstallations = installations.filter(
     (item) => item.app_id === focusAppId,
   );
@@ -282,7 +306,7 @@ export function useAppsController({
   const focusedRobot = robots.find(
     (robot) => robot.id === selectedInstallation?.robot_id,
   );
-  const detail = !!focusAppId && !!focusedImport;
+  const detail = !!focusedApp;
   const focusedSection = ["overview", "settings", "files", "activity"].includes(
     focusSection,
   )
@@ -316,7 +340,7 @@ export function useAppsController({
       robotFilter,
       query,
       focusedApp,
-      focusedImport,
+      focusedRevision,
       focusedInstallations,
       selectedInstallationId,
       selectedInstallation,

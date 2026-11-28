@@ -54,7 +54,7 @@ export function chromeBackLink(
           robot: url.searchParams.get("robot") ?? undefined,
           q: url.searchParams.get("q") ?? undefined,
         }),
-      label: "Back to App Store",
+      label: "Back to Hub",
     };
   if (route.view === "robots" && route.id)
     return {

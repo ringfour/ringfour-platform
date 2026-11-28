@@ -16,6 +16,7 @@ public static class AppCatalogEndpoints
         var group = routes.MapGroup("/v1").RequireAuthorization().WithMetadata(new AppErrorResponse());
         group.MapPost("/organizations/{orgId:guid}/app-revisions", Publish);
         group.MapGet("/store/apps", Search);
+        group.MapGet("/organizations/{orgId:guid}/apps", Published);
         group.MapGet("/apps/{appId:guid}", GetApp);
         group.MapGet("/apps/{appId:guid}/revisions", Revisions);
         group.MapGet("/app-revisions/{revisionId:guid}", GetRevision);
@@ -145,17 +146,24 @@ public static class AppCatalogEndpoints
     private static (DateTimeOffset? At, Guid? Id) Cursor(string? cursor)
     { if (cursor?.Length > 1024) throw ApiException.InvalidInput("Invalid cursor."); return Pagination.DecodeCursor(cursor); }
 
-    private static async Task<IResult> Search([FromQuery(Name = "organization_id")] Guid organizationId, [FromQuery(Name = "include_owned")] bool? includeOwned, string? q, string? cursor, int? limit, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct)
+    private static Task<IResult> Search([FromQuery(Name = "organization_id")] Guid organizationId, [FromQuery(Name = "include_owned")] bool? includeOwned, string? q, string? cursor, int? limit, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct) =>
+        Catalog(organizationId, includeOwned == true, publishedOnly: false, q, cursor, limit, context, db, config, ct);
+
+    private static Task<IResult> Published(Guid orgId, string? cursor, int? limit, HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct) =>
+        Catalog(orgId, includeOwned: true, publishedOnly: true, null, cursor, limit, context, db, config, ct);
+
+    private static async Task<IResult> Catalog(Guid organizationId, bool includeOwned, bool publishedOnly, string? q, string? cursor, int? limit,
+        HttpContext context, RingfourDbContext db, IConfiguration config, CancellationToken ct)
     {
         var user = await Caller(context, db, ct);
         await IdentityAccess.RequireMembership(db, organizationId, user.Id, OrgRole.Operator, ct);
         if (q?.Length > 200) throw ApiException.InvalidInput("Search exceeds 200 characters.");
         var (at, id) = Cursor(cursor); var size = Limit(limit);
-        var owned = includeOwned == true;
         var query = db.Apps.AsNoTracking().Where(a =>
+            (!publishedOnly || a.PublisherOrganizationId == organizationId) &&
             db.Organizations.Any(o => o.Id == a.PublisherOrganizationId && o.DeletedAt == null) &&
             db.AppRevisions.Any(r => r.AppId == a.Id &&
-                (r.Visibility == "listed" || (owned && a.PublisherOrganizationId == organizationId))));
+                (r.Visibility == "listed" || (includeOwned && a.PublisherOrganizationId == organizationId))));
         if (!string.IsNullOrEmpty(q))
         {
             var term = q.ToLowerInvariant();
@@ -166,10 +174,17 @@ public static class AppCatalogEndpoints
             .Select(app => new
             {
                 App = app,
-                PrivateRevision = owned && app.PublisherOrganizationId == organizationId &&
+                PrivateRevision = !publishedOnly && includeOwned && app.PublisherOrganizationId == organizationId &&
                     !db.AppRevisions.Any(r => r.AppId == app.Id && r.Visibility == "listed")
                     ? db.AppRevisions.Where(r => r.AppId == app.Id).OrderByDescending(r => r.PublishedAt)
                         .ThenByDescending(r => r.Id).Select(r => (Guid?)r.Id).FirstOrDefault()
+                    : null,
+                PublisherUserName = publishedOnly
+                    ? (from revision in db.AppRevisions
+                       join publisher in db.Users on revision.PublishedByUserId equals publisher.Id
+                       where revision.AppId == app.Id
+                       orderby revision.PublishedAt descending, revision.Id descending
+                       select publisher.Name).FirstOrDefault()
                     : null,
             }).ToListAsync(ct);
         var page = rows.Take(size).ToList();
@@ -179,6 +194,8 @@ public static class AppCatalogEndpoints
         {
             var app = AppJson(row.App, config, publisherNames.GetValueOrDefault(row.App.PublisherOrganizationId));
             if (row.PrivateRevision is Guid revision) app["preview_revision_id"] = revision.ToString();
+            if (publishedOnly && !string.IsNullOrWhiteSpace(row.PublisherUserName))
+                app["publisher_user_name"] = row.PublisherUserName;
             return app;
         });
         return Results.Json(new { items, next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.App.CreatedAt, x => x.App.Id) });

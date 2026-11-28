@@ -115,7 +115,7 @@ listed release is successfully published. Existing runs retain their frozen
 manifest and image references.
 
 `app publish PATH [--org UUID] [--visibility listed|unlisted]` defaults to
-private (`unlisted`). `listed` means public App Store discovery and is reserved
+private (`unlisted`). `listed` means public Hub discovery and is reserved
 for the configured Ringfour publisher organization. The CLI prints the workspace,
 App, release and visibility before submission; public publication requires an
 interactive confirmation or `--yes`. Automation supplies an explicit visibility

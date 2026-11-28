@@ -65,9 +65,7 @@ export function visit(path: string): boolean {
   if (!window.dispatchEvent(navigation)) return false;
   const previous = window.location.pathname;
   const returning =
-    ["/runs", "/robots", "/apps", "/app-store", "/timeline"].includes(
-      previous,
-    ) &&
+    ["/runs", "/robots", "/apps", "/hub", "/timeline"].includes(previous) &&
     (next.pathname.startsWith(previous + "/") ||
       (previous === "/timeline" && next.pathname.startsWith("/runs/")));
   const fromList = returning
@@ -100,8 +98,7 @@ export function visit(path: string): boolean {
       fromList,
       fromRobot,
       storeFocus:
-        next.pathname === "/app-store" &&
-        next.pathname + next.search === fromList
+        next.pathname === "/hub" && next.pathname + next.search === fromList
           ? resolveStudioRoute(new URL(window.location.href)).id
           : undefined,
       studioIndex: (window.history.state?.studioIndex ?? 0) + 1,
@@ -157,7 +154,7 @@ export type StudioRoute = {
 const destinations: Record<StudioView, string> = {
   overview: "overview",
   apps: "apps",
-  store: "app-store",
+  store: "hub",
   robots: "robots",
   logbook: "runs",
   timeline: "timeline",
@@ -199,6 +196,14 @@ export function resolveStudioRoute(url: URL): StudioRoute {
       (path ? path.replace(/^\/logbook/, "/runs") : "/overview") +
       url.search +
       url.hash;
+    return {
+      ...resolveStudioRoute(new URL(normalized, url.origin)),
+      normalized,
+    };
+  }
+  if (path === "/app-store" || path.startsWith("/app-store/")) {
+    const normalized =
+      path.replace(/^\/app-store/, "/hub") + url.search + url.hash;
     return {
       ...resolveStudioRoute(new URL(normalized, url.origin)),
       normalized,

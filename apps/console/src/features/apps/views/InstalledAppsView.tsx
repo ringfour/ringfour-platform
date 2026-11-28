@@ -40,6 +40,21 @@ export function InstalledAppsView({
       !item.removed_at &&
       (!robotFilter || item.robot_id === robotFilter),
   );
+  const installedAppIds = new Set(
+    installations
+      .filter((item) => item.installed && !item.removed_at)
+      .map((item) => item.app_id),
+  );
+  const search = query.trim().toLowerCase();
+  const uninstalled = robotFilter
+    ? []
+    : Object.values(apps).filter(
+        (app) =>
+          !installedAppIds.has(app.id) &&
+          `${app.name} ${app.app_key} ${app.description}`
+            .toLowerCase()
+            .includes(search),
+      );
   const visible = current.flatMap((installation) => {
     const app = apps[installation.app_id];
     const robot = robots.find((item) => item.id === installation.robot_id);
@@ -50,7 +65,7 @@ export function InstalledAppsView({
     return app &&
       `${app.name} ${description ?? ""} ${robot?.name ?? ""}`
         .toLowerCase()
-        .includes(query.trim().toLowerCase())
+        .includes(search)
       ? [{ installation, app, robot, description }]
       : [];
   });
@@ -59,7 +74,7 @@ export function InstalledAppsView({
       heading={
         <PageHeading
           title="Apps"
-          description="Each card opens one App installation on a robot."
+          description="Apps published by or added to this workspace."
           actions={
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative">
@@ -87,7 +102,7 @@ export function InstalledAppsView({
                 })}
                 className="button-secondary"
               >
-                Browse App Store
+                Browse Hub
               </a>
             </div>
           }
@@ -114,17 +129,19 @@ export function InstalledAppsView({
       )}
       {loading ? (
         <p role="status">Loading Apps…</p>
-      ) : !visible.length ? (
+      ) : !(visible.length || uninstalled.length) ? (
         <div className="studio-surface p-8 text-center">
           <h2 className="font-display text-lg font-semibold text-foreground">
             {error
               ? "Apps could not be loaded"
-              : current.length
+              : search
                 ? "No Apps match that search"
-                : `No Apps installed${robotFilter ? ` on ${robots.find((robot) => robot.id === robotFilter)?.name ?? "this robot"}` : " yet"}`}
+                : robotFilter
+                  ? `No Apps installed on ${robots.find((robot) => robot.id === robotFilter)?.name ?? "this robot"}`
+                  : "No Apps in this workspace yet"}
           </h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Browse the App Store to install an App on a connected robot.
+            Browse the Hub to install an App on a connected robot.
           </p>
           {error ? (
             <button
@@ -141,12 +158,39 @@ export function InstalledAppsView({
               })}
               className="mt-5 inline-block rounded-[6px] bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
             >
-              Browse App Store
+              Browse Hub
             </a>
           )}
         </div>
       ) : (
         <div className="store-card-grid">
+          {uninstalled.map((app) => (
+            <a
+              key={app.id}
+              href={appPath(app.id, workspace)}
+              className="store-listing-card"
+            >
+              <div className="store-card-media">
+                <StoreHeaderImage app={app} />
+              </div>
+              <div className="store-card-body">
+                <div className="store-card-identity">
+                  <AppArtwork app={app} className="h-12 w-12" />
+                  <div>
+                    <h2 className="store-card-title">{app.name}</h2>
+                    <Publisher app={app} workspace={workspace} />
+                  </div>
+                </div>
+                <p className="store-card-description">{app.description}</p>
+                <div className="store-card-footer">
+                  <span>Not installed</span>
+                  <span className="store-card-link">
+                    Open App <ArrowRight size={16} aria-hidden="true" />
+                  </span>
+                </div>
+              </div>
+            </a>
+          ))}
           {visible.map(({ installation, app, robot, description }) => {
             const active = runs.find(
               (run) =>
@@ -172,7 +216,7 @@ export function InstalledAppsView({
                     <AppArtwork app={app} className="h-12 w-12" />
                     <div>
                       <h2 className="store-card-title">{app.name}</h2>
-                      <Publisher app={app} />
+                      <Publisher app={app} workspace={workspace} />
                     </div>
                   </div>
                   {description && (
