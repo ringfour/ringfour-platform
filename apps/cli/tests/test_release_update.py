@@ -13,9 +13,9 @@ def test_cached_notice_is_offline_and_version_aware(tmp_path, monkeypatch):
     cache = release_update.cache_path()
     cache.parent.mkdir(parents=True)
     cache.write_text(
-        json.dumps({"checked_at": release_update.time.time(), "version": "1.0.2"})
+        json.dumps({"checked_at": release_update.time.time(), "version": "1.0.3"})
     )
-    assert "1.0.2" in release_update.cached_notice()
+    assert "1.0.3" in release_update.cached_notice()
     cache.write_text(
         json.dumps({"checked_at": release_update.time.time(), "version": "0.9.0"})
     )
@@ -24,7 +24,7 @@ def test_cached_notice_is_offline_and_version_aware(tmp_path, monkeypatch):
 
 def test_corrupt_download_keeps_installed_cli(tmp_path, monkeypatch):
     wheel = b"different bytes"
-    filename = "ringfour_cli-1.0.2-py3-none-any.whl"
+    filename = "ringfour_cli-1.0.3-py3-none-any.whl"
     checksum = hashlib.sha256(b"expected bytes").hexdigest()
 
     def respond(request):
@@ -64,7 +64,7 @@ def test_corrupt_download_keeps_installed_cli(tmp_path, monkeypatch):
 
 def test_failed_staged_install_keeps_installed_cli(tmp_path, monkeypatch):
     wheel = b"verified wheel"
-    filename = "ringfour_cli-1.0.2-py3-none-any.whl"
+    filename = "ringfour_cli-1.0.3-py3-none-any.whl"
     checksum = hashlib.sha256(wheel).hexdigest()
 
     def respond(request):

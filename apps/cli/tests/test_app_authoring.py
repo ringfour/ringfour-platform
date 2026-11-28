@@ -287,6 +287,18 @@ def test_symlink_input_and_changed_source_refuse_publication(project):
         app_project.build_project(root, bundle)
 
 
+def test_build_accepts_symlinked_parent_of_temporary_context(project, tmp_path, monkeypatch):
+    root, bundle, _calls, _state = project
+    (root / ".dockerignore").write_text("**\n!Dockerfile\n!main.py\n")
+    document = read_json(root / "app.json")
+    document["build"]["files"].append(".dockerignore")
+    (root / "app.json").write_text(json.dumps(document))
+    shortcut = tmp_path / "shortcut"
+    shortcut.symlink_to(tmp_path, target_is_directory=True)
+    monkeypatch.setattr(app_project.tempfile, "tempdir", str(shortcut))
+    assert app_project.build_project(root, bundle)["release"] == document["release"]
+
+
 def test_frozen_release_reuses_digest_without_repush_and_new_version_preserves_history(
     project,
 ):

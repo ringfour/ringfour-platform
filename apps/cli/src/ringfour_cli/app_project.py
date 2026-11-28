@@ -138,9 +138,17 @@ def init_project(destination, app_key, repository, archive=None):
 
 
 def regular_file(root, name):
-    path = root / name
+    relative = Path(name)
+    path = root / relative
+    components = [root]
+    current = root
+    for part in relative.parts:
+        current = current / part
+        components.append(current)
     if (
-        any(part.is_symlink() for part in [path, *path.parents] if part != root.parent)
+        relative.is_absolute()
+        or ".." in relative.parts
+        or any(part.is_symlink() for part in components)
         or not path.is_file()
         or not path.resolve().is_relative_to(root.resolve())
     ):
