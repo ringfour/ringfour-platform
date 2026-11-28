@@ -267,6 +267,8 @@ def test_build_context_omits_undeclared_secrets_and_checks_wheel_hashes(project)
     root, bundle, calls, _ = project
     built = app_project.build_project(root, bundle)
     assert built["targets"][0]["image_id"].startswith("sha256:")
+    assert "repository" not in built["targets"][0]
+    assert "repository" not in read_json(root / ".ringfour/build.json")["targets"][0]
     (bundle / "linux-amd64/wheels/test.whl").write_text("tampered")
     before = len(calls)
     with pytest.raises(ValueError, match="checksum"):

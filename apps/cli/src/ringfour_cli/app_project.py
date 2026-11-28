@@ -308,7 +308,8 @@ def build_project(root, bundle=None, *, development=False):
             ).decode().strip()
             if installed != f"{sdk['version']} 1":
                 raise DockerError("Built image does not contain the declared SDK version and protocol")
-        targets.append({**target, "local_image": tag, "image_id": image["Id"]})
+        local_target = {key: value for key, value in target.items() if key != "repository"}
+        targets.append({**local_target, "local_image": tag, "image_id": image["Id"]})
     result = {
         "format_version": 1,
         "release": document["release"],
