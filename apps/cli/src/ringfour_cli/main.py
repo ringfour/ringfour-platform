@@ -478,9 +478,10 @@ def app_import(revision_id: str, org: str | None = typer.Option(None, "--org"), 
     """Import a listed release or a destination-bound direct share."""
     settings, store = _settings(), auth.TokenStore()
     organization = _resolve_org(settings, org)
-    body = {"revision_id": _app_id(revision_id)}
-    if share_id:
-        body["share_id"] = _app_id(share_id)
+    body = {
+        "revision_id": _app_id(revision_id),
+        "share_id": _app_id(share_id) if share_id else None,
+    }
     result = _api_request("POST", f"/v1/organizations/{organization}/app-imports", settings, store,
         headers={"Idempotency-Key": _idempotency_key(idempotency_key)}, json=body, _error_json=json_output).json()
     console.print_json(data=result)

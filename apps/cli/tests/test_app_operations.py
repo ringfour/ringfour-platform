@@ -31,6 +31,8 @@ def setup_commands(monkeypatch):
                 200,
                 json={"items": [{"id": ROBOT, "name": "robot-a"}], "next_cursor": None},
             )
+        if method == "POST" and path == f"/v1/organizations/{ORG}/app-imports":
+            return httpx.Response(201, json={"revision_id": REVISION})
         if path == f"/v1/app-revisions/{REVISION}":
             return httpx.Response(
                 200,
@@ -90,6 +92,15 @@ def setup_commands(monkeypatch):
 
     monkeypatch.setattr(main, "_api_request", request)
     return calls, state
+
+
+def test_import_sends_null_share_id_when_no_share_is_provided(monkeypatch):
+    calls, _ = setup_commands(monkeypatch)
+    result = CliRunner().invoke(main.app, ["app", "import", REVISION])
+    assert result.exit_code == 0, result.output
+    method, path, kwargs = calls[-1]
+    assert (method, path) == ("POST", f"/v1/organizations/{ORG}/app-imports")
+    assert kwargs["json"] == {"revision_id": REVISION, "share_id": None}
 
 
 def test_install_uses_selected_workspace_robot_and_release_defaults(monkeypatch):
