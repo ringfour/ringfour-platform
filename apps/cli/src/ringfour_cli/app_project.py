@@ -175,7 +175,7 @@ def verify_bundle(bundle, document):
     if not sums.is_file():
         raise ValueError(
             f"App wheel bundle is missing at {bundle}. "
-            "Run the Ringfour CLI installer or pass the pinned bundle directory with --wheels."
+            "Run `ringfour-cli app bundle fetch .` or pass a verified bundle directory with --wheels."
         )
     if hash_file(sums) != document["wheel_bundle"]["sha256"]:
         raise ValueError("Wheel bundle checksum manifest mismatch")

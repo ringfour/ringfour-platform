@@ -17,7 +17,8 @@ ringfour-cli login
 Release builds include public Auth0 and API defaults. The environment and per-user
 configuration can override them.
 The installer installs the CLI wheel independently. App builds use the wheel
-bundle pinned in `app.json`, which can be installed separately under
+bundle pinned in `app.json`. Run `ringfour-cli app bundle fetch PATH` to
+download and verify it under
 `${XDG_DATA_HOME:-$HOME/.local/share}/ringfour/python-artifacts`.
 
 From the Platform checkout, run the CLI directly:
@@ -74,6 +75,8 @@ ringfour-cli scaffold
 cd my-ringfour-app
 python3 main.py
 ringfour-cli app validate .
+ringfour-cli app bundle fetch .
+ringfour-cli app build .
 ```
 
 Use `ringfour-cli scaffold my-project` to choose the destination. Git preserves
@@ -96,6 +99,7 @@ ringfour-cli app init ./robot-check \
   --app-key robot-check \
   --repository 127.0.0.1:5000/ringfour/robot-check
 ringfour-cli app validate ./robot-check
+ringfour-cli app bundle fetch ./robot-check
 ringfour-cli app build ./robot-check
 ringfour-cli app publish ./robot-check
 ringfour-cli app show <app-id>

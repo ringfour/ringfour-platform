@@ -86,6 +86,7 @@ From Platform, with the normal CLI Auth0 session and publishing organization:
 uv run --project apps/cli ringfour-cli app init /tmp/local-robot-check \
   --app-key local-robot-check --repository 127.0.0.1:5000/ringfour/robot-check
 uv run --project apps/cli ringfour-cli app validate /tmp/local-robot-check --json
+uv run --project apps/cli ringfour-cli app bundle fetch /tmp/local-robot-check --json
 uv run --project apps/cli ringfour-cli app build /tmp/local-robot-check --json
 uv run --project apps/cli ringfour-cli app publish /tmp/local-robot-check --json
 ```

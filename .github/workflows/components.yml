@@ -160,6 +160,7 @@ jobs:
           python scripts/package-cli-release.py
           uv build --wheel --python 3.13 --out-dir "$PWD/dist" apps/cli
           uv tool run --isolated --python 3.13 --from "$(realpath dist/*.whl)" ringfour-cli --help
+          uv tool run --isolated --python 3.13 --from "$(realpath dist/*.whl)" ringfour-cli app bundle fetch --help
       - uses: docker/build-push-action@v6
         id: api
         with:

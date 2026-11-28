@@ -20,7 +20,14 @@ from keyring.errors import KeyringError
 from rich.console import Console
 from rich.table import Table
 
-from . import __version__, app_project, auth, release_update, sdk_release
+from . import (
+    __version__,
+    app_project,
+    auth,
+    bundle_release,
+    release_update,
+    sdk_release,
+)
 from .app_manifest import fingerprint as app_fingerprint
 from .app_manifest import read_json as read_app_json
 from .app_manifest import validate_authoring, validate_manifest
@@ -46,6 +53,8 @@ daemon_app = typer.Typer(help="Drive the local device daemon.", no_args_is_help=
 app.add_typer(daemon_app, name="daemon")
 apps_app = typer.Typer(help="Discover, import, install and operate immutable Apps.", no_args_is_help=True)
 app.add_typer(apps_app, name="app")
+app_bundle_app = typer.Typer(help="Get the App's pinned Python wheel bundle.", no_args_is_help=True)
+apps_app.add_typer(app_bundle_app, name="bundle")
 app_settings_app = typer.Typer(help="Inspect and change live App settings.", no_args_is_help=True)
 apps_app.add_typer(app_settings_app, name="settings")
 hitl_app = typer.Typer(help="Inspect and answer human interactions.", no_args_is_help=True)
@@ -909,6 +918,18 @@ def app_build(
     """Build isolated App images from explicit sources and local hash-pinned wheels."""
     _app_result(
         lambda: app_project.build_project(directory.resolve(), wheels, **({"development": True} if development else {})), json_output
+    )
+
+
+@app_bundle_app.command("fetch")
+def app_bundle_fetch(
+    directory: Annotated[Path, typer.Argument()] = Path("."),
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+):
+    """Download and verify the local wheel bundle pinned by app.json."""
+    _app_result(
+        lambda: {"bundle": str(bundle_release.fetch_project(directory.resolve()))},
+        json_output,
     )
 
 

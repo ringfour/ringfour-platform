@@ -89,6 +89,10 @@ tags. No remote schemas are fetched and no defaults silently change input.
 
 `app build PATH --wheels BUNDLE` stages only declared regular files plus verified
 wheel inputs, then builds one loaded image per platform using Docker Buildx.
+Run `ringfour-cli app bundle fetch PATH` first to install the exact bundle pinned
+in `app.json` from a Platform release. The CLI verifies the release archive and
+the bundle's manifest checksum before using it. `--wheels` accepts an existing
+verified bundle directory when the release archive is unavailable.
 Credentials, context/state files, `.env`, symlinks and engine options never become
 implicit build inputs. Images use the Dockerfile's plain entrypoint. Results in
 `.ringfour/build.json` bind source fingerprint and local image IDs, not just tags.

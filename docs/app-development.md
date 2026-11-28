@@ -52,6 +52,7 @@ Use the existing template archive/cache and hash-pinned Python artifact bundle:
 ```sh
 ringfour-cli app init my-app --app-key my-app --repository REGISTRY/ORG/my-app
 cd my-app
+ringfour-cli app bundle fetch .
 ringfour-cli app build --development
 ringfour-cli app publish
 ringfour-cli app install REVISION_UUID --robot ROBOT_UUID --config config.example.json
