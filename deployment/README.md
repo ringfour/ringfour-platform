@@ -125,7 +125,7 @@ private key out of the registry container. Both containers need read access to
 the public certificate. Keep the signing files at stable paths across releases.
 
 The registry ingress listens on `127.0.0.1:5000` by default. Point the future
-`registry.ringfour.eu` tunnel at that listener. The registry challenge points at
+`repository.ringfour.eu` tunnel at that listener. The registry challenge points at
 `https://api.ringfour.eu/registry/token` by default. Route that path to the API
 and forward Authorization headers without caching the response. If the public
 API has a different origin, configure `RINGFOUR_REGISTRY_TOKEN_REALM` accordingly.

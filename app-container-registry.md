@@ -7,7 +7,7 @@ Provide secure, multi-tenant OCI image storage and distribution for user-publish
 ## 2. Infrastructure
 
 - Deploy OCI Distribution as an additional container in the existing platform Docker Compose stack.
-- Expose through `registry.ringfour.eu` using Cloudflare Tunnel, subject to transport validation.
+- Expose through `repository.ringfour.eu` using Cloudflare Tunnel, subject to transport validation.
 - Use persistent filesystem storage initially.
 - Support migration to S3-compatible storage without changing client interfaces.
 - Disable anonymous registry access.
@@ -29,13 +29,13 @@ Provide secure, multi-tenant OCI image storage and distribution for user-publish
 Each app receives a unique, backend-assigned repository:
 
 ```text
-registry.ringfour.eu/apps/<org-id>/<app-id>
+repository.ringfour.eu/apps/<org-id>/<app-id>
 ```
 
 Each published revision references an immutable image digest:
 
 ```text
-registry.ringfour.eu/apps/<org-id>/<app-id>@sha256:...
+repository.ringfour.eu/apps/<org-id>/<app-id>@sha256:...
 ```
 
 Repository names must derive from immutable identifiers, not user-editable display names.
@@ -94,7 +94,7 @@ Extend the existing app revision entity with:
 ```json
 {
   "image": {
-    "repository": "registry.ringfour.eu/apps/org-id/app-id",
+    "repository": "repository.ringfour.eu/apps/org-id/app-id",
     "digest": "sha256:...",
     "sizeBytes": 104857600,
     "platforms": ["linux/arm64", "linux/amd64"]

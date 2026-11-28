@@ -103,8 +103,8 @@ ringfour-cli app build ./robot-check
 
 The build stays in the local Docker Engine. On a Platform with the managed
 registry enabled, `app push` builds and publishes to the repository assigned
-by Ringfour. For an external registry, set `targets[].repository` and use
-`app build` followed by `app publish`.
+by Ringfour under `repository.ringfour.eu` by default. For an external registry,
+set `targets[].repository` and use `app build` followed by `app publish`.
 
 ```sh
 ringfour-cli app push ./robot-check

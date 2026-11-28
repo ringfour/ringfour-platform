@@ -3,7 +3,7 @@ services:
   api:
     environment:
       Apps__ManagedRegistry__Enabled: "true"
-      Apps__ManagedRegistry__Host: ${RINGFOUR_REGISTRY_HOST:-registry.ringfour.eu}
+      Apps__ManagedRegistry__Host: ${RINGFOUR_REGISTRY_HOST:-repository.ringfour.eu}
       Apps__ManagedRegistry__PublishedQuotaBytes: ${RINGFOUR_REGISTRY_PUBLISHED_QUOTA_BYTES:-53687091200}
     volumes:
       - type: bind

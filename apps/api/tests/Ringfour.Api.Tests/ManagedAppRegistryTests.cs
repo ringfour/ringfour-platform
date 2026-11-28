@@ -21,7 +21,7 @@ public sealed class ManagedAppRegistryTests : IDisposable
     private readonly string directory = Directory.CreateTempSubdirectory("ringfour-registry-signing-").FullName;
     private readonly RSA key = RSA.Create(2048);
     private const string Service = "ringfour-app-registry";
-    private const string Host = "registry.ringfour.eu";
+    private const string Host = "repository.ringfour.eu";
     private const string ManifestType = "application/vnd.oci.image.manifest.v1+json";
 
     internal static Dictionary<string, string?> Settings(string directory, RSA key)

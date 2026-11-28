@@ -22,7 +22,7 @@ public sealed class ManagedAppRegistry : IDisposable
     public ManagedAppRegistry(IConfiguration config)
     {
         var settings = config.GetSection("Apps:ManagedRegistry");
-        Host = settings.GetValue("Enabled", false) ? settings["Host"] ?? "registry.ringfour.eu" : null;
+        Host = settings.GetValue("Enabled", false) ? settings["Host"] ?? "repository.ringfour.eu" : null;
         Endpoint = settings["Endpoint"] ?? "http://app-registry:5000";
         Service = settings["Service"] ?? "ringfour-app-registry";
         Issuer = settings["Issuer"] ?? "ringfour-platform";
