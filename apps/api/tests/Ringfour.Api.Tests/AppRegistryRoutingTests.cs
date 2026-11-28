@@ -25,7 +25,7 @@ public sealed class AppRegistryRoutingTests
         settings["Apps:Registries:0:ApiEndpoint"] = endpoint ?? backend.Origin;
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var image = host + backend.Image[backend.Image.IndexOf('/')..];
-        return (new AppRegistry(client, configuration, new Environment(environment)),
+        return (new AppRegistry(client, configuration, new Environment(environment), new ManagedAppRegistry(configuration)),
             new JsonObject { ["image"] = image, ["os"] = "linux", ["architecture"] = "amd64" });
     }
 

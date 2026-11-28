@@ -138,3 +138,6 @@ source operation/generation/report checkpoints. ZIPs are stored under the
 immutable deployment namespace and session ID in the daemon volume. New
 bindings cannot reuse another namespace's source. Existing App runtime, output,
 artifact and execution-slot persistence remains authoritative for execution.
+
+Managed App revisions store verified per-platform repository, digest and size entries in
+`app_revisions.images` (nullable JSONB). Legacy revisions leave it unset.

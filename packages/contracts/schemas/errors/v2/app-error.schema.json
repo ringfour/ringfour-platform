@@ -27,6 +27,7 @@
             "invalid_config",
             "revision_conflict",
             "revision_unavailable",
+            "registry_quota_exceeded",
             "share_required",
             "share_expired",
             "share_revoked",

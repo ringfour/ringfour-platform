@@ -95,13 +95,19 @@ Create, publish, discover, import, install and operate an App. Example command
 arguments in angle brackets are values you replace with IDs from prior output:
 
 ```sh
-ringfour-cli app init ./robot-check \
-  --app-key robot-check \
-  --repository 127.0.0.1:5000/ringfour/robot-check
+ringfour-cli app init ./robot-check --app-key robot-check
 ringfour-cli app validate ./robot-check
 ringfour-cli app bundle fetch ./robot-check
 ringfour-cli app build ./robot-check
-ringfour-cli app publish ./robot-check
+```
+
+The build stays in the local Docker Engine. On a Platform with the managed
+registry enabled, `app push` builds and publishes to the repository assigned
+by Ringfour. For an external registry, set `targets[].repository` and use
+`app build` followed by `app publish`.
+
+```sh
+ringfour-cli app push ./robot-check
 ringfour-cli app show <app-id>
 ringfour-cli app import <revision-id>
 ringfour-cli app imports

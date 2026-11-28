@@ -18,6 +18,7 @@ public sealed class AppRevision
     public Guid PublisherOrganizationId { get; set; }
     public string Release { get; set; } = null!;
     public string Manifest { get; set; } = null!;
+    public string? Images { get; set; }
     public string ManifestDigest { get; set; } = null!;
     public string Visibility { get; set; } = "unlisted";
     public Guid PublishedByUserId { get; set; }

@@ -394,6 +394,16 @@ export function AppReleaseManagement({
                         onChange={setValues}
                         prefix="update"
                       />
+                      {target.images?.map((image) => (
+                        <p key={image.platform}>
+                          {image.platform} ·{" "}
+                          {new Intl.NumberFormat(undefined, {
+                            style: "unit",
+                            unit: "megabyte",
+                            maximumFractionDigits: 1,
+                          }).format(image.size_bytes / 1_000_000)}
+                        </p>
+                      ))}
                       {target.manifest.runtime_settings && (
                         <>
                           <h3>Live settings for this release</h3>

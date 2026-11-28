@@ -8,9 +8,12 @@ using Ringfour.Api.Errors;
 
 namespace Ringfour.Api.Apps;
 
-public sealed record RegistryAuthorization(string Registry, string Repository, string? Token, DateTimeOffset ExpiresAt);
+public sealed record RegistryAuthorization(string Registry, string Repository, string? Token, DateTimeOffset ExpiresAt)
+{
+    public long SizeBytes { get; init; }
+}
 
-public sealed class AppRegistry(HttpClient client, IConfiguration configuration, IHostEnvironment environment)
+public sealed class AppRegistry(HttpClient client, IConfiguration configuration, IHostEnvironment environment, ManagedAppRegistry managed)
 {
     private const string OciManifest = "application/vnd.oci.image.manifest.v1+json";
     private const string DockerManifest = "application/vnd.docker.distribution.manifest.v2+json";
@@ -56,20 +59,38 @@ public sealed class AppRegistry(HttpClient client, IConfiguration configuration,
         var ct = timeout.Token;
         try
         {
-            var policy = Resolve(target["image"]!.GetValue<string>(), publisher, out var repository, out var digest);
+            var image = target["image"]!.GetValue<string>();
+            var ownRegistry = managed.Owns(image);
+            string repository;
+            string digest;
+            Policy policy;
+            if (ownRegistry)
+            {
+                var separator = image.IndexOf('@');
+                if (separator < 0 || !DigestValid(image[(separator + 1)..])) throw Unavailable(false);
+                repository = image[(managed.Host!.Length + 1)..separator];
+                digest = image[(separator + 1)..];
+                var app = repository.Split('/').Last();
+                if (!Guid.TryParseExact(app, "D", out var appId) || repository != ManagedAppRegistry.Repository(publisher, appId))
+                    throw Unavailable(false);
+                policy = new Policy(managed.Host, "apps", "https", managed.Endpoint, false, null, null, null, null);
+            }
+            else policy = Resolve(image, publisher, out repository, out digest);
             var path = $"{policy.ApiEndpoint}/v2/{repository}/";
-            RegistryAuthorization? authorization = null;
-            using var first = await Send(path + "manifests/" + digest, null, ct);
+            RegistryAuthorization? authorization = ownRegistry
+                ? new(policy.Host, repository, managed.Issue("platform-verifier", TimeSpan.FromMinutes(1), new RegistryScope(repository, ["pull"])), DateTimeOffset.UtcNow.AddMinutes(1))
+                : null;
+            using var first = await Send(path + "manifests/" + digest, authorization?.Token, ct);
             HttpResponseMessage? authenticated = null;
             try
             {
-                if (first.StatusCode == HttpStatusCode.Unauthorized)
+                if (!ownRegistry && first.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     var challenge = first.Headers.WwwAuthenticate.SingleOrDefault(x => x.Scheme.Equals("Bearer", StringComparison.OrdinalIgnoreCase));
                     authorization = await Exchange(policy, repository, challenge?.Parameter, ct);
                     authenticated = await Send(path + "manifests/" + digest, authorization.Token, ct);
                 }
-                else if (!policy.Anonymous) throw Unavailable(false);
+                else if (!ownRegistry && !policy.Anonymous) throw Unavailable(false);
                 var response = authenticated ?? first;
                 if (!response.IsSuccessStatusCode) throw Unavailable();
                 var type = response.Content.Headers.ContentType?.MediaType;
@@ -93,13 +114,33 @@ public sealed class AppRegistry(HttpClient client, IConfiguration configuration,
                 var platform = JsonNode.Parse(configBytes)!;
                 if (platform["os"]?.GetValue<string>() != target["os"]!.GetValue<string>() ||
                     platform["architecture"]?.GetValue<string>() != target["architecture"]!.GetValue<string>()) throw Unavailable(false);
+                if (ownRegistry)
+                {
+                    long size = bytes.Length + configBytes.Length;
+                    var seen = new HashSet<string> { configHash };
+                    var layers = manifest["layers"]!.AsArray();
+                    if (layers.Count > 256) throw Unavailable(false);
+                    // Docker Registry validates blob membership when storing a manifest. Check it
+                    // again here and derive image size from independently verified descriptors.
+                    foreach (var layer in layers)
+                    {
+                        var hash = layer?["digest"]?.GetValue<string>();
+                        var length = layer?["size"]?.GetValue<long>() ?? -1;
+                        if (!DigestValid(hash) || length < 0) throw Unavailable(false);
+                        using var content = await Send(path + "blobs/" + hash, authorization!.Token, ct, HttpMethod.Head);
+                        if (!content.IsSuccessStatusCode || content.Content.Headers.ContentLength != length) throw Unavailable(false);
+                        if (seen.Add(hash!)) size = checked(size + length);
+                        if (size > 9007199254740991) throw Unavailable(false);
+                    }
+                    return authorization! with { SizeBytes = size };
+                }
                 if (policy.Anonymous)
                     return new RegistryAuthorization(policy.Host, repository, null, DateTimeOffset.UtcNow.AddMinutes(5));
                 return authorization ?? throw Unavailable(false);
             }
             finally { authenticated?.Dispose(); }
         }
-        catch (Exception error) when (error is HttpRequestException or IOException or System.Text.Json.JsonException or InvalidOperationException or FormatException or ArgumentException or NullReferenceException ||
+        catch (Exception error) when (error is HttpRequestException or IOException or System.Text.Json.JsonException or InvalidOperationException or FormatException or ArgumentException or NullReferenceException or OverflowException ||
                                       (error is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         { throw Unavailable(); }
     }
@@ -129,9 +170,9 @@ public sealed class AppRegistry(HttpClient client, IConfiguration configuration,
         return new RegistryAuthorization(policy.Host, repository, token, expires);
     }
 
-    private async Task<HttpResponseMessage> Send(string url, string? token, CancellationToken ct)
+    private async Task<HttpResponseMessage> Send(string url, string? token, CancellationToken ct, HttpMethod? method = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(method ?? HttpMethod.Get, url);
         request.Headers.Accept.ParseAdd(OciManifest + ", " + DockerManifest);
         if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);

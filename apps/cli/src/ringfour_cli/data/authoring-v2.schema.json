@@ -697,7 +697,6 @@
       "required": [
         "os",
         "architecture",
-        "repository",
         "native_requirements"
       ],
       "properties": {

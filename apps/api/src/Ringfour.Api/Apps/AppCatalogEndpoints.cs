@@ -70,7 +70,7 @@ public static class AppCatalogEndpoints
         return Results.Json(response, statusCode: status);
     }
 
-    private static async Task<IResult> Publish(Guid orgId, HttpContext context, RingfourDbContext db, AppRegistry registry, IConfiguration config, CancellationToken ct)
+    private static async Task<IResult> Publish(Guid orgId, HttpContext context, RingfourDbContext db, AppRegistry registry, ManagedAppRegistry managed, IConfiguration config, ILogger<ManagedAppRegistry> logger, CancellationToken ct)
     {
         var user = await Caller(context, db, ct);
         await IdentityAccess.RequireMembership(db, orgId, user.Id, OrgRole.Developer, ct);
@@ -91,7 +91,39 @@ public static class AppCatalogEndpoints
                     throw ApiException.Conflict("revision_conflict", "This app_key and release already identify different immutable manifest content. Increment the release before changing display metadata; the new manifest may reuse the same OCI image digest.");
                 return RevisionJson(existing);
             }
-            foreach (var target in manifest["targets"]!.AsArray()) await registry.Verify(target!.AsObject(), orgId, ct);
+            var images = new JsonArray();
+            var managedRepository = app is null ? null : managed.Host + "/" + ManagedAppRegistry.Repository(orgId, app.Id);
+            foreach (var node in manifest["targets"]!.AsArray())
+            {
+                var target = node!.AsObject();
+                var image = target["image"]!.GetValue<string>();
+                var separator = image.IndexOf('@');
+                if (managed.Host is not null && (managedRepository is null || image[..separator] != managedRepository))
+                    throw ApiException.Forbidden("Use the App's assigned registry repository.");
+                var verified = await registry.Verify(target, orgId, ct);
+                if (managed.Host is not null)
+                    images.Add(new JsonObject
+                    {
+                        ["repository"] = managedRepository, ["digest"] = image[(separator + 1)..],
+                        ["size_bytes"] = verified.SizeBytes,
+                        ["platform"] = target["os"]!.GetValue<string>() + "/" + target["architecture"]!.GetValue<string>()
+                    });
+            }
+            if (images.Count > 0)
+            {
+                var quota = config.GetValue($"Apps:ManagedRegistry:OrganizationQuotaBytes:{orgId:D}",
+                    config.GetValue("Apps:ManagedRegistry:PublishedQuotaBytes", 0L));
+                if (quota > 0)
+                {
+                    var previousImages = await db.AppRevisions.Where(x => x.PublisherOrganizationId == orgId && x.Images != null)
+                        .Select(x => x.Images!).ToListAsync(ct);
+                    var bytes = previousImages.SelectMany(x => JsonNode.Parse(x)!.AsArray()).Concat(images)
+                        .DistinctBy(x => (x!["repository"]!.GetValue<string>(), x["digest"]!.GetValue<string>()))
+                        .Sum(x => (decimal)x!["size_bytes"]!.GetValue<long>());
+                    if (bytes > quota) throw ApiException.Conflict("registry_quota_exceeded", "Workspace published image quota exceeded.");
+                }
+                logger.LogInformation("Verified registry images for publication by user {UserId}, app {AppId}, organization {OrganizationId}", user.Id, app!.Id, orgId);
+            }
             var now = DateTimeOffset.UtcNow;
             if (app is null)
             {
@@ -99,10 +131,10 @@ public static class AppCatalogEndpoints
                     Name = manifest["display"]!["name"]!.GetValue<string>(), Description = manifest["display"]!["description"]!.GetValue<string>() };
                 db.Apps.Add(app);
             }
-            if (visibility == "listed")
+            if (visibility == "listed" || !await db.AppRevisions.AnyAsync(x => x.AppId == app.Id, ct))
             { app.Name = manifest["display"]!["name"]!.GetValue<string>(); app.Description = manifest["display"]!["description"]!.GetValue<string>(); }
             var revision = new AppRevision { Id = Guid.NewGuid(), AppId = app.Id, PublisherOrganizationId = orgId,
-                Release = release, Manifest = manifest.ToJsonString(), ManifestDigest = digest, Visibility = visibility, PublishedByUserId = user.Id, PublishedAt = now };
+                Release = release, Manifest = manifest.ToJsonString(), ManifestDigest = digest, Visibility = visibility, PublishedByUserId = user.Id, PublishedAt = now, Images = images.Count == 0 ? null : images.ToJsonString() };
             db.AppRevisions.Add(revision);
             return RevisionJson(revision);
         }, ct);
@@ -157,7 +189,7 @@ public static class AppCatalogEndpoints
         var (at, id) = Cursor(cursor); var size = Limit(limit);
         if (at is not null) query = query.Where(r => r.PublishedAt > at || (r.PublishedAt == at && r.Id.CompareTo(id!.Value) > 0));
         var rows = await query.OrderBy(r => r.PublishedAt).ThenBy(r => r.Id).Take(size + 1).ToListAsync(ct); var page = rows.Take(size).ToList();
-        return Results.Json(new { items = page.Select(RevisionJson), next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.PublishedAt, x => x.Id) });
+        return Results.Json(new { items = page.Select(x => RevisionJson(x)), next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.PublishedAt, x => x.Id) });
     }
 
     private static async Task<IResult> Share(Guid revisionId, HttpContext context, RingfourDbContext db, CancellationToken ct)
@@ -239,9 +271,14 @@ public static class AppCatalogEndpoints
         return Results.Json(new { items = page.Select(ImportJson), next_cursor = Pagination.NextCursor(rows.Count > size, page, x => x.ImportedAt, x => x.Id) });
     }
 
-    internal static JsonObject RevisionJson(AppRevision r) => new() { ["id"] = r.Id.ToString(), ["app_id"] = r.AppId.ToString(),
+    internal static JsonObject RevisionJson(AppRevision r, bool includeImages = true)
+    {
+        var result = new JsonObject { ["id"] = r.Id.ToString(), ["app_id"] = r.AppId.ToString(),
         ["publisher_organization_id"] = r.PublisherOrganizationId.ToString(), ["manifest"] = JsonNode.Parse(r.Manifest), ["manifest_digest"] = r.ManifestDigest,
         ["visibility"] = r.Visibility, ["published_by"] = r.PublishedByUserId.ToString(), ["published_at"] = AppProtocol.Timestamp(r.PublishedAt) };
+        if (includeImages && r.Images is not null) result["images"] = JsonNode.Parse(r.Images);
+        return result;
+    }
     private static JsonObject AppJson(AppRecord a, IConfiguration config, string? publisherName) => new() { ["id"] = a.Id.ToString(), ["publisher_organization_id"] = a.PublisherOrganizationId.ToString(),
         ["publisher_name"] = publisherName,
         ["publisher_type"] = Guid.TryParse(config["Apps:OfficialPublisherOrganizationId"], out var officialId) && officialId == a.PublisherOrganizationId ? "ringfour" : "workspace",

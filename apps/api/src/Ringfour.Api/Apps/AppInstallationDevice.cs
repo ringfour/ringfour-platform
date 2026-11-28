@@ -40,7 +40,7 @@ public static class AppInstallationDevice
                 throw ApiException.NotFound("No authorized preparation operation.");
             if (operation.DeadlineAt <= DateTimeOffset.UtcNow) throw ApiException.Conflict("deadline_exceeded", "Operation expired.");
             var revision = await db.AppRevisions.AsNoTracking().SingleAsync(x => x.Id == revisionId, ct);
-            return Results.Json(AppCatalogEndpoints.RevisionJson(revision));
+            return Results.Json(AppCatalogEndpoints.RevisionJson(revision, includeImages: false));
         }
         finally { fence.Release(); }
     }

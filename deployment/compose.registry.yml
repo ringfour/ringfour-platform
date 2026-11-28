@@ -1,0 +1,86 @@
+# Enable with RINGFOUR_MANAGED_REGISTRY=1 in deployment.sh.
+services:
+  api:
+    environment:
+      Apps__ManagedRegistry__Enabled: "true"
+      Apps__ManagedRegistry__Host: ${RINGFOUR_REGISTRY_HOST:-registry.ringfour.eu}
+      Apps__ManagedRegistry__PublishedQuotaBytes: ${RINGFOUR_REGISTRY_PUBLISHED_QUOTA_BYTES:-53687091200}
+    volumes:
+      - type: bind
+        source: ${RINGFOUR_REGISTRY_CERT:?Set the absolute path to the registry signing certificate}
+        target: /run/registry-signing/cert.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RINGFOUR_REGISTRY_KEY:?Set the absolute path to the registry signing private key}
+        target: /run/registry-key/key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+
+  app-registry:
+    image: registry:3.1.2@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+    restart: unless-stopped
+    environment:
+      REGISTRY_AUTH: token
+      REGISTRY_AUTH_TOKEN_REALM: ${RINGFOUR_REGISTRY_TOKEN_REALM:-https://api.ringfour.eu/registry/token}
+      REGISTRY_AUTH_TOKEN_SERVICE: ringfour-app-registry
+      REGISTRY_AUTH_TOKEN_ISSUER: ringfour-platform
+      REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /run/registry-signing/cert.pem
+      REGISTRY_AUTH_TOKEN_SIGNINGALGORITHMS: '[RS256]'
+      REGISTRY_HTTP_SECRET: ${RINGFOUR_REGISTRY_HTTP_SECRET:?Set a persistent registry upload secret}
+      REGISTRY_HTTP_RELATIVEURLS: "true"
+      REGISTRY_STORAGE_DELETE_ENABLED: "false"
+      REGISTRY_STORAGE_REDIRECT_DISABLE: "true"
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+      REGISTRY_STORAGE_MAINTENANCE_UPLOADPURGING_ENABLED: "true"
+      REGISTRY_STORAGE_MAINTENANCE_UPLOADPURGING_AGE: 168h
+      REGISTRY_STORAGE_MAINTENANCE_UPLOADPURGING_INTERVAL: 24h
+    volumes:
+      - app-registry-data:/var/lib/registry
+      - type: bind
+        source: ${RINGFOUR_REGISTRY_CERT:?Set the absolute path to the registry signing certificate}
+        target: /run/registry-signing/cert.pem
+        read_only: true
+        bind:
+          create_host_path: false
+
+  registry-ingress:
+    image: nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    restart: unless-stopped
+    depends_on:
+      - app-registry
+    ports:
+      - "127.0.0.1:${RINGFOUR_REGISTRY_PORT:-5000}:5000"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cat > /etc/nginx/conf.d/default.conf <<'NGINX'
+        limit_req_zone $$binary_remote_addr zone=registry_requests:1m rate=300r/s;
+        limit_conn_zone $$binary_remote_addr zone=registry_connections:1m;
+        server {
+          listen 5000;
+          client_max_body_size 10g;
+          limit_req_status 429;
+          limit_conn_status 429;
+          resolver 127.0.0.11 valid=10s ipv6=off;
+          location /v2/ {
+            limit_req zone=registry_requests burst=300 nodelay;
+            limit_conn registry_connections 64;
+            proxy_http_version 1.1;
+            proxy_request_buffering off;
+            proxy_buffering off;
+            proxy_read_timeout 10m;
+            proxy_send_timeout 10m;
+            proxy_set_header Host $$http_host;
+            set $$registry_backend app-registry:5000;
+            proxy_pass http://$$registry_backend;
+          }
+          location / { return 404; }
+        }
+        NGINX
+        exec nginx -g 'daemon off;'
+
+volumes:
+  app-registry-data:

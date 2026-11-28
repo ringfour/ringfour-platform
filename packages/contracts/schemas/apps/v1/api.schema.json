@@ -172,6 +172,22 @@
             }
           ]
         },
+        "images": {
+          "description": "Server-verified managed registry images, one per concrete target.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["repository", "digest", "size_bytes", "platform"],
+            "properties": {
+              "repository": { "type": "string" },
+              "digest": { "$ref": "#/$defs/digest" },
+              "size_bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "platform": { "enum": ["linux/amd64", "linux/arm64"] }
+            }
+          }
+        },
         "manifest_digest": {
           "$ref": "#/$defs/digest"
         },

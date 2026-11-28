@@ -274,6 +274,22 @@ def test_build_context_omits_undeclared_secrets_and_checks_wheel_hashes(project)
     assert len(calls) == before
 
 
+def test_local_build_needs_no_registry_and_can_publish_after_setting_one(project):
+    root, bundle, calls, _state = project
+    document = read_json(root / "app.json")
+    document["targets"][0].pop("repository")
+    (root / "app.json").write_text(json.dumps(document))
+    assert app_project.build_project(root, bundle)["release"] == document["release"]
+    assert not any(call[:2] == ("image", "push") for call in calls)
+    with pytest.raises(ValueError, match=r"targets\[\]\.repository"):
+        app_project.prepare_publication(root)
+    document["targets"][0]["repository"] = "registry.example.com/team/check"
+    (root / "app.json").write_text(json.dumps(document))
+    assert app_project.prepare_publication(root)["targets"][0]["image"].startswith(
+        "registry.example.com/team/check@sha256:"
+    )
+
+
 def test_symlink_input_and_changed_source_refuse_publication(project):
     root, bundle, calls, _ = project
     app_project.build_project(root, bundle)
@@ -416,6 +432,9 @@ def test_template_initialization_checks_hash_and_refuses_present_destination(
         destination, "my-app", "registry.example.com/team/mine", archive
     )
     assert read_json(destination / "app.json")["app_key"] == "my-app"
+    local = tmp_path / "local"
+    app_project.init_project(local, "local-app", archive=archive)
+    assert "repository" not in read_json(local / "app.json")["targets"][0]
     with pytest.raises(ValueError, match="exist"):
         app_project.init_project(
             destination, "x", "registry.example.com/team/x", archive

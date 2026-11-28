@@ -626,6 +626,10 @@ namespace Ringfour.Api.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("app_id");
 
+                    b.Property<string>("Images")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("images");
+
                     b.Property<string>("Manifest")
                         .IsRequired()
                         .HasColumnType("jsonb")

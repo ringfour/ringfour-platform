@@ -76,9 +76,11 @@ variable form is `ReleaseVersions__GitHubToken`. The local Compose file and
 new Platform release bundle map `RELEASE_VERSIONS_GITHUB_TOKEN` to that setting.
 Public releases need no token.
 
-`app init PATH --app-key KEY --repository REGISTRY/REPO` extracts the one Robot
+`app init PATH --app-key KEY` extracts the one Robot
 Check template from a versioned checksum-pinned archive, then applies the selected
-identity. The standalone example repository owns the source. The CLI packages a
+identity. A registry repository can be supplied with `--repository` or added to
+`app.json` before publication. Local builds do not use a registry. The standalone
+example repository owns the source. The CLI packages a
 release pointer, not a divergent template copy. Local archives are transferable;
 no sibling checkout or public feed is required to consume them.
 
@@ -96,6 +98,8 @@ verified bundle directory when the release archive is unavailable.
 Credentials, context/state files, `.env`, symlinks and engine options never become
 implicit build inputs. Images use the Dockerfile's plain entrypoint. Results in
 `.ringfour/build.json` bind source fingerprint and local image IDs, not just tags.
+Adding a registry repository after a local build does not require rebuilding the
+image; `app publish` requires the repository and pushes the image there.
 
 These identifiers answer different questions: `source_fingerprint` binds the
 authoring document and declared build inputs; Docker `image_id` / published OCI
@@ -161,3 +165,11 @@ Published artifacts are immutable outputs, limited to 16 files and 16 MiB per
 file. The per-run artifact directory is a publication source,
 not persistent App working storage: caches, databases and downloaded models do
 not survive as an installation disk.
+
+### Publish to the managed App registry
+
+Use `ringfour-cli app push .` on Platform deployments with the managed registry
+enabled. The command builds the declared targets and obtains the repository
+from Ringfour. The local `targets[].repository` field is only needed for the
+legacy external-registry flow. The API verifies image digests and sizes before
+creating a deployable revision.

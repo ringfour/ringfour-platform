@@ -50,6 +50,7 @@ def device(tmp_path, monkeypatch, request):
 
     class Engine:
         failure = None
+        cached = False
 
         def close(self):
             pass
@@ -61,9 +62,12 @@ def device(tmp_path, monkeypatch, request):
             calls.append("pull")
             if self.failure:
                 raise self.failure
+            self.cached = True
             return self.image(target["image"])
 
         def image(self, image):
+            if not self.cached:
+                return None
             return {
                 "Id": "sha256:" + "b" * 64,
                 "RepoDigests": [image],
@@ -84,7 +88,7 @@ def device(tmp_path, monkeypatch, request):
 
     monkeypatch.setattr(agent_inventory, "check_fresh", fresh)
     reports = []
-    broken = {"report": False, "manifest": False}
+    broken = {"report": False, "manifest": False, "registry": False}
 
     def handler(request):
         if request.url.path.startswith("/v1/device/app-revisions/"):
@@ -102,6 +106,8 @@ def device(tmp_path, monkeypatch, request):
             )
         if request.url.path == "/v1/device/app-registry-grants":
             calls.append("grant")
+            if broken["registry"]:
+                return httpx.Response(503)
             body = json.loads(request.content)
             return httpx.Response(
                 200,
@@ -208,6 +214,7 @@ def test_crash_after_pull_and_lost_installed_receipt_replay_same_operation(devic
             None,
         )
     executor.engine.pull = original
+    broken["registry"] = True
     broken["report"] = True
     with pytest.raises(httpx.ConnectError):
         process(settings, executor, operation)
@@ -223,6 +230,7 @@ def test_crash_after_pull_and_lost_installed_receipt_replay_same_operation(devic
     before = len(calls)
     broken["report"] = False
     process(settings, executor, operation)
+    assert calls.count("grant") == calls.count("pull") == 1
     assert len(calls) == before and reports[0] == saved
     assert reports[0]["operations"][0]["operation_id"] == operation.operation_id
 
@@ -237,6 +245,7 @@ def test_failed_update_keeps_installed_binding_and_configure_skips_pull(device):
     ]
     updated["release"]["configuration_revision_id"] = uid()
     updated["release"]["configuration"] = {"sample_count": 2}
+    executor.engine.cached = False
     for failure_code in ("pull_failed", "storage_unavailable", "engine_unavailable"):
         executor.engine.failure = EngineError(failure_code)
         operation = command(updated, "update")
@@ -248,6 +257,7 @@ def test_failed_update_keeps_installed_binding_and_configure_skips_pull(device):
         )
         assert reports[-1]["installations"][0]["candidate"]["state"] == "failed"
     executor.engine.failure = None
+    executor.engine.cached = True
     before = calls.count("pull")
     process(settings, executor, command(updated, "configure"))
     assert (
@@ -404,7 +414,7 @@ def test_uninstall_replays_durable_report_and_preserves_new_installation(device)
     with connect(settings.db_path) as conn:
         assert conn.execute("SELECT revision_id FROM app_installations WHERE installation_id=?",
                             (replacement["installation_id"],)).fetchone() == (payload["release"]["revision_id"],)
-    assert calls.count("pull") == 2
+    assert calls.count("pull") == 1
 
 
 def test_stale_uninstall_fails_without_removing_binding(device):

@@ -531,7 +531,9 @@ async def process(settings, executor, operation, headers):
                         ),
                     },
                 )
-            if state != "staged" and operation.kind != "app.configure":
+            image = await asyncio.to_thread(executor.engine.image, release["target"]["image"])
+            cached = image and release["target"]["image"] in image.get("RepoDigests", [])
+            if not cached and state != "staged" and operation.kind != "app.configure":
                 response = await client.post(
                     "/v1/device/app-registry-grants",
                     json={
@@ -568,14 +570,8 @@ async def process(settings, executor, operation, headers):
                 image = await asyncio.to_thread(
                     executor.prepare_image, release["target"], grant["authorization"]
                 )
-            else:
-                image = await asyncio.to_thread(
-                    executor.engine.image, release["target"]["image"]
-                )
-                if not image or release["target"]["image"] not in image.get(
-                    "RepoDigests", []
-                ):
-                    raise PreparationError("revision_unavailable")
+            elif not cached:
+                raise PreparationError("revision_unavailable")
             if (image.get("Os"), image.get("Architecture")) != (
                 release["target"]["os"],
                 release["target"]["architecture"],

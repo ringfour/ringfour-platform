@@ -395,6 +395,7 @@ public sealed class RingfourDbContext(DbContextOptions<RingfourDbContext> option
             e.Property(x => x.PublisherOrganizationId).HasColumnName("publisher_organization_id");
             e.Property(x => x.Release).HasColumnName("release").HasMaxLength(100);
             e.Property(x => x.Manifest).HasColumnName("manifest").HasColumnType("jsonb");
+            e.Property(x => x.Images).HasColumnName("images").HasColumnType("jsonb");
             e.Property(x => x.ManifestDigest).HasColumnName("manifest_digest").HasMaxLength(71);
             e.Property(x => x.Visibility).HasColumnName("visibility").HasMaxLength(16);
             e.Property(x => x.PublishedByUserId).HasColumnName("published_by_user_id"); e.Property(x => x.PublishedAt).HasColumnName("published_at");

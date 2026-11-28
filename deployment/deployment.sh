@@ -35,9 +35,25 @@ curl -fsSL "$assets/deployment.tar.gz" -o "$stage/deployment.tar.gz"
 
 # Keep image pins authoritative even when running from an interactive shell.
 unset RINGFOUR_API_IMAGE RINGFOUR_STUDIO_IMAGE
-compose() {
+compose_base() {
   docker compose -p ringfour-server --env-file "$config" --env-file "$stage/images.env" \
     -f "$stage/compose.yml" "$@"
+}
+deployment_environment=$(compose_base config --environment)
+managed_registry=$(printf '%s\n' "$deployment_environment" | sed -n 's/^RINGFOUR_MANAGED_REGISTRY=//p')
+registry_storage=$(printf '%s\n' "$deployment_environment" | sed -n 's/^RINGFOUR_REGISTRY_STORAGE=//p')
+unset deployment_environment
+
+compose() {
+  if [ "$managed_registry" = 1 ]; then
+    case "$registry_storage" in
+      ''|filesystem) ;;
+      s3) set -- -f "$stage/compose.registry.s3.yml" "$@" ;;
+      *) echo "RINGFOUR_REGISTRY_STORAGE must be filesystem or s3" >&2; return 1 ;;
+    esac
+    set -- -f "$stage/compose.registry.yml" "$@"
+  fi
+  compose_base "$@"
 }
 
 compose config --quiet

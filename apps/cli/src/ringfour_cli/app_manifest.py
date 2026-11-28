@@ -244,7 +244,7 @@ def validate_authoring(value):
     source.pop("build")
     source.pop("wheel_bundle")
     for target in source["targets"]:
-        target["image"] = target.pop("repository") + "@sha256:" + "0" * 64
+        target["image"] = target.pop("repository", "registry.invalid/ringfour/local") + "@sha256:" + "0" * 64
     validate_manifest(source)  # Placeholder exists only inside semantic validation.
     for name in [value["build"]["dockerfile"], *value["build"]["files"]]:
         safe_source_path(name)

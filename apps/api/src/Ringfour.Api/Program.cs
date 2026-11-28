@@ -42,6 +42,7 @@ builder.Services.AddHttpClient("release-versions", client =>
 });
 builder.Services.AddSingleton(provider => new ReleaseVersionLookup(
     provider.GetRequiredService<IHttpClientFactory>().CreateClient("release-versions")));
+builder.Services.AddSingleton<ManagedAppRegistry>();
 builder.Services.AddHttpClient<AppRegistry>(client => client.Timeout = TimeSpan.FromSeconds(10))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false });
 
@@ -50,11 +51,14 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("pairing", context => RateLimitPartition.GetFixedWindowLimiter(
         $"{context.Connection.RemoteIpAddress}:{(context.Request.Path.Value ?? "").Contains("/poll")}",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("registry-token", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 600, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.OnRejected = async (context, ct) =>
     {
         await context.HttpContext.Response.WriteAsJsonAsync(new ErrorEnvelope(new ErrorBody(
-            "rate_limited", "Too many pairing requests.", context.HttpContext.TraceIdentifier)), ct);
+            "rate_limited", "Too many requests.", context.HttpContext.TraceIdentifier)), ct);
     };
 });
 builder.Services.AddSingleton<DeviceConnectionManager>();
@@ -68,6 +72,7 @@ builder.AddRingfourAuth();
 var app = builder.Build();
 
 AuthSetup.ValidateAuthConfiguration(app.Configuration, app.Environment);
+_ = app.Services.GetRequiredService<ManagedAppRegistry>();
 
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {

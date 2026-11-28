@@ -1,5 +1,6 @@
 """AP-06 local template, clean build context and immutable publication snapshots."""
 
+import base64
 import copy
 import hashlib
 import json
@@ -9,6 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import uuid
 from importlib.resources import files
 from pathlib import Path
 
@@ -57,7 +59,7 @@ def atomic_json(path, value):
         Path(temporary).unlink(missing_ok=True)
 
 
-def init_project(destination, app_key, repository, archive=None):
+def init_project(destination, app_key, repository=None, archive=None):
     if destination.exists() or destination.is_symlink():
         raise ValueError("Destination must not already exist")
     pointer = json.loads(
@@ -113,7 +115,10 @@ def init_project(destination, app_key, repository, archive=None):
         document = read_json(stage / "app.json")
         document["app_key"] = app_key
         for target in document["targets"]:
-            target["repository"] = repository
+            if repository is None:
+                target.pop("repository", None)
+            else:
+                target["repository"] = repository
         validate_authoring(document)
         atomic_json(stage / "app.json", document)
         dockerfile = stage / "Dockerfile"
@@ -159,13 +164,16 @@ def regular_file(root, name):
 def source_snapshot(root, document):
     names = sorted({document["build"]["dockerfile"], *document["build"]["files"]})
     inputs = {name: hash_file(regular_file(root, name)) for name in names}
-    return fingerprint({"authoring": document, "inputs": inputs}), names
+    build_document = copy.deepcopy(document)
+    for target in build_document["targets"]:
+        target.pop("repository", None)
+    return fingerprint({"authoring": build_document, "inputs": inputs}), names
 
 
-def docker(*arguments):
+def docker(*arguments, config=None):
     try:
         result = subprocess.run(
-            ["docker", *arguments], capture_output=True, check=False, timeout=900
+            ["docker", *(["--config", str(config)] if config else []), *arguments], capture_output=True, check=False, timeout=900
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise DockerError("Docker is unavailable or the operation timed out") from error
@@ -351,7 +359,39 @@ def inspect_remote(reference, target):
     return pinned
 
 
-def prepare_publication(root):
+def push_managed_image(image_id, target, upload):
+    repository = upload["repository"]
+    tag = f"{repository}:upload-{uuid.uuid4().hex}"
+    docker("image", "tag", image_id, tag)
+    try:
+        with tempfile.TemporaryDirectory(prefix="ringfour-registry-") as temporary:
+            config = Path(temporary)
+            auth = base64.b64encode(f"ringfour:{upload['credential']}".encode()).decode()
+            registry_config = {"auths": {upload["registry"]: {"auth": auth}}}
+            original = Path(os.environ.get("DOCKER_CONFIG", Path.home() / ".docker"))
+            if (original / "config.json").is_file():
+                context = read_json(original / "config.json").get("currentContext")
+                if context:
+                    registry_config["currentContext"] = context
+            if (original / "contexts").is_dir():
+                (config / "contexts").symlink_to((original / "contexts").resolve())
+            atomic_json(config / "config.json", registry_config)
+            pushed = docker(
+                "image", "push", "--platform", target["os"] + "/" + target["architecture"],
+                tag, config=config,
+            )
+        digests = re.findall(rb"\bdigest: (sha256:[0-9a-f]{64})\b", pushed)
+        if len(digests) != 1:
+            raise DockerError("Docker push did not report one image manifest digest")
+        return repository + "@" + digests[0].decode()
+    finally:
+        try:
+            docker("image", "rm", tag)
+        except DockerError:
+            pass
+
+
+def prepare_publication(root, upload=None):
     document = validate_authoring(read_json(root / "app.json"))
     source_hash, _ = source_snapshot(root, document)
     path = root / ".ringfour/releases" / (document["release"] + ".json")
@@ -362,6 +402,11 @@ def prepare_publication(root):
                 "Frozen App release content changed. Increment `release` in app.json before changing the name or other manifest/source inputs; an unchanged OCI image digest may be reused by the new release."
             )
         manifest = validate_manifest(frozen["manifest"])
+        if upload and any(
+            target["image"].split("@", 1)[0] != upload["repository"]
+            for target in manifest["targets"]
+        ):
+            raise ValueError("This release is frozen for another registry repository. Increment its release.")
         # Retry the exact previously verified request; AP-05 replays committed
         # results before consulting a registry that may now be unavailable.
     else:
@@ -372,6 +417,8 @@ def prepare_publication(root):
         manifest.pop("build")
         manifest.pop("wheel_bundle")
         for target, image in zip(manifest["targets"], built["targets"], strict=True):
+            if upload is None and "repository" not in target:
+                raise ValueError("Set targets[].repository in app.json before publishing this App")
             inspected = json.loads(
                 docker(
                     "image", "inspect", image["local_image"], "--format", "{{json .}}"
@@ -381,6 +428,10 @@ def prepare_publication(root):
                 raise ValueError(
                     "Local build tag was replaced; rebuild before publication"
                 )
+            if upload:
+                target["image"] = push_managed_image(image["image_id"], target, upload)
+                target.pop("repository", None)
+                continue
             tag = (
                 target["repository"]
                 + ":"

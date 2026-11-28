@@ -52,6 +52,12 @@ export type Revision = {
   publisher_organization_id: string;
   manifest: AppManifest;
   manifest_digest: string;
+  images?: {
+    repository: string;
+    digest: string;
+    size_bytes: number;
+    platform: "linux/amd64" | "linux/arm64";
+  }[];
   visibility: "listed" | "unlisted";
   published_at: string;
 };
@@ -127,7 +133,12 @@ export type AppRun = {
   installation_id: string;
   start_operation_id: string;
   snapshot: {
-    development?: {session_id: string; generation: number; archive_sha256: string; expires_at: string};
+    development?: {
+      session_id: string;
+      generation: number;
+      archive_sha256: string;
+      expires_at: string;
+    };
     app_id: string;
     revision_id: string;
     publisher_organization_id: string;

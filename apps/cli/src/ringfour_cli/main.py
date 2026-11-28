@@ -375,7 +375,7 @@ def _app_result(action, json_output):
 def app_init(
     destination: Path,
     app_key: Annotated[str, typer.Option("--app-key")],
-    repository: Annotated[str, typer.Option("--repository")],
+    repository: Annotated[str | None, typer.Option("--repository")] = None,
     template_archive: Annotated[Path | None, typer.Option("--template-archive")] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ):
@@ -933,10 +933,13 @@ def app_bundle_fetch(
     )
 
 
+@apps_app.command("push", help="Build and publish an App to its assigned Ringfour registry repository.")
 @apps_app.command("publish")
 def app_publish(
+    context: typer.Context,
     directory: Annotated[Path, typer.Argument()] = Path("."),
     manifest: Annotated[Path | None, typer.Option("--manifest")] = None,
+    wheels: Annotated[Path | None, typer.Option("--wheels")] = None,
     org: str | None = typer.Option(None, "--org"),
     visibility: str | None = typer.Option(None, "--visibility", help="Publication visibility: unlisted (private) or listed (public; Ringfour publisher only)."),
     yes: bool = typer.Option(False, "--yes", help="Confirm the displayed publication details."),
@@ -965,16 +968,22 @@ def app_publish(
         store = auth.TokenStore()
         if store.load(settings) is None:
             raise auth.DeviceAuthError("Run ringfour-cli login before publishing")
-        release = (
-            app_project.verify_prebuilt(manifest)
-            if manifest is not None
-            else app_project.prepare_publication(directory.resolve())
-        )
-        body = {"manifest": release, "visibility": selected_visibility}
+        root = directory.resolve()
+        managed = context.info_name == "push"
+        if managed:
+            if manifest is not None:
+                raise typer.BadParameter("app push builds from app.json. Use app publish for a prebuilt manifest.")
+            preview = app_project.validate_authoring(app_project.read_json(root / "app.json"))
+        else:
+            preview = release = (
+                app_project.verify_prebuilt(manifest)
+                if manifest is not None
+                else app_project.prepare_publication(root)
+            )
         visibility_label = "public App Store" if selected_visibility == "listed" else "private to publisher workspace"
         publish_console.print(
-            f"Publish [bold]{release['display']['name']}[/bold] "
-            f"({release['app_key']} {release['release']}) to workspace {organization} "
+            f"Publish [bold]{preview['display']['name']}[/bold] "
+            f"({preview['app_key']} {preview['release']}) to workspace {organization} "
             f"as {visibility_label}."
         )
         needs_public_confirmation = selected_visibility == "listed" and not yes
@@ -984,6 +993,16 @@ def app_publish(
             "Submit this public release?", default=False
         ):
             raise typer.Abort()
+        if managed:
+            frozen = root / ".ringfour" / "releases" / (preview["release"] + ".json")
+            route = f"/v1/organizations/{organization}/apps/{preview['app_key']}/registry-upload"
+            # Check authorization before building and refresh the grant just before uploading.
+            upload = _api_request("POST", route, settings, store, _error_json=json_output).json()
+            if not frozen.exists():
+                app_project.build_project(root, wheels)
+                upload = _api_request("POST", route, settings, store, _error_json=json_output).json()
+            release = app_project.prepare_publication(root, upload)
+        body = {"manifest": release, "visibility": selected_visibility}
         key = idempotency_key or "app:" + app_fingerprint(
             {"api": settings.api_url, "organization": organization, "request": body}
         )

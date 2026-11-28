@@ -104,3 +104,68 @@ deployed to the N100. The updater follows the latest complete main release
 and updates only the Daemon service. It writes the boot pin after readiness
 passes. A failed readiness check leaves the previous pin available. Review
 logs and SQLite migration compatibility before restarting the previous image.
+
+## Managed App registry
+
+Set `RINGFOUR_MANAGED_REGISTRY=1` in the server deployment environment to add
+OCI Distribution and its loopback ingress to the existing Compose project.
+Set `RINGFOUR_REGISTRY_CERT` and `RINGFOUR_REGISTRY_KEY` to absolute host paths.
+Generate a dedicated RSA signing pair, separate from TLS and Auth0:
+
+```sh
+umask 077
+openssl req -x509 -newkey rsa:3072 -sha256 -noenc -days 365 \
+  -subj '/CN=Ringfour registry token signing' -keyout key.pem -out cert.pem
+openssl rand -hex 32
+```
+
+Use the last output as the persistent `RINGFOUR_REGISTRY_HTTP_SECRET`.
+Give the API container's `app` user read access to the signing key. Keep the
+private key out of the registry container. Both containers need read access to
+the public certificate. Keep the signing files at stable paths across releases.
+
+The registry ingress listens on `127.0.0.1:5000` by default. Point the future
+`registry.ringfour.eu` tunnel at that listener. The registry challenge points at
+`https://api.ringfour.eu/registry/token` by default. Route that path to the API
+and forward Authorization headers without caching the response. If the public
+API has a different origin, configure `RINGFOUR_REGISTRY_TOKEN_REALM` accordingly.
+No tunnel is installed by deployment. Enable `APPS_INSTALLATIONS_ENABLED` when
+robots can reach the registry.
+
+Run `ringfour-cli app push .` as a developer or owner. Ringfour reserves
+`apps/<organization UUID>/<app UUID>`, verifies each platform manifest and
+records the immutable digests. For managed repositories, existing organization
+members and workspace imports can provide pull access; robots get pull tokens
+only for authorized preparation operations. Registry deletion is disabled.
+Older revisions keep their original digest references and still use their
+configured legacy registry.
+
+### Storage and retention
+
+Filesystem storage uses the persistent `app-registry-data` volume. The default
+workspace limit is 50 GiB of verified published images, measured once per
+repository and digest across all retained revisions. The
+`RINGFOUR_REGISTRY_PUBLISHED_QUOTA_BYTES` setting changes the default. The API
+configuration key `Apps:ManagedRegistry:OrganizationQuotaBytes:<organization UUID>`
+overrides it for an individual workspace. A value of zero disables the
+publication quota. This quota applies at revision finalization. The ingress
+limits concurrent connections, request rate and individual request size.
+Track filesystem capacity separately for blobs such as incomplete uploads.
+
+To move to S3-compatible storage, quiesce registry writes, back up the volume,
+and copy the complete storage object tree into the private bucket while
+preserving keys. Set `RINGFOUR_REGISTRY_STORAGE=s3` and configure
+`RINGFOUR_REGISTRY_S3_REGION`, `RINGFOUR_REGISTRY_S3_ENDPOINT`,
+`RINGFOUR_REGISTRY_S3_BUCKET`, `RINGFOUR_REGISTRY_S3_ACCESS_KEY`, and
+`RINGFOUR_REGISTRY_S3_SECRET_KEY`. Keep the same public registry host and token
+settings. Verify existing digests and a new upload before retiring the volume.
+
+Distribution purges abandoned upload sessions older than seven days. Published
+manifests and their upload tags are retained for rollback. For operator-run blob
+garbage collection, quiesce writes, back up storage, and run Distribution's
+dry run with all manifests retained. Avoid deleting untagged manifests. Check
+installed and rollback digests before reopening writes.
+
+Through the tunnel, test a real amd64/arm64 push with a layer representative of
+the largest App, then pull both digest references. A direct HTTPS endpoint may
+be needed if the tunnel's request limits block standard Docker uploads.
