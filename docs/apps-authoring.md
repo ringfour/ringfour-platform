@@ -1,6 +1,7 @@
 # App authoring and publication
 
-`app.json` follows the authoring v1 schema: manifest metadata/capabilities/config,
+`app.yaml` is the editable App authoring file. Existing projects may keep
+`app.json`. Use one file per project. The file contains metadata, capabilities, configuration,
 editable target repositories, explicit Dockerfile and source-file allowlist,
 and a checksum-pinned local wheel bundle. It is not publication input.
 `app.manifest.json` follows manifest v1 and contains only concrete image digests.
@@ -17,20 +18,22 @@ accepted as numbers.
 `ringfour-cli scaffold [DIRECTORY]` clones a minimal App with a configurable
 greeting, a development image target and a release target. The default directory
 is `my-ringfour-app`. Run `ringfour-cli app validate .` from the checkout after
-editing `app.json`. See the [CLI guide](../apps/cli/README.md#clone-a-starter-app)
+editing `app.yaml`. See the [CLI guide](../apps/cli/README.md#clone-a-starter-app)
 for local and mirrored template repositories.
 
 ## Independent App toolchain
 
 A schema v2 App may declare an exact SDK release wheel and an Agent minimum in
-`app.json`:
+`app.yaml`:
 
-```json
-"toolchain": {
-  "protocol": 1,
-  "sdk": {"version": "1.0.0", "sha256": "<wheel SHA-256 from the SDK release>"},
-  "agent": {"min_version": "1.0.0"}
-}
+```yaml
+toolchain:
+  protocol: 1
+  sdk:
+    version: "1.0.0"
+    sha256: "<wheel SHA-256 from the SDK release>"
+  agent:
+    min_version: "1.0.0"
 ```
 
 Use `ringfour-cli sdk-release 1.0.0` to find the wheel checksum after that
@@ -79,7 +82,7 @@ Public releases need no token.
 `app init PATH --app-key KEY` extracts the one Robot
 Check template from a versioned checksum-pinned archive, then applies the selected
 identity. A registry repository can be supplied with `--repository` or added to
-`app.json` before publication. Local builds do not use a registry. The standalone
+`app.yaml` before publication. Local builds do not use a registry. The standalone
 example repository owns the source. The CLI packages a
 release pointer, not a divergent template copy. Local archives are transferable;
 no sibling checkout or public feed is required to consume them.
@@ -92,7 +95,7 @@ tags. No remote schemas are fetched and no defaults silently change input.
 `app build PATH --wheels BUNDLE` stages only declared regular files plus verified
 wheel inputs, then builds one loaded image per platform using Docker Buildx.
 Run `ringfour-cli app bundle fetch PATH` first to install the exact bundle pinned
-in `app.json` from a Platform release. The CLI verifies the release archive and
+in `app.yaml` from a Platform release. The CLI verifies the release archive and
 the bundle's manifest checksum before using it. `--wheels` accepts an existing
 verified bundle directory when the release archive is unavailable.
 Credentials, context/state files, `.env`, symlinks and engine options never become
@@ -106,7 +109,7 @@ authoring document and declared build inputs; Docker `image_id` / published OCI
 digest identifies image bytes; API `manifest_digest` identifies the canonical
 immutable release manifest, including display metadata. A display-name change
 can therefore keep the same image digest while producing a different manifest
-digest. Release metadata is immutable: increment `release` in `app.json` before
+digest. Release metadata is immutable: increment `release` in `app.yaml` before
 publishing a changed name or description. The Store name changes when the new
 listed release is successfully published. Existing runs retain their frozen
 manifest and image references.

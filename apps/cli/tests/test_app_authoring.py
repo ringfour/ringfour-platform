@@ -8,11 +8,13 @@ from pathlib import Path
 
 import httpx
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from ringfour_cli import app_project, main
 from ringfour_cli.app_manifest import (
     fingerprint,
+    read_authoring,
     read_json,
     validate_authoring,
     validate_manifest,
@@ -276,6 +278,28 @@ def test_build_context_omits_undeclared_secrets_and_checks_wheel_hashes(project)
     assert len(calls) == before
 
 
+def test_yaml_authoring_keeps_the_same_build_fingerprint_and_publishes(project):
+    root, bundle, _calls, _state = project
+    legacy = root / "app.json"
+    document = read_json(legacy)
+    original = app_project.build_project(root, bundle)
+    (root / "app.yaml").write_text(yaml.safe_dump(document, sort_keys=False))
+    with pytest.raises(ValueError, match="Both app.yaml and app.json"):
+        read_authoring(root)
+    legacy.unlink()
+
+    assert read_authoring(root) == document
+    assert app_project.build_project(root, bundle) == original
+    assert app_project.prepare_publication(root)["release"] == document["release"]
+
+
+@pytest.mark.parametrize("source", ["a: 1\na: 2\n", "a: &ref 1\nb: *ref\n", "a: !!str 1\n"])
+def test_yaml_authoring_rejects_ambiguous_keys_and_nonportable_yaml(tmp_path, source):
+    (tmp_path / "app.yaml").write_text(source)
+    with pytest.raises(ValueError):
+        read_authoring(tmp_path)
+
+
 def test_local_build_needs_no_registry_and_can_publish_after_setting_one(project):
     root, bundle, calls, _state = project
     document = read_json(root / "app.json")
@@ -433,10 +457,12 @@ def test_template_initialization_checks_hash_and_refuses_present_destination(
     app_project.init_project(
         destination, "my-app", "registry.example.com/team/mine", archive
     )
-    assert read_json(destination / "app.json")["app_key"] == "my-app"
+    assert read_authoring(destination)["app_key"] == "my-app"
+    assert (destination / "app.yaml").is_file()
+    assert not (destination / "app.json").exists()
     local = tmp_path / "local"
     app_project.init_project(local, "local-app", archive=archive)
-    assert "repository" not in read_json(local / "app.json")["targets"][0]
+    assert "repository" not in read_authoring(local)["targets"][0]
     with pytest.raises(ValueError, match="exist"):
         app_project.init_project(
             destination, "x", "registry.example.com/team/x", archive

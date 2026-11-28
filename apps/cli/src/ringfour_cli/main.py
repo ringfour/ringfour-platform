@@ -29,8 +29,8 @@ from . import (
     sdk_release,
 )
 from .app_manifest import fingerprint as app_fingerprint
+from .app_manifest import read_authoring, validate_authoring, validate_manifest
 from .app_manifest import read_json as read_app_json
-from .app_manifest import validate_authoring, validate_manifest
 from .config import (
     ConfigError,
     load_settings,
@@ -404,7 +404,7 @@ def app_validate(
                 "kind": "manifest",
                 "manifest_digest": "sha256:" + app_fingerprint(value),
             }
-        value = validate_authoring(read_app_json(directory / "app.json"))
+        value = validate_authoring(read_authoring(directory))
         source, _ = app_project.source_snapshot(directory.resolve(), value)
         return {
             "valid": True,
@@ -926,7 +926,7 @@ def app_bundle_fetch(
     directory: Annotated[Path, typer.Argument()] = Path("."),
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ):
-    """Download and verify the local wheel bundle pinned by app.json."""
+    """Download and verify the local wheel bundle pinned by the App authoring file."""
     _app_result(
         lambda: {"bundle": str(bundle_release.fetch_project(directory.resolve()))},
         json_output,
@@ -972,8 +972,8 @@ def app_publish(
         managed = context.info_name == "push"
         if managed:
             if manifest is not None:
-                raise typer.BadParameter("app push builds from app.json. Use app publish for a prebuilt manifest.")
-            preview = app_project.validate_authoring(app_project.read_json(root / "app.json"))
+                raise typer.BadParameter("app push builds from the App authoring file. Use app publish for a prebuilt manifest.")
+            preview = app_project.validate_authoring(read_authoring(root))
         else:
             preview = release = (
                 app_project.verify_prebuilt(manifest)

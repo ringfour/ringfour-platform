@@ -8,6 +8,11 @@ import pytest
 from ringfour_cli import release_update
 
 
+@pytest.fixture(autouse=True)
+def installed_version(monkeypatch):
+    monkeypatch.setattr(release_update, "__version__", "1.0.2")
+
+
 def test_cached_notice_is_offline_and_version_aware(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     cache = release_update.cache_path()

@@ -17,7 +17,8 @@ ringfour-cli login
 Release builds include public Auth0 and API defaults. The environment and per-user
 configuration can override them.
 The installer installs the CLI wheel independently. App builds use the wheel
-bundle pinned in `app.json`. Run `ringfour-cli app bundle fetch PATH` to
+bundle pinned in `app.yaml` (or an existing `app.json`).
+Run `ringfour-cli app bundle fetch PATH` to
 download and verify it under
 `${XDG_DATA_HOME:-$HOME/.local/share}/ringfour/python-artifacts`.
 

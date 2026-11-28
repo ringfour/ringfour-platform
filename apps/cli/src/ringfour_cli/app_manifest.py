@@ -8,7 +8,9 @@ import re
 from decimal import Decimal, DecimalException
 from importlib.resources import files
 from pathlib import PurePosixPath
+from typing import ClassVar
 
+import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
@@ -139,6 +141,64 @@ def read_json(path):
         raise ValueError("Invalid App UTF-8 JSON") from error
 
 
+class AppYamlLoader(yaml.SafeLoader):
+    # Resolve only JSON-compatible scalars. Values such as on and ISO dates
+    # stay strings, and numbers use the same rules as App JSON.
+    yaml_implicit_resolvers: ClassVar[dict] = {}
+
+    def compose_node(self, parent, index):
+        event = self.peek_event()
+        if getattr(event, "anchor", None) is not None or getattr(event, "tag", None) is not None:
+            raise ValueError("App YAML does not support anchors, aliases, or explicit tags")
+        return super().compose_node(parent, index)
+
+    def construct_mapping(self, node, deep=False):
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, str):
+                raise yaml.constructor.ConstructorError(
+                    problem="App YAML mapping keys must be strings",
+                    problem_mark=key_node.start_mark,
+                )
+            if key in mapping:
+                raise ValueError(f"Duplicate App YAML key: {key}")
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
+AppYamlLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:bool", re.compile(r"(?:true|false)\Z"), list("tf")
+)
+AppYamlLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:null", re.compile(r"(?:null|~)?\Z"), ["n", "~", ""]
+)
+AppYamlLoader.add_implicit_resolver(
+    "!app-number", re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z"),
+    list("-0123456789"),
+)
+AppYamlLoader.add_constructor("!app-number", lambda loader, node: _parse_number(node.value))
+
+
+def read_authoring(root):
+    path = root / "app.yaml"
+    legacy = root / "app.json"
+    if not path.exists():
+        if not legacy.exists():
+            raise ValueError(f"No app.yaml or legacy app.json found in {root}")
+        return read_json(legacy)
+    if legacy.exists():
+        raise ValueError("Both app.yaml and app.json exist. Keep one App authoring file.")
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(65537)
+        if len(raw) > 65536:
+            raise ValueError("App YAML exceeds 65536 bytes")
+        return _scalars(yaml.load(raw.decode("utf-8"), Loader=AppYamlLoader))
+    except (UnicodeError, yaml.YAMLError, RecursionError) as error:
+        raise ValueError("Invalid App UTF-8 YAML") from error
+
+
 def _structure(value, name):
     version_suffix = (
         "-v2" if isinstance(value, dict) and value.get("schema_version") == 2 else ""
@@ -227,6 +287,7 @@ def safe_source_path(name):
                 "id_rsa",
                 "id_ed25519",
                 "app.json",
+                "app.yaml",
                 "app.manifest.json",
                 "python-wheels",
             )

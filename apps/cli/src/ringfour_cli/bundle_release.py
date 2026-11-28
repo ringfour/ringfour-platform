@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 import httpx
 
 from . import app_project
-from .app_manifest import read_json, validate_authoring
+from .app_manifest import read_authoring, validate_authoring
 from .release_update import RELEASES, TAG
 
 ARCHIVE = "python-artifacts.tar.gz"
@@ -18,7 +18,7 @@ MAX_EXTRACTED = 256 * 1024 * 1024
 
 
 def fetch_project(root: Path) -> Path:
-    document = validate_authoring(read_json(root / "app.json"))
+    document = validate_authoring(read_authoring(root))
     version = document["wheel_bundle"]["version"]
     destination = app_project.data_home() / "python-artifacts" / version
     if destination.exists():

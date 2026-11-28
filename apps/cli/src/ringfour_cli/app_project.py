@@ -14,10 +14,13 @@ import uuid
 from importlib.resources import files
 from pathlib import Path
 
+import yaml
+
 from . import sdk_release
 from .app_manifest import (
     canonical,
     fingerprint,
+    read_authoring,
     read_json,
     validate_authoring,
     validate_manifest,
@@ -45,13 +48,17 @@ def hash_file(path):
 
 
 def atomic_json(path, value):
+    atomic_text(path, canonical(value) + "\n")
+
+
+def atomic_text(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_symlink() or path.parent.is_symlink():
         raise ValueError("App state cannot use symlinks")
     descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".app-")
     try:
         with os.fdopen(descriptor, "w") as stream:
-            stream.write(canonical(value) + "\n")
+            stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -112,7 +119,7 @@ def init_project(destination, app_key, repository=None, archive=None):
                         shutil.copyfileobj(stream, output)
                 else:
                     raise ValueError("Unsupported template entry")
-        document = read_json(stage / "app.json")
+        document = read_authoring(stage)
         document["app_key"] = app_key
         for target in document["targets"]:
             if repository is None:
@@ -120,7 +127,8 @@ def init_project(destination, app_key, repository=None, archive=None):
             else:
                 target["repository"] = repository
         validate_authoring(document)
-        atomic_json(stage / "app.json", document)
+        atomic_text(stage / "app.yaml", yaml.safe_dump(document, sort_keys=False, allow_unicode=True))
+        (stage / "app.json").unlink(missing_ok=True)
         dockerfile = stage / "Dockerfile"
         text = dockerfile.read_text()
         if 'eu.ringfour.development-source' not in text:
@@ -232,7 +240,7 @@ def _runtime_version(value):
 
 
 def build_project(root, bundle=None, *, development=False):
-    document = validate_authoring(read_json(root / "app.json"))
+    document = validate_authoring(read_authoring(root))
     sdk = document.get("toolchain", {}).get("sdk")
     sdk_wheel = None
     if sdk:
@@ -245,7 +253,7 @@ def build_project(root, bundle=None, *, development=False):
     frozen = state / "releases" / (document["release"] + ".json")
     if frozen.exists():
         raise ValueError(
-            "This App release is immutable. Retry its frozen publish request, or increment `release` in app.json before changing the name or other manifest/source inputs. A metadata-only release can reuse the same OCI image digest."
+            "This App release is immutable. Retry its frozen publish request, or increment `release` in the App authoring file before changing the name or other manifest/source inputs. A metadata-only release can reuse the same OCI image digest."
         )
     bundle = bundle or Path(
         os.environ.get(
@@ -393,14 +401,14 @@ def push_managed_image(image_id, target, upload):
 
 
 def prepare_publication(root, upload=None):
-    document = validate_authoring(read_json(root / "app.json"))
+    document = validate_authoring(read_authoring(root))
     source_hash, _ = source_snapshot(root, document)
     path = root / ".ringfour/releases" / (document["release"] + ".json")
     if path.exists():
         frozen = read_json(path)
         if frozen["source_fingerprint"] != source_hash:
             raise ValueError(
-                "Frozen App release content changed. Increment `release` in app.json before changing the name or other manifest/source inputs; an unchanged OCI image digest may be reused by the new release."
+                "Frozen App release content changed. Increment `release` in the App authoring file before changing the name or other manifest/source inputs; an unchanged OCI image digest may be reused by the new release."
             )
         manifest = validate_manifest(frozen["manifest"])
         if upload and any(
@@ -419,7 +427,7 @@ def prepare_publication(root, upload=None):
         manifest.pop("wheel_bundle")
         for target, image in zip(manifest["targets"], built["targets"], strict=True):
             if upload is None and "repository" not in target:
-                raise ValueError("Set targets[].repository in app.json before publishing this App")
+                raise ValueError("Set targets[].repository in the App authoring file before publishing this App")
             inspected = json.loads(
                 docker(
                     "image", "inspect", image["local_image"], "--format", "{{json .}}"
